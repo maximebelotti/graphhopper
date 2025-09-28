@@ -119,6 +119,13 @@
             <artifactId>logback-classic</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>com.github.javafaker</groupId>
+            <artifactId>javafaker</artifactId>
+            <version>1.0.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -162,6 +169,35 @@
                     <dotGitDirectory>${parent.basedir}/.git</dotGitDirectory>
                     <failOnNoGitDirectory>false</failOnNoGitDirectory>
                     <failOnUnableToExtractRepoInfo>false</failOnUnableToExtractRepoInfo>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <version>1.16.1</version>
+                <dependencies>
+                    <dependency>
+                    <groupId>org.pitest</groupId>
+                    <artifactId>pitest-junit5-plugin</artifactId>
+                    <version>1.2.0</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <targetClasses>
+                    <param>com.graphhopper.*</param>
+                    </targetClasses>
+                    <targetTests>
+                    <param>com.graphhopper.*</param>
+                    </targetTests>
+                    <mutators>
+                    <mutator>STRONGER</mutator>
+                    </mutators>
+                    <threads>4</threads>
+                    <outputFormats>
+                    <param>HTML</param>
+                    <param>XML</param>
+                    </outputFormats>
                 </configuration>
             </plugin>
         </plugins>
