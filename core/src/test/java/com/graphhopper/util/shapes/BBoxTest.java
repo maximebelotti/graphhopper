@@ -24,6 +24,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import org.junit.jupiter.api.DisplayName;
+
 /**
  * @author Peter Karich
  */
@@ -136,4 +138,26 @@ public class BBoxTest {
     public void testParseBBoxString() {
         assertEquals(new BBox(2, 4, 1, 3), BBox.parseBBoxString("2,4,1,3"));
     }
+
+
+    /**
+     * Vérifie que deux BBox placées de part et d'autre du méridien de Greenwitch ne sont pas considérées comme 
+     * intersectées. La classe BBox compare directement les bornes minLon et maxLon sans gérer la circularité des 
+     * longitudes.
+     */
+    @Test
+    void testAntiMeridian() {
+        // Boîte à l'est (179° à 180°)
+        BBox a = new BBox(179.0, 180.0, 10.0, 11.0);
+        
+        // Boîte à l'ouest (-180° à -179°)
+        BBox b = new BBox(-180.0, -179.0, 10.2,    10.8);
+
+        // BBox ne considère pas la longitude comme circulaire, elles ne doivent pas s'intersecter.
+        assertFalse(a.intersects(b), "Les BBox de part et d'autre ne doivent pas s'intersecter.");
+
+        // Intersection doit etre nulle
+        assertNull(a.calculateIntersection(b), "L'intersection doit être null quand les BBox ne se chevauchent pas.");
+    }
+
 }
