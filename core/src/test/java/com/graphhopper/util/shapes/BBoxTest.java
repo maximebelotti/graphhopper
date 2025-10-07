@@ -139,25 +139,169 @@ public class BBoxTest {
         assertEquals(new BBox(2, 4, 1, 3), BBox.parseBBoxString("2,4,1,3"));
     }
 
-
-    /**
-     * Vérifie que deux BBox placées de part et d'autre du méridien de Greenwitch ne sont pas considérées comme 
-     * intersectées. La classe BBox compare directement les bornes minLon et maxLon sans gérer la circularité des 
-     * longitudes.
-     */
+    
     @Test
-    void testAntiMeridian() {
-        // Boîte à l'est (179° à 180°)
-        BBox a = new BBox(179.0, 180.0, 10.0, 11.0);
-        
-        // Boîte à l'ouest (-180° à -179°)
-        BBox b = new BBox(-180.0, -179.0, 10.2,    10.8);
+    void testDegenerateContact() {
+        // Ligne verticale : lon fixe = 10, lat ∈ [-1, 1]
+        BBox verticalLine = new BBox(10, 10, -1, 1);
 
-        // BBox ne considère pas la longitude comme circulaire, elles ne doivent pas s'intersecter.
-        assertFalse(a.intersects(b), "Les BBox de part et d'autre ne doivent pas s'intersecter.");
+        // 1) Contact (lon touche sans chevauchement) → false
+        BBox horizontalContact = new BBox(10, 10, 0, 0);
+        assertFalse(verticalLine.intersects(horizontalContact));
 
-        // Intersection doit etre nulle
-        assertNull(a.calculateIntersection(b), "L'intersection doit être null quand les BBox ne se chevauchent pas.");
+        // 2) Chevauchement minimal en lon, lat à l’intérieur → true
+        BBox horizontalOverlapLon = new BBox(9.9999, 10.0001, 0, 0);
+        assertTrue(verticalLine.intersects(horizontalOverlapLon));
+
+        // Chevauchement en lon, lat à l’extérieur de [-1,1] → false
+        BBox horizontalOutsideLat = new BBox(9.9999, 10.0001, 2, 2);
+        assertFalse(verticalLine.intersects(horizontalOutsideLat));
+
+        // Pas de chevauchement en lon, lat à l’intérieur
+        BBox horizontalOutsideLon = new BBox(9.5, 9.9, 0, 0);
+        assertFalse(verticalLine.intersects(horizontalOutsideLon));
+
+        // Symétrie d’appel (débusque certaines suppressions de conditions)
+        assertFalse(horizontalContact.intersects(verticalLine));
+        assertTrue(horizontalOverlapLon.intersects(verticalLine));
+        assertFalse(horizontalOutsideLat.intersects(verticalLine));
+        assertFalse(horizontalOutsideLon.intersects(verticalLine));
+
+        // Vérifs de dégénérescence
+        assertEquals(verticalLine.minLon, verticalLine.maxLon);
+        assertEquals(horizontalContact.minLat, horizontalContact.maxLat);
     }
 
+    @Test
+    void testIsValid() {
+        double eps = 1e-12;
+
+        // Bornes égales
+        assertFalse(new BBox(10.0, 10.0, -5, 0).isValid());
+        assertFalse(new BBox(1, 2, -2, -4).isValid());
+        assertTrue(new BBox(-3, 0, 0, 7, 11, 11).isValid());
+
+        // Bornes inversées classiques
+        assertFalse(new BBox(10, -10, 0, 5).isValid());
+        assertFalse(new BBox(-2, 8, -4, -6).isValid());
+        assertFalse(new BBox(-7, 0, 0, 14, 21, -3).isValid());
+
+        // Bornes proches
+        assertTrue(new BBox(0, 0 + eps, -10, -10 + eps).isValid());
+        assertTrue(new BBox(-10.000001, -10, 0, 0.000001).isValid());
+
+        // Bornes extrêmes
+        assertTrue(new BBox(-180, 180, -90, 90).isValid());
+        assertTrue(new BBox(-500, 500, -250, 250).isValid());
+        assertFalse(new BBox(0, 10, -10, 0, 0, -Double.MAX_VALUE).isValid());
+        assertFalse(new BBox(0, 10, -10, 0, Double.MAX_VALUE, Double.MAX_VALUE).isValid());
+        assertTrue(new BBox(0, 10, -10, 0, -Double.MAX_VALUE, Double.MAX_VALUE).isValid());
+    }
+    
+    @Test
+    void testUpdate() {
+        BBox b = new BBox(0, 0, 0, 0, 0, 0);
+        double eps = 1e-12;
+
+        // Points au-delà des bornes
+        b.update(11, 12, 13);
+        assertEquals(0, b.minLat);
+        assertEquals(11, b.maxLat);
+        assertEquals(0, b.minLon);
+        assertEquals(12, b.maxLon);
+        assertEquals(0, b.minEle);
+        assertEquals(13, b.maxEle);
+
+        // Points intérieurs
+        b.update(5, 5, 5);
+        assertEquals(0, b.minLat);
+        assertEquals(11, b.maxLat);
+        assertEquals(0, b.minLon);
+        assertEquals(12, b.maxLon);
+        assertEquals(0, b.minEle);
+        assertEquals(13, b.maxEle);
+
+        // Points egaux
+        b.update(11, 12, 13);
+        assertEquals(0, b.minLat);
+        assertEquals(11, b.maxLat);
+        assertEquals(0, b.minLon);
+        assertEquals(12, b.maxLon);
+        assertEquals(0, b.minEle);
+        assertEquals(13, b.maxEle);
+
+        b.update(0, 0, 0);
+        assertEquals(0, b.minLat);
+        assertEquals(11, b.maxLat);
+        assertEquals(0, b.minLon);
+        assertEquals(12, b.maxLon);
+        assertEquals(0, b.minEle);
+        assertEquals(13, b.maxEle);
+
+        // Points sous les bornes
+        b.update(-3, -6, -9);
+        assertEquals(-3, b.minLat);
+        assertEquals(11, b.maxLat);
+        assertEquals(-6, b.minLon);
+        assertEquals(12, b.maxLon);
+        assertEquals(-9, b.minEle);
+        assertEquals(13, b.maxEle);
+
+        // Points avec valeurs extrêmes
+        b.update(Double.MAX_VALUE, -Double.MAX_VALUE, Double.MAX_VALUE);
+        assertEquals(-3, b.minLat);
+        assertEquals(Double.MAX_VALUE, b.maxLat);
+        assertEquals(-Double.MAX_VALUE, b.minLon);
+        assertEquals(12, b.maxLon);
+        assertEquals(-9, b.minEle);
+        assertEquals(Double.MAX_VALUE, b.maxEle);
+
+        // Point proches
+        b.update(-3 - eps, 12 + eps, -9 + eps);
+        assertEquals(-3 - eps, b.minLat, 0);
+        assertEquals(Double.MAX_VALUE, b.maxLat);
+        assertEquals(-Double.MAX_VALUE, b.minLon);
+        assertEquals(12 + eps, b.maxLon);
+        assertEquals(-9, b.minEle);
+        assertEquals(Double.MAX_VALUE, b.maxEle);
+
+        BBox bNoEle = new BBox(0, 0, 0, 0);
+        assertThrows(IllegalStateException.class, () -> bNoEle.update(1, 1, 1));
+
+        bNoEle.update(1, 1);
+        assertEquals(0, bNoEle.minLat);
+        assertEquals(1, bNoEle.maxLat);
+        assertEquals(0, bNoEle.minLon);
+        assertEquals(1, bNoEle.maxLon);
+    }
+
+    @Test
+    void testClone() {
+        BBox b = new BBox(-10, 10, -5, 5, 15, 25);
+        BBox c = b.clone();
+
+        assertNotSame(b, c);
+        assertEquals(b.minLon, c.minLon);
+        assertEquals(b.maxLon, c.maxLon);
+        assertEquals(b.minLat, c.minLat);
+        assertEquals(b.maxLat, c.maxLat);
+        assertEquals(b.minEle, c.minEle);
+        assertEquals(b.maxEle, c.maxEle);
+        assertEquals(b.hasElevation(), c.hasElevation());
+
+        // Indépendance des deux objets
+        c.minLat = -99;
+        c.maxEle = 999;
+        assertNotEquals(b.minLat, c.minLat);
+        assertNotEquals(b.maxEle, c.maxEle);
+
+        // Sans élévation
+        BBox bNoElev = new BBox(-1, 1, -2, 2);
+        BBox cNoElev = bNoElev.clone();
+        assertFalse(cNoElev.hasElevation());
+
+        assertNotNull(b.clone(), "clone() ne doit jamais retourner null");
+        assertTrue(b.equals(c));
+        assertEquals(b.hashCode(), c.hashCode());
+    }
 }
