@@ -17,6 +17,7 @@
  */
 package com.graphhopper.util;
 
+import com.graphhopper.util.shapes.BBox;
 import com.graphhopper.util.shapes.GHPoint;
 import org.junit.jupiter.api.Test;
 
@@ -331,4 +332,154 @@ public class DistanceCalcEarthTest {
         assertEquals(67.5, point.getLat(), 1e-1);
         assertEquals(90, point.getLon(), 1e-5);
     }
+
+    @Test
+    void testCreateBBoxInvalidAndExtremeDistance() {
+        DistanceCalcEarth calc = new DistanceCalcEarth();
+
+        // Cas invalides : rayon nul ou négatif
+        assertThrows(IllegalArgumentException.class, () -> calc.createBBox(0, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> calc.createBBox(45, 90, -100));
+
+        // Cas limite : distance extrêmement grande (~demi-circonférence terrestre)
+        double largeDist = 20_000_000;
+        BBox bbox = calc.createBBox(0, 0, largeDist);
+
+        // Pas d'inversion : min < max
+        assertTrue(bbox.minLat < bbox.maxLat, "minLat doit être inférieur à maxLat");
+        assertTrue(bbox.minLon < bbox.maxLon, "minLon doit être inférieur à maxLon");
+
+        // Pas de valeurs infinies ou NaN
+        assertFalse(Double.isNaN(bbox.minLat) || Double.isNaN(bbox.maxLat));
+        assertFalse(Double.isInfinite(bbox.minLat) || Double.isInfinite(bbox.maxLat));
+
+        // Vérifie cohérence : plus la distance est grande, plus la bbox est large
+        BBox smallBox = calc.createBBox(0, 0, 1000);
+        double latRangeSmall = smallBox.maxLat - smallBox.minLat;
+        double latRangeLarge = bbox.maxLat - bbox.minLat;
+        assertTrue(latRangeLarge > latRangeSmall, "Une plus grande distance doit donner une boîte plus large");
+
+        // Test polaire : valeurs extrêmes mais cohérentes
+        BBox polarBox = calc.createBBox(89.9999, 0, 10000);
+        assertTrue(polarBox.maxLat >= polarBox.minLat);
+        assertFalse(Double.isNaN(polarBox.maxLon));
+
+        // Cas minuscule : distance d'un mètre
+        BBox tinyBox = calc.createBBox(0, 0, 1);
+        assertTrue(tinyBox.maxLat > tinyBox.minLat);
+        assertTrue(tinyBox.maxLon > tinyBox.minLon);
+    }
+
+    @Test
+    void testIsDateLineCrossOverBoundaryCases() {
+        DistanceCalcEarth calc = new DistanceCalcEarth();
+        // Cas typique : franchissement de 180°
+        assertTrue(calc.isDateLineCrossOver(179.9, -179.9));
+        // Cas limite : exactement 180°
+        assertFalse(calc.isDateLineCrossOver(0, 180));
+        // Cas sans franchissement
+        assertFalse(calc.isDateLineCrossOver(10, 20));
+    }
+    
+    @Test
+    void testProjectCoordinateCardinalDirections() {
+        DistanceCalcEarth calc = new DistanceCalcEarth();
+
+        // Point de départ à l'équateur
+        double lat0 = 0.0;
+        double lon0 = 0.0;
+        double dist = 1000.0; // 1 km
+
+        // Nord : latitude augmente
+        GHPoint north = calc.projectCoordinate(lat0, lon0, dist, 0);
+        assertTrue(north.lat > lat0, "Vers le nord, la latitude doit augmenter");
+        assertEquals(lon0, north.lon, 1e-6, "Longitude doit rester quasi constante vers le nord");
+
+        // Sud : latitude diminue
+        GHPoint south = calc.projectCoordinate(lat0, lon0, dist, 180);
+        assertTrue(south.lat < lat0, "Vers le sud, la latitude doit diminuer");
+        assertEquals(lon0, south.lon, 1e-6, "Longitude doit rester quasi constante vers le sud");
+
+        // Est : longitude augmente
+        GHPoint east = calc.projectCoordinate(lat0, lon0, dist, 90);
+        assertTrue(east.lon > lon0, "Vers l'est, la longitude doit augmenter");
+        assertEquals(lat0, east.lat, 1e-4, "Latitude doit rester quasi constante vers l'est");
+
+        // Ouest : longitude diminue
+        GHPoint west = calc.projectCoordinate(lat0, lon0, dist, 270);
+        assertTrue(west.lon < lon0, "Vers l'ouest, la longitude doit diminuer");
+        assertEquals(lat0, west.lat, 1e-4, "Latitude doit rester quasi constante vers l'ouest");
+
+        // Vérification : distances similaires
+        double dN = calc.calcDist(lat0, lon0, north.lat, north.lon);
+        double dS = calc.calcDist(lat0, lon0, south.lat, south.lon);
+        double dE = calc.calcDist(lat0, lon0, east.lat, east.lon);
+        double dW = calc.calcDist(lat0, lon0, west.lat, west.lon);
+        assertAll(
+                        () -> assertEquals(dist, dN, 2.0),
+                        () -> assertEquals(dist, dS, 2.0),
+                        () -> assertEquals(dist, dE, 2.0),
+                        () -> assertEquals(dist, dW, 2.0));
+    }
+
+    @Test 
+    void testCalcDistancePointList() {
+        // Note: les données sont prises de testDistance()
+        DistanceCalcEarth dce = new DistanceCalcEarth();
+        PointList pl = new PointList();
+        float lat = 24.235f;
+        float lon = 47.234f;
+        double res = 15051;
+
+        pl.add(lat, lon);
+        pl.add(lat - 0.1, lon + 0.1);
+        assertEquals(res, dce.calcDistance(pl), 1);
+        assertEquals(dce.calcNormalizedDist(res), dce.calcNormalizedDist(lat, lon, lat - 0.1, lon + 0.1), 1);
+        assertEquals(res, DistanceCalcEarth.calcDistance(pl, false), 1);
+
+        pl.setNode(1, lat + 0.1, lon - 0.1);
+        res = 15046;
+        assertEquals(res, dce.calcDistance(pl), 1);
+        assertEquals(dce.calcNormalizedDist(res), dce.calcNormalizedDist(lat, lon, lat + 0.1, lon - 0.1), 1);
+        assertEquals(res, DistanceCalcEarth.calcDistance(pl, false), 1);
+
+        res = 150748;
+        pl.setNode(1, lat - 1, lon + 1);
+        assertEquals(res, dce.calcDistance(pl), 1);
+        assertEquals(dce.calcNormalizedDist(res), dce.calcNormalizedDist(lat, lon, lat - 1, lon + 1), 1);
+        assertEquals(res, DistanceCalcEarth.calcDistance(pl, false), 1);
+
+        res = 150211;
+        pl.setNode(1, lat + 1, lon - 1);
+        assertEquals(res, dc.calcDistance(pl), 1);
+        assertEquals(dce.calcNormalizedDist(res), dce.calcNormalizedDist(lat, lon, lat + 1, lon - 1), 1);
+        assertEquals(res, DistanceCalcEarth.calcDistance(pl, false), 1);
+
+        res = 1527919;
+        pl.setNode(1, lat - 10, lon + 10);
+        assertEquals(res, dce.calcDistance(pl), 1);
+        assertEquals(dce.calcNormalizedDist(res), dce.calcNormalizedDist(lat, lon, lat - 10, lon + 10), 1);
+        assertEquals(res, DistanceCalcEarth.calcDistance(pl, false), 1);
+
+        res = 1474016;
+        pl.setNode(1, lat + 10, lon - 10);
+        assertEquals(res, dce.calcDistance(pl), 1);
+        assertEquals(dce.calcNormalizedDist(res), dce.calcNormalizedDist(lat, lon, lat + 10, lon - 10), 1);
+        assertEquals(res, DistanceCalcEarth.calcDistance(pl, false), 1);
+
+        res = 1013735.28;
+        pl.setNode(1, lat, lon - 10);
+        assertEquals(res, dce.calcDistance(pl), 1);
+        assertEquals(dce.calcNormalizedDist(res), dce.calcNormalizedDist(lat, lon, lat, lon - 10), 1);
+        assertEquals(res, DistanceCalcEarth.calcDistance(pl, false), 1);
+
+        // // if we have a big distance for latitude only then PlaneProjection is exact!!
+        res = 1111949.3;
+        pl.setNode(1, lat + 10, lon);
+        assertEquals(res, dce.calcDistance(pl), 1);
+        assertEquals(dce.calcNormalizedDist(res), dce.calcNormalizedDist(lat, lon, lat + 10, lon), 1);
+        assertEquals(res, DistanceCalcEarth.calcDistance(pl, false), 1);
+    
+    }
+    
 }
