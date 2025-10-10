@@ -381,45 +381,82 @@ public class DistanceCalcEarthTest {
         assertFalse(calc.isDateLineCrossOver(10, 20));
     }
     
+    // Inspiré de ChatGPT
+    // Source de double vérification des latitudes/longitudes: https://www.omnicalculator.com/other/latitude-longitude-distance 
     @Test
     void testProjectCoordinateCardinalDirections() {
         DistanceCalcEarth calc = new DistanceCalcEarth();
+        double changedDelta = 1e-3;
+        double sameDelta = 1e-6;
+        double distKm = 1000.0; // 1 km
+        double distDegrees = .009;
+
+        // POINT DE DÉPART : ÉQUATEUR
 
         // Point de départ à l'équateur
         double lat0 = 0.0;
         double lon0 = 0.0;
-        double dist = 1000.0; // 1 km
 
         // Nord : latitude augmente
-        GHPoint north = calc.projectCoordinate(lat0, lon0, dist, 0);
-        assertTrue(north.lat > lat0, "Vers le nord, la latitude doit augmenter");
-        assertEquals(lon0, north.lon, 1e-6, "Longitude doit rester quasi constante vers le nord");
+        GHPoint north = calc.projectCoordinate(lat0, lon0, distKm, 0);
+        assertEquals(distDegrees, north.lat, changedDelta);
+        assertEquals(lon0, north.lon, sameDelta, "Longitude doit rester quasi constante vers le nord");
 
         // Sud : latitude diminue
-        GHPoint south = calc.projectCoordinate(lat0, lon0, dist, 180);
-        assertTrue(south.lat < lat0, "Vers le sud, la latitude doit diminuer");
-        assertEquals(lon0, south.lon, 1e-6, "Longitude doit rester quasi constante vers le sud");
+        GHPoint south = calc.projectCoordinate(lat0, lon0, distKm, 180);
+        assertEquals(-distDegrees, south.lat, changedDelta);
+        assertEquals(lon0, south.lon, sameDelta, "Longitude doit rester quasi constante vers le sud");
 
         // Est : longitude augmente
-        GHPoint east = calc.projectCoordinate(lat0, lon0, dist, 90);
-        assertTrue(east.lon > lon0, "Vers l'est, la longitude doit augmenter");
-        assertEquals(lat0, east.lat, 1e-4, "Latitude doit rester quasi constante vers l'est");
+        GHPoint east = calc.projectCoordinate(lat0, lon0, distKm, 90);
+        assertEquals(distDegrees, east.lon, changedDelta);
+        assertEquals(lat0, east.lat, sameDelta, "Latitude doit rester quasi constante vers l'est");
 
         // Ouest : longitude diminue
-        GHPoint west = calc.projectCoordinate(lat0, lon0, dist, 270);
-        assertTrue(west.lon < lon0, "Vers l'ouest, la longitude doit diminuer");
-        assertEquals(lat0, west.lat, 1e-4, "Latitude doit rester quasi constante vers l'ouest");
+        GHPoint west = calc.projectCoordinate(lat0, lon0, distKm, 270);
+        assertEquals(-distDegrees, west.lon, changedDelta);
+        assertEquals(lat0, west.lat, sameDelta, "Latitude doit rester quasi constante vers l'ouest");
 
-        // Vérification : distances similaires
-        double dN = calc.calcDist(lat0, lon0, north.lat, north.lon);
-        double dS = calc.calcDist(lat0, lon0, south.lat, south.lon);
-        double dE = calc.calcDist(lat0, lon0, east.lat, east.lon);
-        double dW = calc.calcDist(lat0, lon0, west.lat, west.lon);
-        assertAll(
-                        () -> assertEquals(dist, dN, 2.0),
-                        () -> assertEquals(dist, dS, 2.0),
-                        () -> assertEquals(dist, dE, 2.0),
-                        () -> assertEquals(dist, dW, 2.0));
+        // Angle = 360
+        GHPoint north2 = calc.projectCoordinate(lat0, lon0, distKm, 360);
+        assertEquals(distDegrees, north2.lat, changedDelta);
+        assertEquals(lon0, north2.lon, sameDelta, "Latitude doit rester quasi constante vers l'ouest");
+
+        // Angle > 360
+        GHPoint east2 = calc.projectCoordinate(lat0, lon0, distKm, 450);
+        assertEquals(distDegrees, east2.lon, changedDelta);
+        assertEquals(lat0, east2.lat, sameDelta, "Latitude doit rester quasi constante vers l'est");
+
+        // Angle < 0
+        GHPoint west2 = calc.projectCoordinate(lat0, lon0, distKm, -90);
+        assertEquals(-distDegrees, west2.lon, changedDelta);
+        assertEquals(lat0, west2.lat, sameDelta, "Latitude doit rester quasi constante vers l'ouest");
+
+        // Angle non carré
+        GHPoint northEast = calc.projectCoordinate(lat0, lon0, distKm, 45);
+        assertEquals(.006389, northEast.lat, changedDelta);
+        assertEquals(.006389, northEast.lon, changedDelta);
+
+        // POINT DE DÉPART : PÔLE NORD
+
+        // Point de départ au Nord
+        lat0 = 90.0;
+        lon0 = 0.0;
+        distKm = 1000.0; // 1 km, pareil
+
+        // Point d'arrivée: nombre de degrés pour mouvement d'1km dans un angle droit
+        distDegrees = .009; // pareil
+
+        // 90 degrés : latitude diminue, longitude d'arrivée est opposée
+        south = calc.projectCoordinate(lat0, lon0, distKm, 90);
+        assertEquals(90 - distDegrees, south.lat, changedDelta);
+        assertEquals(lon0 + 90, south.lon, sameDelta, "Le pôle nord est franchi, la longitude est opposée");
+
+        // 0 degrés : latitude diminue
+        south = calc.projectCoordinate(lat0, lon0, distKm, 0);
+        assertEquals(90 - distDegrees, south.lat, changedDelta);
+        assertEquals(lon0, south.lon, sameDelta, "Le pôle nord n'est pas franchi, la longitude est la même");
+
     }
 
     @Test 
