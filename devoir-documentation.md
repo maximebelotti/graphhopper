@@ -1,6 +1,33 @@
-## **2. Classes testées**
+# Tâche #2 - IFT3913
 
-## Classe1: `BBoxTest.java`
+### **Équipe**
+**Emmanuel Chicoine, 20248681**
+**Maxime Belotti, 20251262**
+
+**Github:** https://github.com/maximebelotti/graphhopper
+
+
+## **Classes testées**
+Les tests réalisés suivent une approche globale, consistant à regrouper plusieurs scénarios dans une même cas de test afin de valider l’ensemble du comportement d’une methode. Ce choix s’inspire directement de la structure des tests préexistants du projet, qui ne distinguaient pas les cas isolés, et s’explique également par l’absence de consignes précises quant au découpage attendu.
+La documentation produite repose donc sur cette logique: chaque test est conçu pour évaluer la méthode dans son ensemble, à travers tout ses aspects.
+PS : Nous avons préféré prendre le risque de faire des tests trop grands plutôt que pas assez complets.
+
+## Classe 1: `BBoxTest.java`
+La classe BBox a été choisie en raison de son rôle central dans l’architecture de GraphHopper. Elle intervient dans la quasi-totalité des calculs spatiaux, que ce soit pour définir les zones de recherche, les intersections de chemins ou les limites géographiques des cartes. Malgré cette importance, plusieurs de ses méthodes fondamentales, telles que isValid(), update(), clone() ou encore calculateIntersection(), n’étaient pas couvertes par des tests unitaires ou pas sufisament.
+Sa structure relativement simple, en fait une classe à la fois critique et facile à tester. En la ciblant, il est possible d’obtenir un gain significatif en couverture et en robustesse globale du code.  
+
+Afin d’évaluer l’impact concret de l’ajout des nouveaux tests, une comparaison a été effectuée avant et après leur intégration. Les résultats mettent en évidence une amélioration significative de la couverture et de la détection des mutations au sein de la classe BBoxTest.  
+
+Avant l'ajout des tests:
+- Line Coverage: 45% (56/132)
+- Mutation Coverage: 25% (47/187)
+- Test Strength: 67% (47/70)
+
+Après l’ajout des tests:
+- Line Coverage: 71% (94/132)
+- Mutation Coverage: 51% (95/187)
+- Test Strength: 69% (95/137)
+
 ### Test1: `testIsValid()`
 
 **🧭 Intention**  
@@ -59,7 +86,7 @@ Les bornes ne doivent s’élargir que lorsqu’un point dépasse les limites ex
 Toute tentative de mise à jour d’une boîte sans élévation avec un point 3D doit provoquer une exception.  
 L’ajout de points proches ou extrêmes doit préserver la validité globale de la boîte.
 
-**📊 Score de mutation**
+**📊 Score de mutation**  
 Mutations liées à `testUpdate()` : 21
 - Tuées: 15
 - Surivante: 6
@@ -78,12 +105,12 @@ Les mutants survivants, limités aux changements de seuils numériques, représe
 
 
 ### Test 3: `testEquals()`
-**🧭 Intention** 
+**🧭 Intention**  
 Le test `testEquals()` vérifie la conformité de la méthode `equals()` avec les propriétés fondamentales de l’égalité (réflexivité, symétrie et transitivité), tout en évaluant sa robustesse face à certaines erreurs et valeurs extrêmes.
 Cette méthode est tres utile pour GraphHopper, car elle permet de comparer deux `BBox` et de déterminer si elles représentent la même zone géographique.
 De plus, aucun test ne validait auparavant la cohérence de cette logique d’égalité, qui repose sur la comparaison approchée des coordonnées via `NumHelper.equalsEps()`.
 
-**🧩 Motivation des données utiliseées** 
+**🧩 Motivation des données utiliseées**  
 Les valeurs sélectionnées couvrent les scénarios nécessaires à la validation de la méthode:
 - Des bounding box identiques, pour tester la réflexivité, la symétrie et la transitivité de la relation d’égalité.
 - Des `BBox` différentes sur la latitude ou la longitude, pour vérifier que la méthode puisse faire la différance.
@@ -92,12 +119,12 @@ Les valeurs sélectionnées couvrent les scénarios nécessaires à la validatio
 - Des `BBox` au-delà de cette tolérance (`1e-3`), pour confirmer la tolérance numérique de `equalsEps()`.
 - Enfin, des cas d’objets non comparables (`null` ou `String`), pour vérifier la robustesse de la méthode face aux entrées invalides.
 
-**🔮 Oracle**
+**🔮 Oracle**  
 Deux boîtes sont considérées égales (`true`) si leurs coordonnées minimales et maximales de latitude et de longitude sont identiques ou très proches selon la tolérance définie par `equalsEps()`.
 Toute différence significative de coordonnées doit produire `false`. 
 La comparaison avec un objet `null` doit toujours retourner `false`, et celle avec un objet d’un autre type doit lever une exception (`ClassCastException`).
 
-**📊 Score de mutation**
+**📊 Score de mutation**  
 Mutations liées à `testUpdate()` : 13
 - Tuées: 11
 - Surivante: 2
@@ -115,11 +142,11 @@ Les mutants survivants de type `replaced boolean return` proviennent d’un reto
 
 
 ### Test 4: `testClone()`
-**🧭 Intention** 
+**🧭 Intention**  
 Le test `testClone()` vérifie la méthode `clone()` de la classe `BBox`, qui doit produire une copie exacte et indépendante d’un objet existant.  
 Cette méthode a été choisie car elle n’était pas encore couverte par les tests existants, malgré sa simplicité. Tester cette méthode permet donc, à faible coût, d’éviter de futurs problèmes importants de corruption de données ou de comportement inattendu dans GraphHopper.
 
-**🧩 Motivation des données utiliseées** 
+**🧩 Motivation des données utiliseées**  
 Les valeurs sélectionnées couvrent les deux configurations principales de `BBox` : 
 - Une boîte avec élévation, pour vérifier que toutes les bornes (`minLat`, `maxLat`, `minLon`, `maxLon`, `minEle`, `maxEle`) et l’état du drapeau `hasElevation()` sont copiés correctement.  
 - Une boîte sans élévation, afin de s’assurer que le clonage conserve correctement l’absence de dimension verticale. 
@@ -130,7 +157,7 @@ Les valeurs sélectionnées couvrent les deux configurations principales de `BBo
 - Les modifications appliquées au clone ne doivent pas affecter l’original.
 - Le champ `hasElevation()` doit être identique au modèle copié.
 
-**📊 Score de mutation**
+**📊 Score de mutation**  
 Mutations liées à `testCreateBBox()` : 3
 - Tuées: 2
 - Surivante: 1
@@ -163,7 +190,7 @@ Les valeurs sont générées de manière pseudo-aléatoire pour couvrir un large
 - Toutes les coordonnées de l’intersection doivent être finies et non `NaN`.  
 - Si aucune intersection n’existe (`intersection == null`), les deux boîtes doivent être*disjointes, ce que la méthode `intersects()` doit confirmer.  
 
-**📊 Score de mutation**
+**📊 Score de mutation**  
 Mutations liées à `testCalculateIntersectionConsistencyWithFaker()` : 14
 - Tuées: 5
 - Surivante: 9
@@ -181,6 +208,21 @@ Les mutants survivants correspondent à des scénarios limites de contact ou d�
 
 
 ## Classe2: `DistanceCalcEarth`
+La classe DistanceCalcEarth a été sélectionnée en raison de son importance fondamentale dans le calcul des distances et des zones géographiques au sein de GraphHopper. Elle constitue un élément central des opérations de routage, puisque la précision de ses calculs influe directement sur la qualité des itinéraires générés et des estimations de distance affichées à l’utilisateur.  
+Bien que cette classe disposât déjà d’un certain nombre de tests préexistants, sa taille importante et la présence de plusieurs méthodes non vérifiées justifiaient un approfondissement de la couverture. Certaines portions critiques comme internCalcDistance() ou createBBox(), restaient en effet peu ou pas testées malgré leur rôle déterminant dans la cohérence des résultats spatiaux.  
+
+Afin d’évaluer l’impact concret de l’ajout des nouveaux tests, une comparaison a été effectuée avant et après leur intégration. Les résultats mettent en évidence une amélioration significative de la couverture et de la détection des mutations au sein de la classe DistanceCalcEarth, confirmant la pertinence des scénarios ajoutés:
+
+Avant l'ajout des tests:
+- Line Coverage: 74% (110/149)
+- Mutation Coverage: 66% (162/246)
+- Test Strength: 86% (162/189)
+
+Après l’ajout des tests :
+- Line Coverage: 95% (142/149)
+- Mutation Coverage: 81% (199/246)
+- Test Strength: 87% (199/229)
+
 ### Test 5: `testCreateBBox()`
 **🧭 Intention** 
 Le test `testCreateBBox()` vérifie la robustesse et la cohérence de la méthode `createBBox()`, qui doit généré des bounding box valides nuériquement, symétriques et monotones, tout en rejetant les entrées incohérentes.  
@@ -252,16 +294,44 @@ Les mutations observées se répartissent en quatre catégories principales:
 - Changed conditional boundary: modification des opérateurs de comparaison, tuée par les scénarios de distances cumulées.
 - Replaced double addition with substraction: inversion d’opérations arithmétiques, détectée par les différences entre les distances 2D et 3D et par la vérification de la relation de Pythagore.  
 
-
-
-Les mutations observées se répartissent en cinq catégories:
-- Changed conditional: modification des opérateurs de comparaison, détectée par les cas limites avec des rayons très petits et des latitudes proches des pôles. 
-- Remove conditional: suppression de vérifications sur la validité des entrées, tuées par les tests d’entrées invalides.
-- Replace double addition with subtraction: inversion des opérations d’addition et de soustraction dans les calculs de coordonnées, détectée par les tests de symétrie et de cohérence géométrique.  
-- Replaced return value with null: mutation forçant à retourner `null`, tuée par les assertions de validité (`assertTrue(b.minLat < b.maxLat)`).
-- Replaced double division with multiplication: modifie certains calculs trigonométriques internes, détectée en partie grace aux coordonnées proches des pôles.
-
 La majorité des mutants ont été éliminés, confirmant la couverture complète de la logique de calcul cumulatif et la cohérence entre les distances 2D et 3D.  
 Le mutant survivant correspond à une suppression conditionnelle sur une égalité logique non exercée, car toute les test incluent un `PointList` en 3D. Ce mutant est ainsi équivalent, car il n’impacte pas la logique fonctionnelle. Mais un cas avec `PointList` purement 2D est envisageable.
 
+
+### Test 7: `testProjectCoordinateCardinalDirections()`
+**🧭 Intention**  
+Le test `testProjectCoordinateCardinalDirections()` vérifie indirectement la méthode `projectCoordinate(double, double, double, double)`, qui prend en paramètres une latitude et une longitude de départ, une distance et une direction et qui retourne le point d'arrivé sous forme de GHPoint. Elle est utilisée par la méthode RoundTripRouting.generateValidPoint(...), qui crée un route quasi circulaire.
+
+**🧩 Motivation des données utilisées**  
+Les données testées couvrent trois ensembles de scénarios: les simples; ceux ayant un point de départ simple mais une direction limite; et ceux ayant un point de départ limite mais une direction simple.
+- Les scénarios simples ont comme point de départ la coordonnée (0°, 0°), c'est à dire le point de croisement de l'équateur et du Méridien de Greenwich. Les directions utilisées sont les quatres points cardinaux: 0°, 90°, 180° et 270°. 
+- Les scénarios ayant un point de départ de simple mais des directions limites commencent à (0°, 0°) comme le premier groupe, et leur directions sont hors de l'intervalle [0°, 360°) attendu. Ces directions sont: -90°, 360° et 450°. 
+- Les scénarios au point de départ limite partent du pôle nord (90°, 0°) et testent un direction simple de 5°. 
+
+**🔮 Oracle**  
+- La distance parcourue étant petite, les scénarios partant de l'équateurs ne franchissent pas les pôles. Dans le cas des angles « verticaux », 0° et 90°, la longitude ne change pas, mais la latitude change exactement de la distance totale parcourue. Les mêmes résultats sont attendus quand on part de l'équateur et qu'on utilise l'angle limite vertical de 360°.
+- Pour la même raison, dans les cas où on part de l'équateur et qu'on fait un mouvement « horizontal », de 90° ou de 270°, on ne fait pas un tour complet de la Terre et la longitude d'arrivée diffère de la longitude de départ d'excatement la distance parcourue. La latitude, elle, ne change pas. Les mêmes résultats sont attendus quand on utilise les angles limites horizontaux de -180° et de 450°.
+- En partant du pôle nord (90°, 5°), la longitude d'arrivée correspond à la somme de la longitude de départ et de la direction empruntée, tandisque la latitude diminue toujours d'exactement la distance parcourue.
+
+**📊 Score de mutation**  
+Mutations liées à `testProjectCoordinateCardinalDirections()`: 14
+- Tuées: 13
+- Survivantes: 1
+- Non couverte: 0  
+
+**Test strength** = 13/14 ≈ 93%; **Mutation coverage** = 13/14 ≈ 93%
+
+**🔬 Explication des mutations**  
+Les mutations observées dans projectCoordinate() se répartissent en six catégories principales :
+
+- Replaced double division with multiplication : certaines divisions dans le calcul de l’angle ou des coordonnées projetées ont été remplacées par des multiplications. Ces mutants ont été tués par les tests vérifiant la latitude et la longitude d’arrivée sur les directions cardinales et diagonales.
+- Replaced double addition with subtraction : les additions dans le calcul de la longitude projetée ont été inversées en soustraction. Ces mutants ont été détectés par les assertions sur les coordonnées finales, notamment dans les cas de directions horizontales et diagonales.
+- Replaced double multiplication with division : les multiplications dans les formules trigonométriques ont été remplacées par des divisions. La plupart de ces mutants ont été tués par les vérifications de distances exactes sur les directions simples et diagonales. Un mutant a survécu, correspondant à une multiplication dans le calcul de longitude qui n’a pas impacté les tests actuels de directions cardinaux simples.
+- Replaced double subtraction with addition : inversion des soustractions dans le calcul de longitude, tuée par les tests de directions cardinales.
+- Replaced double modulus with multiplication : la normalisation de longitude a été modifiée, tuée par les assertions de longitude d’arrivée.
+- Replaced return value with null : mutation forçant le retour de null pour projectCoordinate(), tuée par toutes les assertions vérifiant la validité des coordonnées finales.
+
+La majorité des mutants ont été tués, démontrant que testProjectCoordinateCardinalDirections() couvre efficacement la logique de projection des coordonnées pour différentes directions et points de départ.
+
+Le mutant survivant correspond à une modification de multiplication en division dans le calcul de longitude. Il n’a pas été tué car le scénario testé n’exerce pas la combinaison exacte de trigonométries affectées par cette mutation. Ce mutant pourrait nécessiter un test complémentaire pour des angles particuliers ou des distances plus grandes pour être couvert.
 
