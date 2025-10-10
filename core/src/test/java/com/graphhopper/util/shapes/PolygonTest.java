@@ -20,6 +20,8 @@ package com.graphhopper.util.shapes;
 
 import org.junit.jupiter.api.Test;
 
+import com.graphhopper.util.PointList;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -77,12 +79,72 @@ public class PolygonTest {
          * | /\ |
          * |/  \|
          */
-        squareHole = new Polygon(new double[]{1, 1, 2, 1.1, 2}, new double[]{1, 2, 2, 1.5, 1});
+        squareHole = new Polygon(new double[]{1, 1, 2, 1.1, 2}, 
+                                 new double[]{1, 2, 2, 1.5, 1});
 
         assertTrue(squareHole.contains(1.1,1.1));
         assertFalse(squareHole.contains(1.5,1.5));
         assertFalse(squareHole.contains(0.5,1.5));
 
+    }
+
+    @Test
+    void testIntersects() {
+        /*
+         * |----|
+         * |    |
+         * |----|
+         */
+        Polygon squareLeft = new Polygon(new double[]{0,0,20,20}, new double[]{0,20,20,0});
+        /*
+         *    |----|
+         *    |    |
+         *    |----|
+         */
+        PointList squareMid = new PointList();
+        squareMid.add( 0., 10.);
+        squareMid.add( 0., 30.);
+        squareMid.add(20., 30.);
+        squareMid.add(20., 10.);
+        /* This square shares an edge with squareLeft
+         *      |----|
+         *      |    |
+         *      |----|
+         */
+        PointList squareEdge = new PointList();
+        squareEdge.add( 0., 20.);
+        squareEdge.add( 0., 40.);
+        squareEdge.add(20., 40.);
+        squareEdge.add(20., 20.);
+        /* This square share a corner with squareLeft
+         *
+         * 
+         * 
+         *      |----|
+         *      |    |
+         *      |----|
+         */
+        PointList squareCorner = new PointList();
+        squareCorner.add( 0., 20.);
+        squareCorner.add( 0., 40.);
+        squareCorner.add(-20., 40.);
+        squareCorner.add(-20., 20.);
+        /* This square is completely to the right of squareLeft
+         *        |----|
+         *        |    |
+         *        |----|
+         */
+        PointList squareDistinct = new PointList();
+        squareDistinct.add( 0., 30.);
+        squareDistinct.add( 0., 50.);
+        squareDistinct.add(20., 50.);
+        squareDistinct.add(20., 30.);
+
+        assertTrue(squareLeft.intersects(squareMid.makeImmutable()));
+        assertTrue(squareLeft.intersects(squareEdge.makeImmutable()));
+        assertTrue(squareLeft.intersects(squareCorner.makeImmutable()));
+        assertFalse(squareLeft.intersects(squareDistinct.makeImmutable()));
+  
     }
 
 }
