@@ -39,7 +39,9 @@ jobs:
 
       - name: Executer tests de mutation
         if: matrix.java-version == '21'
-        run: mvn org.pitest:pitest-maven:mutationCoverage
+        run:  |
+          cd core
+          mvn -B org.pitest:pitest-maven:mutationCoverage
 
       - name: Extraire le score de mutation
         if: matrix.java-version == '21'
