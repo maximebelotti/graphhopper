@@ -57,8 +57,10 @@ jobs:
             exit 1
           fi
 
-          SCORE=$(grep -i "Mutation coverage" "$REPORT_FILE" \
-            | sed -E 's/.*Mutation coverage[^0-9]*([0-9]+(\.[0-9]+)?).*/\1/')
+          SCORE=$(grep -i "Mutation" "$REPORT_FILE" \
+            | grep "%" \
+            | sed -E 's/.*>([0-9]+\.[0-9]+)%<.*/\1/' \
+            | head -n 1)
 
           if [ -z "$SCORE" ]; then
             echo "Impossible d'extraire le score de mutation depuis le rapport PIT."
