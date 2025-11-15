@@ -50,7 +50,7 @@ jobs:
         if: matrix.java-version == '21'
         id: mutation_score
         run: |
-          REPORT_FILE="target/pit-reports/index.html"
+          REPORT_FILE="core/target/pit-reports/index.html"
 
           if [ ! -f "$REPORT_FILE" ]; then
             echo "Le rapport PIT est introuvable à l'emplacement : $REPORT_FILE"
