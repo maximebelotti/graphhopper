@@ -79,19 +79,13 @@ jobs:
           BASELINE=$(cat "$BASELINE_FILE")
           echo "Score minimal enregistré : $BASELINE"
 
-          python - << 'EOF'
+          EPSILON="0.000001"
+          DECREASED=$(echo "$CURRENT + $EPSILON < $BASELINE" | bc -l)
 
-import sys
-
-baseline = float(sys.argv[1])
-current = float(sys.argv[2])
-
-print(f"Score minimal enregistré : {baseline}")
-print(f"Score de mutation actuel : {current}")
-
-if current + 1e-6 < baseline:
-    print(f"Le score de mutation a baissé : {current} < {baseline}")
-    sys.exit(1)
-else:
-    print("Le score de mutation ne baisse pas.")
-EOF "$BASELINE" "$CURRENT"
+          if [ "$DECREASED" -eq 1 ]; then
+            echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
+            exit 1
+          else
+            echo "Le score de mutation ne baisse pas."
+          fi
+        
