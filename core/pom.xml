@@ -185,10 +185,12 @@
                 </dependencies>
                 <configuration>
                     <targetClasses>
-                    <param>com.graphhopper.*</param>
+                        <param>com.graphhopper.util.shapes.BBox</param>
+                        <param>com.graphhopper.util.DistanceCalcEarth</param>
                     </targetClasses>
                     <targetTests>
-                    <param>com.graphhopper.*</param>
+                           <param>com.graphhopper.util.shapes.BBoxTest</param>
+                            <param>com.graphhopper.util.DistanceCalcEarthTest</param>
                     </targetTests>
                     <mutators>
                     <mutator>STRONGER</mutator>

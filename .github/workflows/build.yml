@@ -37,3 +37,61 @@ jobs:
       - name: Build ${{ matrix.java-version }}
         run: mvn -B clean test
 
+      - name: Executer tests de mutation
+        run: mvn org.pitest:pitest-maven:mutationCoverage
+
+      - name: Extraire le score de mutation
+        id: mutation_score
+        run: |
+          REPORT_FILE="target/pit-reports/index.html"
+
+          if [ ! -f "$REPORT_FILE" ]; then
+            echo "Le rapport PIT est introuvable à l'emplacement : $REPORT_FILE"
+            exit 1
+          fi
+
+          SCORE=$(grep -i "Mutation coverage" "$REPORT_FILE" \
+            | sed -E 's/.*Mutation coverage[^0-9]*([0-9]+(\.[0-9]+)?).*/\1/')
+
+          if [ -z "$SCORE" ]; then
+            echo "Impossible d'extraire le score de mutation depuis le rapport PIT."
+            exit 1
+          fi
+
+          echo "Score de mutation extrait : $SCORE"
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+
+      - name: Comparer la mutation avec le score minimal
+        run: |
+          BASELINE_FILE=".github/mutation-baseline.txt"
+          CURRENT="${{ steps.mutation_score.outputs.score }}"
+
+           echo "Score de mutation actuel : $CURRENT"
+
+          if [ ! -f "$BASELINE_FILE" ]; then
+            echo " Aucun score minimal trouvé. Le score actuel devient le score minimal."
+            mkdir -p "$(dirname "$BASELINE_FILE")"
+            echo "$CURRENT" > "$BASELINE_FILE"
+            echo "Score minimal initialisé à : $CURRENT"
+            exit 0
+          fi
+
+          BASELINE=$(cat "$BASELINE_FILE")
+          echo "Score minimal enregistré : $BASELINE"
+
+          python - << 'EOF'
+
+import sys
+
+baseline = float(sys.argv[1])
+current = float(sys.argv[2])
+
+print(f"Score minimal enregistré : {baseline}")
+print(f"Score de mutation actuel : {current}")
+
+if current + 1e-6 < baseline:
+    print(f"Le score de mutation a baissé : {current} < {baseline}")
+    sys.exit(1)
+else:
+    print("Le score de mutation ne baisse pas.")
+EOF "$BASELINE" "$CURRENT"
