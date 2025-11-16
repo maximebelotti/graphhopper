@@ -6,7 +6,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java-version: [ 24, 25-ea ]
+        java-version: [ 24, 25-ea, 21 ]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -37,3 +37,65 @@ jobs:
       - name: Build ${{ matrix.java-version }}
         run: mvn -B clean test
 
+      - name: Build tout les modules
+        run: mvn -B -DskipTests install
+
+      - name: Executer tests de mutation
+        if: matrix.java-version == '21'
+        run:  |
+          cd core
+          mvn -B org.pitest:pitest-maven:mutationCoverage
+
+      - name: Extraire le score de mutation
+        if: matrix.java-version == '21'
+        id: mutation_score
+        run: |
+          REPORT_FILE="core/target/pit-reports/index.html"
+
+          if [ ! -f "$REPORT_FILE" ]; then
+            echo "Le rapport PIT est introuvable à l'emplacement : $REPORT_FILE"
+            exit 1
+          fi
+
+          SCORE=$(grep -i "Mutation" "$REPORT_FILE" \
+            | grep "%" \
+            | sed -E 's/.*>([0-9]+\.[0-9]+)%<.*/\1/' \
+            | head -n 1)
+
+          if [ -z "$SCORE" ]; then
+            echo "Impossible d'extraire le score de mutation depuis le rapport PIT."
+            exit 1
+          fi
+
+          echo "Score de mutation extrait : $SCORE"
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+
+      - name: Comparer la mutation avec le score minimal
+        if: matrix.java-version == '21'
+        run: |
+          BASELINE_FILE=".github/mutation-baseline.txt"
+          CURRENT="${{ steps.mutation_score.outputs.score }}"
+
+           echo "Score de mutation actuel : $CURRENT"
+
+          if [ ! -f "$BASELINE_FILE" ]; then
+            echo " Aucun score minimal trouvé. Le score actuel devient le score minimal."
+            mkdir -p "$(dirname "$BASELINE_FILE")"
+            echo "$CURRENT" > "$BASELINE_FILE"
+            echo "Score minimal initialisé à : $CURRENT"
+            exit 0
+          fi
+
+          BASELINE=$(cat "$BASELINE_FILE")
+          echo "Score minimal enregistré : $BASELINE"
+
+          EPSILON="0.000001"
+          DECREASED=$(echo "$CURRENT + $EPSILON < $BASELINE" | bc -l)
+
+          if [ "$DECREASED" -eq 1 ]; then
+            echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
+            exit 1
+          else
+            echo "Le score de mutation ne baisse pas."
+          fi
+        

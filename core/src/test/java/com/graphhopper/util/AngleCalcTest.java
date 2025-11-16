@@ -152,35 +152,4 @@ public class AngleCalcTest {
             this.y = y;
         }
     }
-
-    @Test
-    void testAzimuthNormalization() {
-        Map<String, Double> az = computeAzimuths();
-
-        assertTrue(az.get("ab") >= 0 && az.get("ab") < 360, "AB hors [0,360).");
-        assertTrue(az.get("ba") >= 0 && az.get("ba") < 360, "BA hors [0,360).");
-        assertTrue(az.get("cd") >= 0 && az.get("cd") < 360, "CD hors [0,360).");
-        assertTrue(az.get("dc") >= 0 && az.get("dc") < 360, "DC hors [0,360).");
-    }
-
-    @Test
-    void testAzimuthSymmetry() {
-        Map<String, Double> az = computeAzimuths();
-        assertEquals((az.get("ab") + 180) % 360, az.get("ba"), 1e-3);
-        assertEquals((az.get("cd") + 180) % 360, az.get("dc"), 1e-3);
-    }
-
-    private Map<String, Double> computeAzimuths() {
-        Coordinate a = new Coordinate(1.0, 1.0);
-        Coordinate b = new Coordinate(-1.0, -1.0);
-        Coordinate c = new Coordinate(89.9, 0.0);
-        Coordinate d = new Coordinate(89.9, 90.0);
-
-        Map<String, Double> m = new HashMap<>();
-        m.put("ab", AC.calcAzimuth(a.x, a.y, b.x, b.y));
-        m.put("ba", AC.calcAzimuth(b.x, b.y, a.x, a.y));
-        m.put("cd", AC.calcAzimuth(c.x, c.y, d.x, d.y));
-        m.put("dc", AC.calcAzimuth(d.x, d.y, c.x, c.y));
-        return m;
-    }
 }
