@@ -65,7 +65,7 @@ jobs:
             exit 1
           fi
 
-          KILLED=$(grep -c 'detected="true"' "$REPORT_XML" || true)
+          KILLED=$(grep -c 'detected=.true.' "$REPORT_XML" || true)
           SCORE=$(echo "scale=2; 100 * $KILLED / $TOTAL" | bc -l)
 
           echo "Mutants totaux       : $TOTAL"
