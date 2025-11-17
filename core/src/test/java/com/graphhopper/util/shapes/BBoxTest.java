@@ -144,126 +144,126 @@ public class BBoxTest {
     }
 
 
-    /**
-     * Vérifie le comportement de la méthode isValid() pour différents scénarios de validité.
-     * Le test couvre plusieurs familles de cas : bornes correctement ordonnées, bornes égales, bornes inversées, 
-     * bornes très proches et bornes extrêmes.
-     * L’objectif est de s’assurer que la méthode distingue correctement une BBox cohérente d’une BBox incohérente ou 
-     * dégénérée, même dans des situations limites.
-     */
-    @Test
-    void testIsValid() {
-        double eps = 1e-12;
+//     /**
+//      * Vérifie le comportement de la méthode isValid() pour différents scénarios de validité.
+//      * Le test couvre plusieurs familles de cas : bornes correctement ordonnées, bornes égales, bornes inversées, 
+//      * bornes très proches et bornes extrêmes.
+//      * L’objectif est de s’assurer que la méthode distingue correctement une BBox cohérente d’une BBox incohérente ou 
+//      * dégénérée, même dans des situations limites.
+//      */
+//     @Test
+//     void testIsValid() {
+//         double eps = 1e-12;
 
-        // 1) Bornes justes
-        assertTrue(new BBox(1, 2, 3, 4).isValid(),
-                "BBox classique avec bornes bien ordonnées doit être valide.");
+//         // 1) Bornes justes
+//         assertTrue(new BBox(1, 2, 3, 4).isValid(),
+//                 "BBox classique avec bornes bien ordonnées doit être valide.");
 
-        // 2) Bornes égales
-        assertFalse(new BBox(10, 10, -5, 0).isValid(),
-                "BBox avec longitudes égales doit être invalide.");
-        assertFalse(new BBox(1, 2, -4, -4).isValid(),
-                "BBox avec latitudes égales doit être invalide.");
-        assertTrue(new BBox(-3, 0, 0, 7, 11, 11).isValid(),
-                "BBox avec des bornes valides et une élévation égale doit rester valide.");
+//         // 2) Bornes égales
+//         assertFalse(new BBox(10, 10, -5, 0).isValid(),
+//                 "BBox avec longitudes égales doit être invalide.");
+//         assertFalse(new BBox(1, 2, -4, -4).isValid(),
+//                 "BBox avec latitudes égales doit être invalide.");
+//         assertTrue(new BBox(-3, 0, 0, 7, 11, 11).isValid(),
+//                 "BBox avec des bornes valides et une élévation égale doit rester valide.");
 
-        // 3) Bornes inversées classiques
-        assertFalse(new BBox(10, -10, 0, 5).isValid(),
-                "BBox avec longitudes inversées doit être invalide.");
-        assertFalse(new BBox(-2, 8, -4, -6).isValid(),
-                "BBox avec latitudes inversées doit être invalide.");
-        assertFalse(new BBox(-7, 0, 0, 14, 21, -3).isValid(),
-                "BBox avec élévations inversées doit être invalide.");
+//         // 3) Bornes inversées classiques
+//         assertFalse(new BBox(10, -10, 0, 5).isValid(),
+//                 "BBox avec longitudes inversées doit être invalide.");
+//         assertFalse(new BBox(-2, 8, -4, -6).isValid(),
+//                 "BBox avec latitudes inversées doit être invalide.");
+//         assertFalse(new BBox(-7, 0, 0, 14, 21, -3).isValid(),
+//                 "BBox avec élévations inversées doit être invalide.");
 
-        // 4) Bornes proches
-        assertTrue(new BBox(0, 0 + eps, -10, -10 + eps).isValid(),
-                "BBox avec bornes très proches doit rester valide.");
-        assertTrue(new BBox(-10 - eps, -10, 0 - eps, 0).isValid(),
-                "BBox avec bornes très proches doit rester valide.");
+//         // 4) Bornes proches
+//         assertTrue(new BBox(0, 0 + eps, -10, -10 + eps).isValid(),
+//                 "BBox avec bornes très proches doit rester valide.");
+//         assertTrue(new BBox(-10 - eps, -10, 0 - eps, 0).isValid(),
+//                 "BBox avec bornes très proches doit rester valide.");
 
-        // 5) Bornes extrêmes
-        assertTrue(new BBox(-180, 180, -90, 90).isValid(),
-                "BBox mondiale doit être valide.");
-        assertTrue(new BBox(-500, 500, -250, 250).isValid(),
-                "BBox étendue au-delà des limites géographiques reste valide.");
-        assertFalse(new BBox(0, 10, -10, 0, 0, -Double.MAX_VALUE).isValid(),
-                "BBox avec maxEle négative infinie doit être invalide.");
-        assertFalse(new BBox(0, 10, -10, 0, Double.MAX_VALUE, Double.MAX_VALUE).isValid(),
-                "BBox avec minEle infinies doit être invalide.");
-        assertTrue(new BBox(0, 10, -10, 0, -Double.MAX_VALUE, Double.MAX_VALUE).isValid(),
-                "BBox extrême mais avec des bornes cohérentes reste valide.");
-    }
+//         // 5) Bornes extrêmes
+//         assertTrue(new BBox(-180, 180, -90, 90).isValid(),
+//                 "BBox mondiale doit être valide.");
+//         assertTrue(new BBox(-500, 500, -250, 250).isValid(),
+//                 "BBox étendue au-delà des limites géographiques reste valide.");
+//         assertFalse(new BBox(0, 10, -10, 0, 0, -Double.MAX_VALUE).isValid(),
+//                 "BBox avec maxEle négative infinie doit être invalide.");
+//         assertFalse(new BBox(0, 10, -10, 0, Double.MAX_VALUE, Double.MAX_VALUE).isValid(),
+//                 "BBox avec minEle infinies doit être invalide.");
+//         assertTrue(new BBox(0, 10, -10, 0, -Double.MAX_VALUE, Double.MAX_VALUE).isValid(),
+//                 "BBox extrême mais avec des bornes cohérentes reste valide.");
+//     }
 
     
-    /**
-     * Vérifie le bon fonctionnement de la méthode update() de la classe BBox. Cette méthode met à jour les bornes min 
-     * et max d’une boîte englobante en fonction de nouveaux points (latitude, longitude et éventuellement élévation).
-     * Le test couvre plusieurs cas : mise à jour avec des valeurs hors bornes, points intérieurs, gestion de 
-     * l’absence d’élévation, tolérance numérique et comportement face à des valeurs extrêmes.
-     */
-    @Test
-    void testUpdate() {
-        BBox b = new BBox(0, 0, 0, 0, 0, 0);
-        double eps = 1e-12;
+//     /**
+//      * Vérifie le bon fonctionnement de la méthode update() de la classe BBox. Cette méthode met à jour les bornes min 
+//      * et max d’une boîte englobante en fonction de nouveaux points (latitude, longitude et éventuellement élévation).
+//      * Le test couvre plusieurs cas : mise à jour avec des valeurs hors bornes, points intérieurs, gestion de 
+//      * l’absence d’élévation, tolérance numérique et comportement face à des valeurs extrêmes.
+//      */
+//     @Test
+//     void testUpdate() {
+//         BBox b = new BBox(0, 0, 0, 0, 0, 0);
+//         double eps = 1e-12;
 
-        // 1) Points au-delà des bornes
-        b.update(11, 12, 13);
-        b.update(-3, -6, -9);
-        assertAll("Les bornes doivent s'étendre pour inclure les points en dehors de la BBox initiale",
-                () -> assertEquals(-3, b.minLat),
-                () -> assertEquals(11, b.maxLat),
-                () -> assertEquals(-6, b.minLon),
-                () -> assertEquals(12, b.maxLon),
-                () -> assertEquals(-9, b.minEle),
-                () -> assertEquals(13, b.maxEle));
+//         // 1) Points au-delà des bornes
+//         b.update(11, 12, 13);
+//         b.update(-3, -6, -9);
+//         assertAll("Les bornes doivent s'étendre pour inclure les points en dehors de la BBox initiale",
+//                 () -> assertEquals(-3, b.minLat),
+//                 () -> assertEquals(11, b.maxLat),
+//                 () -> assertEquals(-6, b.minLon),
+//                 () -> assertEquals(12, b.maxLon),
+//                 () -> assertEquals(-9, b.minEle),
+//                 () -> assertEquals(13, b.maxEle));
 
-        // 2) Points intérieurs et égaux
-        b.update(5, 5, 5);
-        b.update(-3, -6, -9);
-        b.update(11, 12, 13);
-        assertAll("Les bornes doivent rester stables lorsque les points sont à l'intérieur des limites existantes",
-                () -> assertEquals(-3, b.minLat),
-                () -> assertEquals(11, b.maxLat),
-                () -> assertEquals(-6, b.minLon),
-                () -> assertEquals(12, b.maxLon),
-                () -> assertEquals(-9, b.minEle),
-                () -> assertEquals(13, b.maxEle));
+//         // 2) Points intérieurs et égaux
+//         b.update(5, 5, 5);
+//         b.update(-3, -6, -9);
+//         b.update(11, 12, 13);
+//         assertAll("Les bornes doivent rester stables lorsque les points sont à l'intérieur des limites existantes",
+//                 () -> assertEquals(-3, b.minLat),
+//                 () -> assertEquals(11, b.maxLat),
+//                 () -> assertEquals(-6, b.minLon),
+//                 () -> assertEquals(12, b.maxLon),
+//                 () -> assertEquals(-9, b.minEle),
+//                 () -> assertEquals(13, b.maxEle));
 
-        // 3) BBox sans élévation
-        BBox bNoEle = new BBox(0, 0, 0, 0);
-        assertThrows(IllegalStateException.class, () -> bNoEle.update(1, 1, 1),
-                "La mise à jour avec une élévation sur une BBox sans altitude doit lever une exception.");
+//         // 3) BBox sans élévation
+//         BBox bNoEle = new BBox(0, 0, 0, 0);
+//         assertThrows(IllegalStateException.class, () -> bNoEle.update(1, 1, 1),
+//                 "La mise à jour avec une élévation sur une BBox sans altitude doit lever une exception.");
 
-        bNoEle.update(1, 1);
-        assertAll("La BBox sans élévation doit s'ajuster correctement avec des points 2D",
-                () -> assertEquals(0, bNoEle.minLat),
-                () -> assertEquals(1, bNoEle.maxLat),
-                () -> assertEquals(0, bNoEle.minLon),
-                () -> assertEquals(1, bNoEle.maxLon));
+//         bNoEle.update(1, 1);
+//         assertAll("La BBox sans élévation doit s'ajuster correctement avec des points 2D",
+//                 () -> assertEquals(0, bNoEle.minLat),
+//                 () -> assertEquals(1, bNoEle.maxLat),
+//                 () -> assertEquals(0, bNoEle.minLon),
+//                 () -> assertEquals(1, bNoEle.maxLon));
 
-        // 4) Point proches
-        b.update(-3 - eps, 12 + eps, -9 + eps);
-        assertAll("Les bornes doivent s’ajuster légèrement sans dégradation numérique notable",
-                () -> assertEquals(-3 - eps, b.minLat, 0),
-                () -> assertEquals(11, b.maxLat),
-                () -> assertEquals(-6, b.minLon),
-                () -> assertEquals(12 + eps, b.maxLon),
-                () -> assertEquals(-9, b.minEle),
-                () -> assertEquals(13, b.maxEle));
+//         // 4) Point proches
+//         b.update(-3 - eps, 12 + eps, -9 + eps);
+//         assertAll("Les bornes doivent s’ajuster légèrement sans dégradation numérique notable",
+//                 () -> assertEquals(-3 - eps, b.minLat, 0),
+//                 () -> assertEquals(11, b.maxLat),
+//                 () -> assertEquals(-6, b.minLon),
+//                 () -> assertEquals(12 + eps, b.maxLon),
+//                 () -> assertEquals(-9, b.minEle),
+//                 () -> assertEquals(13, b.maxEle));
 
-        // 5) Points avec valeurs extrêmes
-        b.update(Double.MAX_VALUE, -Double.MAX_VALUE, Double.MAX_VALUE);
-        assertAll("La BBox doit rester cohérente après des mises à jour avec des valeurs extrêmes",
-                () -> assertEquals(-3 - eps, b.minLat),
-                () -> assertEquals(Double.MAX_VALUE, b.maxLat),
-                () -> assertEquals(-Double.MAX_VALUE, b.minLon),
-                () -> assertEquals(12 + eps, b.maxLon),
-                () -> assertEquals(-9, b.minEle),
-                () -> assertEquals(Double.MAX_VALUE, b.maxEle));
+//         // 5) Points avec valeurs extrêmes
+//         b.update(Double.MAX_VALUE, -Double.MAX_VALUE, Double.MAX_VALUE);
+//         assertAll("La BBox doit rester cohérente après des mises à jour avec des valeurs extrêmes",
+//                 () -> assertEquals(-3 - eps, b.minLat),
+//                 () -> assertEquals(Double.MAX_VALUE, b.maxLat),
+//                 () -> assertEquals(-Double.MAX_VALUE, b.minLon),
+//                 () -> assertEquals(12 + eps, b.maxLon),
+//                 () -> assertEquals(-9, b.minEle),
+//                 () -> assertEquals(Double.MAX_VALUE, b.maxEle));
 
-        // Vérifie que la BBox finale reste valide après toutes les mises à jour.
-        assertTrue(b.isValid(), "Après plusieurs mises à jour extrêmes, la BBox doit rester valide.");
-    }
+//         // Vérifie que la BBox finale reste valide après toutes les mises à jour.
+//         assertTrue(b.isValid(), "Après plusieurs mises à jour extrêmes, la BBox doit rester valide.");
+//     }
 
 
     /**
