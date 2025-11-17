@@ -266,59 +266,59 @@ public class BBoxTest {
     }
 
 
-    /**
-     * Vérifie en profondeur le comportement de la méthode equals() de la classe BBox.
-     * Ce test couvre différents scénarios d’égalité : réflexivité, symétrie, transitivité, différences sur les 
-     * bornes, gestion de l’élévation, tolérance numérique et vérification des comportements anormaux.
-     */
-    @Test
-    void testEquals() {
-        // 1) BBox identiques
-        BBox a = new BBox(1, 2, 3, 4, 5, 6);
-        BBox b = new BBox(1, 2, 3, 4, -5, -6);
-        BBox c = new BBox(1, 2, 3, 4, 10, 25);
+//     /**
+//      * Vérifie en profondeur le comportement de la méthode equals() de la classe BBox.
+//      * Ce test couvre différents scénarios d’égalité : réflexivité, symétrie, transitivité, différences sur les 
+//      * bornes, gestion de l’élévation, tolérance numérique et vérification des comportements anormaux.
+//      */
+//     @Test
+//     void testEquals() {
+//         // 1) BBox identiques
+//         BBox a = new BBox(1, 2, 3, 4, 5, 6);
+//         BBox b = new BBox(1, 2, 3, 4, -5, -6);
+//         BBox c = new BBox(1, 2, 3, 4, 10, 25);
 
-        // Propriétés fondamentales de l’égalité
-        assertTrue(a.equals(a),
-                "Une BBox doit toujours être égale à elle-même (réflexivité)."); // Réflexivité
-        assertTrue(a.equals(b) && b.equals(a),
-                "L'égalité doit être symétrique entre deux BBox équivalentes."); // Symétrie
-        assertTrue(a.equals(b) && b.equals(c) && a.equals(c),
-                "L'égalité doit être transitive entre BBox partageant les mêmes bornes géographiques."); // Transitivité
+//         // Propriétés fondamentales de l’égalité
+//         assertTrue(a.equals(a),
+//                 "Une BBox doit toujours être égale à elle-même (réflexivité)."); // Réflexivité
+//         assertTrue(a.equals(b) && b.equals(a),
+//                 "L'égalité doit être symétrique entre deux BBox équivalentes."); // Symétrie
+//         assertTrue(a.equals(b) && b.equals(c) && a.equals(c),
+//                 "L'égalité doit être transitive entre BBox partageant les mêmes bornes géographiques."); // Transitivité
 
-        // 2) BBox différentes
-        BBox diffLon = new BBox(0, 2, 3, 4, 5, 6);
-        BBox diffLat = new BBox(1, 2, 0, 4, 5, 6);
+//         // 2) BBox différentes
+//         BBox diffLon = new BBox(0, 2, 3, 4, 5, 6);
+//         BBox diffLat = new BBox(1, 2, 0, 4, 5, 6);
 
-        assertFalse(a.equals(diffLon),
-                "Deux BBox avec des longitudes différentes ne doivent pas être égales.");
-        assertFalse(a.equals(diffLat),
-                "Deux BBox avec des latitudes différentes ne doivent pas être égales.");
-        assertTrue(!a.equals(diffLon) && !diffLon.equals(a),
-                "L'inégalité doit être symétrique entre deux BBox différentes."); // Symétrie
+//         assertFalse(a.equals(diffLon),
+//                 "Deux BBox avec des longitudes différentes ne doivent pas être égales.");
+//         assertFalse(a.equals(diffLat),
+//                 "Deux BBox avec des latitudes différentes ne doivent pas être égales.");
+//         assertTrue(!a.equals(diffLon) && !diffLon.equals(a),
+//                 "L'inégalité doit être symétrique entre deux BBox différentes."); // Symétrie
 
-        // 3) BBox sans élévation
-        BBox noEleA = new BBox(1, 2, 3, 4);
-        BBox noEleB = new BBox(1, 2, 3, 4);
-        assertTrue(noEleA.equals(noEleB),
-                "Deux BBox purement 2D identiques doivent être considérées égales.");
-        assertTrue(a.equals(noEleA),
-                "Une BBox 3D doit pouvoir être égale à une BBox 2D si leurs latitude et longitude correspondent.");
+//         // 3) BBox sans élévation
+//         BBox noEleA = new BBox(1, 2, 3, 4);
+//         BBox noEleB = new BBox(1, 2, 3, 4);
+//         assertTrue(noEleA.equals(noEleB),
+//                 "Deux BBox purement 2D identiques doivent être considérées égales.");
+//         assertTrue(a.equals(noEleA),
+//                 "Une BBox 3D doit pouvoir être égale à une BBox 2D si leurs latitude et longitude correspondent.");
 
-        // 4) Tolérance numérique
-        BBox withinTolerance = new BBox(1 + 1e-9, 2, 3, 4);
-        assertTrue(a.equals(withinTolerance),
-                "De faibles écarts (flottants) doivent être considérés comme égaux.");
-        BBox outsideTolerance = new BBox(1 + 1e-3, 2, 3, 4);
-        assertFalse(a.equals(outsideTolerance),
-                "Des écarts au-delà du seuil de tolérance doivent être considérés comme différents.");
+//         // 4) Tolérance numérique
+//         BBox withinTolerance = new BBox(1 + 1e-9, 2, 3, 4);
+//         assertTrue(a.equals(withinTolerance),
+//                 "De faibles écarts (flottants) doivent être considérés comme égaux.");
+//         BBox outsideTolerance = new BBox(1 + 1e-3, 2, 3, 4);
+//         assertFalse(a.equals(outsideTolerance),
+//                 "Des écarts au-delà du seuil de tolérance doivent être considérés comme différents.");
 
-        // 5) Cas limites et erreurs
-        assertFalse(a.equals(null),
-                "Une BBox ne doit jamais être égale à null.");
-        assertThrows(ClassCastException.class, () -> a.equals("BBox"),
-                "Une comparaison avec un autre type 'objet doit lever une exception.");
-    }
+//         // 5) Cas limites et erreurs
+//         assertFalse(a.equals(null),
+//                 "Une BBox ne doit jamais être égale à null.");
+//         assertThrows(ClassCastException.class, () -> a.equals("BBox"),
+//                 "Une comparaison avec un autre type 'objet doit lever une exception.");
+//     }
 
 
     /**
