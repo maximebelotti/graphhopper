@@ -35,8 +35,8 @@ jobs:
         id: check-score
         run: |
           # Extraire le score actuel
-          if [ -f "target/pit-reports/mutations.xml" ]; then
-            CURRENT_SCORE=$(grep -oP 'mutationCoverage="\K[0-9]+' target/pit-reports/mutations.xml | head -1)
+          if [ -f "core/target/pit-reports/mutations.xml" ]; then
+            CURRENT_SCORE=$(grep -oP 'mutationCoverage="\K[0-9]+' core/target/pit-reports/mutations.xml | head -1)
             echo "current_score=$CURRENT_SCORE" >> $GITHUB_OUTPUT
             
             # Lire le score précédent
@@ -78,4 +78,4 @@ jobs:
         if: always()
         with:
           name: pit-reports
-          path: target/pit-reports/
+          path: core/target/pit-reports/
