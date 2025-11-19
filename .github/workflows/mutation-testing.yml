@@ -1,0 +1,81 @@
+name: Mutation Testing with RickRoll
+
+on:
+  pull_request:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  mutation-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'adopt'
+      
+      - name: Restore previous mutation score
+        id: cache-score
+        uses: actions/cache@v3
+        with:
+          path: .mutation-score
+          key: mutation-score-${{ github.sha }}
+          restore-keys: mutation-score-
+      
+      - name: Run mutation testing
+        run: |
+          mvn clean test
+          mvn org.pitest:pitest-maven:mutationCoverage
+      
+      - name: Extract and compare mutation score
+        id: check-score
+        run: |
+          # Extraire le score actuel
+          if [ -f "target/pit-reports/mutations.xml" ]; then
+            CURRENT_SCORE=$(grep -oP 'mutationCoverage="\K[0-9]+' target/pit-reports/mutations.xml | head -1)
+            echo "current_score=$CURRENT_SCORE" >> $GITHUB_OUTPUT
+            
+            # Lire le score précédent
+            if [ -f ".mutation-score" ]; then
+              PREVIOUS_SCORE=$(cat .mutation-score)
+              echo "previous_score=$PREVIOUS_SCORE" >> $GITHUB_OUTPUT
+              
+              # Comparer
+              if [ "$CURRENT_SCORE" -lt "$PREVIOUS_SCORE" ]; then
+                echo "score_decreased=true" >> $GITHUB_OUTPUT
+                echo "⚠️  MUTATION SCORE DECREASED! ⚠️"
+                echo "Previous: ${PREVIOUS_SCORE}% → Current: ${CURRENT_SCORE}%"
+                echo ""
+                echo "https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif"
+                echo ""
+              else
+                echo "score_decreased=false" >> $GITHUB_OUTPUT
+              fi
+            fi
+            
+            # Sauvegarder le score actuel
+            echo "$CURRENT_SCORE" > .mutation-score
+          fi
+      
+      - name: Rick Roll on PR comment
+        if: steps.check-score.outputs.score_decreased == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Mutation score decreased!** ${{ steps.check-score.outputs.previous_score }}% → ${{ steps.check-score.outputs.current_score }}%'
+            })
+      
+      - name: Upload mutation report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: pit-reports
+          path: target/pit-reports/
