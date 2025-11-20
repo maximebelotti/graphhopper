@@ -105,7 +105,7 @@ jobs:
           fi
         
       - name: Rick Roll sur le commit
-        if: steps.compare_scores.outputs.DECREASED == 1
+        if: steps.compare_scores.outputs.DECREASED == '1'
         uses: actions/github-script@v6
         with:
           script: |
