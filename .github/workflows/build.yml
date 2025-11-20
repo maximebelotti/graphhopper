@@ -99,41 +99,31 @@ jobs:
           if [ "$DECREASED" -eq 1 ]; then
             echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
             echo "https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif"
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**'
-            })
-
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '🎵 @${{ github.actor }} - Score de mutation en baisse!',
-              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**'
-            })
-
-            github.rest.repos.createCommitComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              commit_sha: context.sha,
-              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n****'
-            })
-          
             exit 1
           else
             echo "Le score de mutation ne baisse pas."
           fi
-        
-      - name: Rick Roll on PR comment
-        if: steps.compare_scores.outputs.CURRENT < steps.compare_scores.outputs.BASELINE 
+
+      - name: Rick Roll via Issue
+        if: steps.compare_scores.outputs.DECREASED == 'true'
         uses: actions/github-script@v6
         with:
           script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
+            github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Mutation score decreased!** ${{ steps.check-score.outputs.previous_score }}% → ${{ steps.check-score.outputs.current_score }}%'
+              title: '🎵 @${{ github.actor }} - Score de mutation en baisse!',
+              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Score: ${{ steps.check_score.outputs.baseline }}% → ${{ steps.check_score.outputs.current }}%**'
+            })
+        
+      - name: Rick Roll sur le commit
+        if: steps.compare_scores.outputs.DECREASED == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Mutation score decreased! ${{ steps.check_score.outputs.baseline }}% → ${{ steps.check_score.outputs.current }}%**'
             })
