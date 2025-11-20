@@ -133,4 +133,8 @@ jobs:
           else
             echo "Le score de mutation ne baisse pas mais n'augmente pas de façon significative. Aucune mise à jour de baseline."
           fi
+      
+      - name: Rickroll
+        if: failure()
+        uses: TejasvOnly/random-rickroll@v1.0
         
