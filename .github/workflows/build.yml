@@ -51,7 +51,7 @@ jobs:
         id: mutation_score
         run: |
           cd core
-          REPORT_XML="target/pit-reports/mutations.xml"
+          REPORT_XML="core/target/pit-reports/mutations.xml"
 
           if [ ! -f "$REPORT_XML" ]; then
             echo "Aucun fichier mutations.xml trouvé (rapport PIT manquant)."
@@ -75,6 +75,7 @@ jobs:
           echo "score=$SCORE" >> "$GITHUB_OUTPUT"
 
       - name: Comparer la mutation avec le score minimal
+        id: compare_scores
         if: matrix.java-version == '21'
         run: |
           BASELINE_FILE=".github/mutation-baseline.txt"
@@ -98,13 +99,35 @@ jobs:
 
           if [ "$DECREASED" -eq 1 ]; then
             echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Mutation score decreased!** ${{ steps.check-score.outputs.previous_score }}% → ${{ steps.check-score.outputs.current_score }}%'
+            })
+
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🎵 @${{ github.actor }} - Score de mutation en baisse!',
+              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Tu as fait baisser le score!**'
+            })
+
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Mutation score decreased!**'
+            })
+          
             exit 1
           else
             echo "Le score de mutation ne baisse pas."
           fi
         
       - name: Rick Roll on PR comment
-        if: steps.mutation_score.outputs.TOTAL < 0 && github.event_name == 'pull_request'
+        if: steps.compare_scores.outputs.CURRENT < steps.compare_scores.outputs.BASELINE 
         uses: actions/github-script@v6
         with:
           script: |
