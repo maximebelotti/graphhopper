@@ -113,7 +113,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: '🎵 @${{ github.actor }} - Score de mutation en baisse!',
-              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Score: ${{ steps.check_score.outputs.baseline }}% → ${{ steps.check_score.outputs.current }}%**'
+              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Score: ${{ steps.compare_scores.outputs.BASELINE }}% → ${{ steps.compare_scores.outputs.CURRENT }}%**'
             })
         
       - name: Rick Roll sur le commit
@@ -125,5 +125,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               commit_sha: context.sha,
-              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Mutation score decreased! ${{ steps.check_score.outputs.baseline }}% → ${{ steps.check_score.outputs.current }}%**'
+              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Mutation score decreased! ${{ steps.compare_scores.outputs.BASELINE }}% → ${{ steps.compare_scores.outputs.CURRENT }}%**'
             })
