@@ -98,7 +98,7 @@ jobs:
 
           if [ "$DECREASED" -eq 1 ]; then
             echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
-            echo -e "\e]8;;http://example.com/your-target-url\e\\Voir les détails\e]8;;\e\\"
+            echo -e "Voir les détails : https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif"
             exit 1
           else
             echo "Le score de mutation ne baisse pas."
