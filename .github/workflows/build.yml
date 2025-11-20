@@ -103,21 +103,9 @@ jobs:
           else
             echo "Le score de mutation ne baisse pas."
           fi
-
-      - name: Rick Roll via Issue
-        if: steps.compare_scores.outputs.DECREASED == 'true'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '🎵 @${{ github.actor }} - Score de mutation en baisse!',
-              body: '![rickroll](https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif)\n\n**⚠️ Score: ${{ steps.compare_scores.outputs.BASELINE }}% → ${{ steps.compare_scores.outputs.CURRENT }}%**'
-            })
         
       - name: Rick Roll sur le commit
-        if: steps.compare_scores.outputs.DECREASED == 'true'
+        if: steps.compare_scores.outputs.DECREASED == 1
         uses: actions/github-script@v6
         with:
           script: |
