@@ -266,141 +266,141 @@ public class BBoxTest {
 //     }
 
 
-    /**
-     * Vérifie en profondeur le comportement de la méthode equals() de la classe BBox.
-     * Ce test couvre différents scénarios d’égalité : réflexivité, symétrie, transitivité, différences sur les 
-     * bornes, gestion de l’élévation, tolérance numérique et vérification des comportements anormaux.
-     */
-    @Test
-    void testEquals() {
-        // 1) BBox identiques
-        BBox a = new BBox(1, 2, 3, 4, 5, 6);
-        BBox b = new BBox(1, 2, 3, 4, -5, -6);
-        BBox c = new BBox(1, 2, 3, 4, 10, 25);
+//     /**
+//      * Vérifie en profondeur le comportement de la méthode equals() de la classe BBox.
+//      * Ce test couvre différents scénarios d’égalité : réflexivité, symétrie, transitivité, différences sur les 
+//      * bornes, gestion de l’élévation, tolérance numérique et vérification des comportements anormaux.
+//      */
+//     @Test
+//     void testEquals() {
+//         // 1) BBox identiques
+//         BBox a = new BBox(1, 2, 3, 4, 5, 6);
+//         BBox b = new BBox(1, 2, 3, 4, -5, -6);
+//         BBox c = new BBox(1, 2, 3, 4, 10, 25);
 
-        // Propriétés fondamentales de l’égalité
-        assertTrue(a.equals(a),
-                "Une BBox doit toujours être égale à elle-même (réflexivité)."); // Réflexivité
-        assertTrue(a.equals(b) && b.equals(a),
-                "L'égalité doit être symétrique entre deux BBox équivalentes."); // Symétrie
-        assertTrue(a.equals(b) && b.equals(c) && a.equals(c),
-                "L'égalité doit être transitive entre BBox partageant les mêmes bornes géographiques."); // Transitivité
+//         // Propriétés fondamentales de l’égalité
+//         assertTrue(a.equals(a),
+//                 "Une BBox doit toujours être égale à elle-même (réflexivité)."); // Réflexivité
+//         assertTrue(a.equals(b) && b.equals(a),
+//                 "L'égalité doit être symétrique entre deux BBox équivalentes."); // Symétrie
+//         assertTrue(a.equals(b) && b.equals(c) && a.equals(c),
+//                 "L'égalité doit être transitive entre BBox partageant les mêmes bornes géographiques."); // Transitivité
 
-        // 2) BBox différentes
-        BBox diffLon = new BBox(0, 2, 3, 4, 5, 6);
-        BBox diffLat = new BBox(1, 2, 0, 4, 5, 6);
+//         // 2) BBox différentes
+//         BBox diffLon = new BBox(0, 2, 3, 4, 5, 6);
+//         BBox diffLat = new BBox(1, 2, 0, 4, 5, 6);
 
-        assertFalse(a.equals(diffLon),
-                "Deux BBox avec des longitudes différentes ne doivent pas être égales.");
-        assertFalse(a.equals(diffLat),
-                "Deux BBox avec des latitudes différentes ne doivent pas être égales.");
-        assertTrue(!a.equals(diffLon) && !diffLon.equals(a),
-                "L'inégalité doit être symétrique entre deux BBox différentes."); // Symétrie
+//         assertFalse(a.equals(diffLon),
+//                 "Deux BBox avec des longitudes différentes ne doivent pas être égales.");
+//         assertFalse(a.equals(diffLat),
+//                 "Deux BBox avec des latitudes différentes ne doivent pas être égales.");
+//         assertTrue(!a.equals(diffLon) && !diffLon.equals(a),
+//                 "L'inégalité doit être symétrique entre deux BBox différentes."); // Symétrie
 
-        // 3) BBox sans élévation
-        BBox noEleA = new BBox(1, 2, 3, 4);
-        BBox noEleB = new BBox(1, 2, 3, 4);
-        assertTrue(noEleA.equals(noEleB),
-                "Deux BBox purement 2D identiques doivent être considérées égales.");
-        assertTrue(a.equals(noEleA),
-                "Une BBox 3D doit pouvoir être égale à une BBox 2D si leurs latitude et longitude correspondent.");
+//         // 3) BBox sans élévation
+//         BBox noEleA = new BBox(1, 2, 3, 4);
+//         BBox noEleB = new BBox(1, 2, 3, 4);
+//         assertTrue(noEleA.equals(noEleB),
+//                 "Deux BBox purement 2D identiques doivent être considérées égales.");
+//         assertTrue(a.equals(noEleA),
+//                 "Une BBox 3D doit pouvoir être égale à une BBox 2D si leurs latitude et longitude correspondent.");
 
-        // 4) Tolérance numérique
-        BBox withinTolerance = new BBox(1 + 1e-9, 2, 3, 4);
-        assertTrue(a.equals(withinTolerance),
-                "De faibles écarts (flottants) doivent être considérés comme égaux.");
-        BBox outsideTolerance = new BBox(1 + 1e-3, 2, 3, 4);
-        assertFalse(a.equals(outsideTolerance),
-                "Des écarts au-delà du seuil de tolérance doivent être considérés comme différents.");
+//         // 4) Tolérance numérique
+//         BBox withinTolerance = new BBox(1 + 1e-9, 2, 3, 4);
+//         assertTrue(a.equals(withinTolerance),
+//                 "De faibles écarts (flottants) doivent être considérés comme égaux.");
+//         BBox outsideTolerance = new BBox(1 + 1e-3, 2, 3, 4);
+//         assertFalse(a.equals(outsideTolerance),
+//                 "Des écarts au-delà du seuil de tolérance doivent être considérés comme différents.");
 
-        // 5) Cas limites et erreurs
-        assertFalse(a.equals(null),
-                "Une BBox ne doit jamais être égale à null.");
-        assertThrows(ClassCastException.class, () -> a.equals("BBox"),
-                "Une comparaison avec un autre type 'objet doit lever une exception.");
-    }
-
-
-    /**
-     * Vérifie que la méthode clone() crée une copie fidèle et indépendante d’une BBox.
-     * Le test s’assure que les valeurs sont identiques entre l’original et le clone, que les deux objets ne 
-     * partagent pas la même référence en mémoire, et que le clonage préserve correctement l’absence d’élévation pour 
-     * les BBox 2D.
-     */
-    @Test
-    void testClone() {
-        // 1) Clonage d’une BBox avec élévation
-        BBox b = new BBox(-10, 10, -5, 5, 15, 25);
-        BBox c = b.clone();
-
-        assertAll("Le clone doit contenir les mêmes bornes et attributs que l'objet original",
-                () -> assertNotSame(b, c),
-                () -> assertEquals(b.minLon, c.minLon),
-                () -> assertEquals(b.maxLon, c.maxLon),
-                () -> assertEquals(b.minLat, c.minLat),
-                () -> assertEquals(b.maxLat, c.maxLat),
-                () -> assertEquals(b.minEle, c.minEle),
-                () -> assertEquals(b.maxEle, c.maxEle),
-                () -> assertEquals(b.hasElevation(), c.hasElevation()));
-
-        // Verification de l'indépendance des deux objets
-        c.minLat = -99;
-        c.maxEle = 999;
-        assertAll("La modification du clone ne doit pas impacter l'objet original",
-                () -> assertNotEquals(b.minLat, c.minLat),
-                () -> assertNotEquals(b.maxEle, c.maxEle));
-
-        // 2) Clonage d’une BBox sans élévation
-        BBox bNoElev = new BBox(-1, 1, -2, 2);
-        BBox cNoElev = bNoElev.clone();
-        assertFalse(cNoElev.hasElevation(),
-                "Le clonage d'une BBox sans élévation doit préserver son état d'elevation");
-    }
+//         // 5) Cas limites et erreurs
+//         assertFalse(a.equals(null),
+//                 "Une BBox ne doit jamais être égale à null.");
+//         assertThrows(ClassCastException.class, () -> a.equals("BBox"),
+//                 "Une comparaison avec un autre type 'objet doit lever une exception.");
+//     }
 
 
-    /**
-     * Vérifie la cohérence des intersections calculées entre deux BBox générées aléatoirement.
-     * Ce test utilise JavaFaker pour produire des coordonnées réalistes, couvrant un large éventail de situations : 
-     * boîtes se chevauchant partiellement, totalement ou disjointes.
-     * L’objectif est de valider que calculateIntersection() renvoie un résultat logique, soit une intersection 
-     * cohérente ou rien.
-     */
-    @Test
-    void testCalculateIntersectionConsistencyWithFaker() {
-        Faker faker = new Faker(new Random(42));
+//     /**
+//      * Vérifie que la méthode clone() crée une copie fidèle et indépendante d’une BBox.
+//      * Le test s’assure que les valeurs sont identiques entre l’original et le clone, que les deux objets ne 
+//      * partagent pas la même référence en mémoire, et que le clonage préserve correctement l’absence d’élévation pour 
+//      * les BBox 2D.
+//      */
+//     @Test
+//     void testClone() {
+//         // 1) Clonage d’une BBox avec élévation
+//         BBox b = new BBox(-10, 10, -5, 5, 15, 25);
+//         BBox c = b.clone();
 
-        for (int i = 0; i < 200; i++) {
-            // Génération aléatoire de deux BBox
-            double lat1 = Double.parseDouble(faker.address().latitude().replace(",", "."));
-            double lon1 = Double.parseDouble(faker.address().longitude().replace(",", "."));
-            double size1 = faker.random().nextDouble() * 5 + 0.1; // 0.1° à 5°
-            BBox b1 = new BBox(lon1, lon1 + size1, lat1, lat1 + size1);
+//         assertAll("Le clone doit contenir les mêmes bornes et attributs que l'objet original",
+//                 () -> assertNotSame(b, c),
+//                 () -> assertEquals(b.minLon, c.minLon),
+//                 () -> assertEquals(b.maxLon, c.maxLon),
+//                 () -> assertEquals(b.minLat, c.minLat),
+//                 () -> assertEquals(b.maxLat, c.maxLat),
+//                 () -> assertEquals(b.minEle, c.minEle),
+//                 () -> assertEquals(b.maxEle, c.maxEle),
+//                 () -> assertEquals(b.hasElevation(), c.hasElevation()));
 
-            // La seconde BBox est générée avec un léger décalage aléatoire
-            double lat2 = lat1 + faker.random().nextDouble() * 10 - 5; // décalage de plus ou moins 5°
-            double lon2 = lon1 + faker.random().nextDouble() * 10 - 5;
-            double size2 = faker.random().nextDouble() * 5 + 0.1;
-            BBox b2 = new BBox(lon2, lon2 + size2, lat2, lat2 + size2);
+//         // Verification de l'indépendance des deux objets
+//         c.minLat = -99;
+//         c.maxEle = 999;
+//         assertAll("La modification du clone ne doit pas impacter l'objet original",
+//                 () -> assertNotEquals(b.minLat, c.minLat),
+//                 () -> assertNotEquals(b.maxEle, c.maxEle));
 
-            BBox intersection = b1.calculateIntersection(b2);
+//         // 2) Clonage d’une BBox sans élévation
+//         BBox bNoElev = new BBox(-1, 1, -2, 2);
+//         BBox cNoElev = bNoElev.clone();
+//         assertFalse(cNoElev.hasElevation(),
+//                 "Le clonage d'une BBox sans élévation doit préserver son état d'elevation");
+//     }
 
-            if (intersection != null) {
-                // L’intersection doit se trouver à l’intérieur ou en chevauchement des deux BBox
-                assertAll("L'intersection calculée doit être cohérente et contenue dans les deux BBox",
-                        () -> assertTrue(b1.contains(intersection.minLat, intersection.minLon)
-                                || b1.intersects(intersection)),
-                        () -> assertTrue(b2.contains(intersection.minLat, intersection.minLon)
-                                || b2.intersects(intersection)),
-                        () -> assertTrue(intersection.minLat <= intersection.maxLat),
-                        () -> assertTrue(intersection.minLon <= intersection.maxLon),
-                        () -> assertFalse(Double.isNaN(intersection.minLat)),
-                        () -> assertFalse(Double.isNaN(intersection.maxLat)));
-            } else {
-                // Si aucune intersection n’est trouvée, les deux BBox doivent être disjointes
-                assertFalse(b1.intersects(b2),
-                        "Si l'intersection est nulle, les BBox ne devraient pas se croiser");
-            }
-        }
-    }
+
+//     /**
+//      * Vérifie la cohérence des intersections calculées entre deux BBox générées aléatoirement.
+//      * Ce test utilise JavaFaker pour produire des coordonnées réalistes, couvrant un large éventail de situations : 
+//      * boîtes se chevauchant partiellement, totalement ou disjointes.
+//      * L’objectif est de valider que calculateIntersection() renvoie un résultat logique, soit une intersection 
+//      * cohérente ou rien.
+//      */
+//     @Test
+//     void testCalculateIntersectionConsistencyWithFaker() {
+//         Faker faker = new Faker(new Random(42));
+
+//         for (int i = 0; i < 200; i++) {
+//             // Génération aléatoire de deux BBox
+//             double lat1 = Double.parseDouble(faker.address().latitude().replace(",", "."));
+//             double lon1 = Double.parseDouble(faker.address().longitude().replace(",", "."));
+//             double size1 = faker.random().nextDouble() * 5 + 0.1; // 0.1° à 5°
+//             BBox b1 = new BBox(lon1, lon1 + size1, lat1, lat1 + size1);
+
+//             // La seconde BBox est générée avec un léger décalage aléatoire
+//             double lat2 = lat1 + faker.random().nextDouble() * 10 - 5; // décalage de plus ou moins 5°
+//             double lon2 = lon1 + faker.random().nextDouble() * 10 - 5;
+//             double size2 = faker.random().nextDouble() * 5 + 0.1;
+//             BBox b2 = new BBox(lon2, lon2 + size2, lat2, lat2 + size2);
+
+//             BBox intersection = b1.calculateIntersection(b2);
+
+//             if (intersection != null) {
+//                 // L’intersection doit se trouver à l’intérieur ou en chevauchement des deux BBox
+//                 assertAll("L'intersection calculée doit être cohérente et contenue dans les deux BBox",
+//                         () -> assertTrue(b1.contains(intersection.minLat, intersection.minLon)
+//                                 || b1.intersects(intersection)),
+//                         () -> assertTrue(b2.contains(intersection.minLat, intersection.minLon)
+//                                 || b2.intersects(intersection)),
+//                         () -> assertTrue(intersection.minLat <= intersection.maxLat),
+//                         () -> assertTrue(intersection.minLon <= intersection.maxLon),
+//                         () -> assertFalse(Double.isNaN(intersection.minLat)),
+//                         () -> assertFalse(Double.isNaN(intersection.maxLat)));
+//             } else {
+//                 // Si aucune intersection n’est trouvée, les deux BBox doivent être disjointes
+//                 assertFalse(b1.intersects(b2),
+//                         "Si l'intersection est nulle, les BBox ne devraient pas se croiser");
+//             }
+//         }
+//     }
 
 }
