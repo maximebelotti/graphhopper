@@ -37,6 +37,7 @@ jobs:
           restore-keys: |
             ${{ runner.os}}-node_modules-
       - name: Build ${{ matrix.java-version }}
+        id: junit_tests
         run: mvn -B clean test
 
       - name: Build tout les modules
@@ -135,7 +136,9 @@ jobs:
           fi
       
       - name: Rickroll
-        if: failure()
-        continue-on-error: true
-        uses: TejasvOnly/random-rickroll@v1.0
+        if: steps.junit_tests.outcome == 'failure'
+        uses: maximebelotti/random-rickroll@v1 
+        with:
+          percentage: 100   
+          enabled: "true"
         
