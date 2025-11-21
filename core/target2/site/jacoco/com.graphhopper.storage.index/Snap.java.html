@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Snap.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage.index</a> &gt; <span class="el_source">Snap.java</span></div><h1>Snap.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage.index;
+
+import com.graphhopper.routing.querygraph.QueryGraph;
+import com.graphhopper.storage.BaseGraph;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.GHPoint;
+import com.graphhopper.util.shapes.GHPoint3D;
+
+import java.util.List;
+
+/**
+ * Result of LocationIndex lookup.
+ * &lt;pre&gt; X=query coordinates S=snapped coordinates: &quot;snapping&quot; real coords to road N=tower or pillar
+ * node T=closest tower node XS=distance
+ * X
+ * |
+ * T--S----N
+ * &lt;/pre&gt;
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+<span class="fc" id="L40">public class Snap {</span>
+    public static final int INVALID_NODE = -1;
+    private final GHPoint queryPoint;
+<span class="fc" id="L43">    private double queryDistance = Double.MAX_VALUE;</span>
+<span class="fc" id="L44">    private int wayIndex = -1;</span>
+<span class="fc" id="L45">    private int closestNode = INVALID_NODE;</span>
+    private EdgeIteratorState closestEdge;
+    private GHPoint3D snappedPoint;
+    private Position snappedPosition;
+
+<span class="fc" id="L50">    public Snap(double queryLat, double queryLon) {</span>
+<span class="fc" id="L51">        queryPoint = new GHPoint(queryLat, queryLon);</span>
+<span class="fc" id="L52">    }</span>
+
+    /**
+     * Returns the closest matching node. This is either a tower node of the base graph
+     * or a virtual node (see also {@link QueryGraph#create(BaseGraph, List)}).
+     *
+     * @return {@link #INVALID_NODE} if nothing found, this should be avoided via a call of 'isValid'
+     */
+    public int getClosestNode() {
+<span class="fc" id="L61">        return closestNode;</span>
+    }
+
+    public void setClosestNode(int node) {
+<span class="fc" id="L65">        closestNode = node;</span>
+<span class="fc" id="L66">    }</span>
+
+    /**
+     * @return the distance of the query to the snapped coordinates. In meter
+     */
+    public double getQueryDistance() {
+<span class="fc" id="L72">        return queryDistance;</span>
+    }
+
+    public void setQueryDistance(double dist) {
+<span class="fc" id="L76">        queryDistance = dist;</span>
+<span class="fc" id="L77">    }</span>
+
+    public int getWayIndex() {
+<span class="fc" id="L80">        return wayIndex;</span>
+    }
+
+    public void setWayIndex(int wayIndex) {
+<span class="fc" id="L84">        this.wayIndex = wayIndex;</span>
+<span class="fc" id="L85">    }</span>
+
+    /**
+     * @return 0 if on edge. 1 if on pillar node and 2 if on tower node.
+     */
+    public Position getSnappedPosition() {
+<span class="fc" id="L91">        return snappedPosition;</span>
+    }
+
+    public void setSnappedPosition(Position pos) {
+<span class="fc" id="L95">        this.snappedPosition = pos;</span>
+<span class="fc" id="L96">    }</span>
+
+    /**
+     * @return true if a closest node was found
+     */
+    public boolean isValid() {
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        return closestNode &gt;= 0;</span>
+    }
+
+    public EdgeIteratorState getClosestEdge() {
+<span class="fc" id="L106">        return closestEdge;</span>
+    }
+
+    public void setClosestEdge(EdgeIteratorState edge) {
+<span class="fc" id="L110">        closestEdge = edge;</span>
+<span class="fc" id="L111">    }</span>
+
+    public GHPoint getQueryPoint() {
+<span class="fc" id="L114">        return queryPoint;</span>
+    }
+
+    /**
+     * Calculates the position of the query point 'snapped' to a close road segment or node. Call
+     * calcSnappedPoint before, if not, an IllegalStateException is thrown.
+     */
+    public GHPoint3D getSnappedPoint() {
+<span class="pc bpc" id="L122" title="1 of 2 branches missed.">        if (snappedPoint == null)</span>
+<span class="nc" id="L123">            throw new IllegalStateException(&quot;Calculate snapped point before!&quot;);</span>
+<span class="fc" id="L124">        return snappedPoint;</span>
+    }
+
+    public void setSnappedPoint(GHPoint3D point) {
+<span class="fc" id="L128">        this.snappedPoint = point;</span>
+<span class="fc" id="L129">    }</span>
+
+    /**
+     * Calculates the closest point on the edge from the query point. If too close to a tower or pillar node this method
+     * might change the snappedPosition and wayIndex.
+     */
+    public void calcSnappedPoint(DistanceCalc distCalc) {
+<span class="pc bpc" id="L136" title="1 of 2 branches missed.">        if (closestEdge == null)</span>
+<span class="nc" id="L137">            throw new IllegalStateException(&quot;No closest edge?&quot;);</span>
+<span class="pc bpc" id="L138" title="1 of 2 branches missed.">        if (snappedPoint != null)</span>
+<span class="nc" id="L139">            throw new IllegalStateException(&quot;Calculate snapped point only once&quot;);</span>
+
+<span class="fc" id="L141">        PointList fullPL = getClosestEdge().fetchWayGeometry(FetchMode.ALL);</span>
+<span class="fc" id="L142">        double tmpLat = fullPL.getLat(wayIndex);</span>
+<span class="fc" id="L143">        double tmpLon = fullPL.getLon(wayIndex);</span>
+<span class="fc" id="L144">        double tmpEle = fullPL.getEle(wayIndex);</span>
+<span class="fc bfc" id="L145" title="All 2 branches covered.">        if (snappedPosition != Position.EDGE) {</span>
+<span class="fc" id="L146">            snappedPoint = new GHPoint3D(tmpLat, tmpLon, tmpEle);</span>
+<span class="fc" id="L147">            return;</span>
+        }
+
+<span class="fc" id="L150">        double queryLat = getQueryPoint().lat, queryLon = getQueryPoint().lon;</span>
+<span class="fc" id="L151">        double adjLat = fullPL.getLat(wayIndex + 1), adjLon = fullPL.getLon(wayIndex + 1);</span>
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">        if (distCalc.validEdgeDistance(queryLat, queryLon, tmpLat, tmpLon, adjLat, adjLon)) {</span>
+<span class="fc" id="L153">            GHPoint crossingPoint = distCalc.calcCrossingPointToEdge(queryLat, queryLon, tmpLat, tmpLon, adjLat, adjLon);</span>
+<span class="fc" id="L154">            double adjEle = fullPL.getEle(wayIndex + 1);</span>
+
+            // We want to prevent extra virtual nodes and very short virtual edges in case the snap/crossing point is
+            // very close to a tower node. Since we delayed the calculation of the crossing point until here, we need
+            // to correct the Snap.Position in these cases. Note that it is possible that the query point is very far
+            // from the tower node, but the crossing point is still very close to it.
+<span class="fc bfc" id="L160" title="All 2 branches covered.">            if (considerEqual(crossingPoint.lat, crossingPoint.lon, tmpLat, tmpLon)) {</span>
+<span class="fc bfc" id="L161" title="All 2 branches covered.">                snappedPosition = wayIndex == 0 ? Position.TOWER : Position.PILLAR;</span>
+<span class="fc" id="L162">                snappedPoint = new GHPoint3D(tmpLat, tmpLon, tmpEle);</span>
+<span class="fc bfc" id="L163" title="All 2 branches covered.">                closestNode = wayIndex == 0 ? closestEdge.getBaseNode() : closestNode;</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">            } else if (considerEqual(crossingPoint.lat, crossingPoint.lon, adjLat, adjLon)) {</span>
+<span class="fc" id="L165">                wayIndex++;</span>
+<span class="fc bfc" id="L166" title="All 2 branches covered.">                snappedPosition = wayIndex == fullPL.size() - 1 ? Position.TOWER : Position.PILLAR;</span>
+<span class="fc" id="L167">                snappedPoint = new GHPoint3D(adjLat, adjLon, adjEle);</span>
+<span class="fc bfc" id="L168" title="All 2 branches covered.">                closestNode = wayIndex == fullPL.size() - 1 ? closestEdge.getAdjNode() : closestNode;</span>
+            } else {
+<span class="fc" id="L170">                snappedPoint = new GHPoint3D(crossingPoint.lat, crossingPoint.lon, (tmpEle + adjEle) / 2);</span>
+            }
+<span class="fc" id="L172">        } else {</span>
+            // outside of edge segment [wayIndex, wayIndex+1] should not happen for EDGE
+<span class="nc" id="L174">            assert false : &quot;incorrect pos: &quot; + snappedPosition + &quot; for &quot; + snappedPoint + &quot;, &quot; + fullPL + &quot;, &quot; + wayIndex;</span>
+        }
+<span class="fc" id="L176">    }</span>
+
+    public static boolean considerEqual(double lat, double lon, double lat2, double lon2) {
+<span class="fc bfc" id="L179" title="All 4 branches covered.">        return Math.abs(lat - lat2) &lt; 1e-6 &amp;&amp; Math.abs(lon - lon2) &lt; 1e-6;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc bnc" id="L184" title="All 2 branches missed.">        if (closestEdge != null)</span>
+<span class="nc" id="L185">            return snappedPosition + &quot;, &quot; + closestNode + &quot; &quot; + closestEdge.getEdge() + &quot;:&quot; + closestEdge.getBaseNode() + &quot;-&quot; + closestEdge.getAdjNode() +</span>
+<span class="nc" id="L186">                    &quot; snap: [&quot; + Helper.round6(snappedPoint.getLat()) + &quot;, &quot; + Helper.round6(snappedPoint.getLon()) + &quot;],&quot; +</span>
+<span class="nc" id="L187">                    &quot; query: [&quot; + Helper.round6(queryPoint.getLat()) + &quot;,&quot; + Helper.round6(queryPoint.getLon()) + &quot;]&quot;;</span>
+<span class="nc" id="L188">        return closestNode + &quot;, &quot; + queryPoint + &quot;, &quot; + wayIndex;</span>
+    }
+
+    /**
+     * Whether the query point is projected onto a tower node, pillar node or somewhere within
+     * the closest edge.
+     * &lt;p&gt;
+     * Due to precision differences it is hard to define when something is exactly 90° or &quot;on-node&quot;
+     * like TOWER or PILLAR or if it is more &quot;on-edge&quot; (EDGE). The default mechanism is to prefer
+     * &quot;on-edge&quot; even if it could be 90°. To prefer &quot;on-node&quot; you could use e.g. GHPoint.equals with
+     * a default precision of 1e-6.
+     * &lt;p&gt;
+     *
+     * @see DistanceCalc#validEdgeDistance
+     */
+<span class="fc" id="L203">    public enum Position {</span>
+<span class="fc" id="L204">        EDGE, TOWER, PILLAR</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

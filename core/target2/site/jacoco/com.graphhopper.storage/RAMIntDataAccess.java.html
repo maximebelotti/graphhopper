@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RAMIntDataAccess.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">RAMIntDataAccess.java</span></div><h1>RAMIntDataAccess.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.util.Arrays;
+
+/**
+ * This is an in-memory data structure based on an integer array. With the possibility to be stored
+ * on flush().
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+<span class="fc" id="L32">class RAMIntDataAccess extends AbstractDataAccess {</span>
+<span class="fc" id="L33">    private int[][] segments = new int[0][];</span>
+<span class="fc" id="L34">    private boolean closed = false;</span>
+    private boolean store;
+    private int segmentSizeIntsPower;
+
+    RAMIntDataAccess(String name, String location, boolean store, int segmentSize) {
+<span class="fc" id="L39">        super(name, location, segmentSize);</span>
+<span class="fc" id="L40">        this.store = store;</span>
+<span class="fc" id="L41">    }</span>
+
+    /**
+     * @param store true if in-memory data should be saved when calling flush
+     */
+    public RAMIntDataAccess setStore(boolean store) {
+<span class="nc" id="L47">        this.store = store;</span>
+<span class="nc" id="L48">        return this;</span>
+    }
+
+    @Override
+    public boolean isStoring() {
+<span class="fc" id="L53">        return store;</span>
+    }
+
+    @Override
+    public RAMIntDataAccess create(long bytes) {
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">        if (segments.length &gt; 0)</span>
+<span class="nc" id="L59">            throw new IllegalThreadStateException(&quot;already created&quot;);</span>
+
+<span class="fc" id="L61">        ensureCapacity(Math.max(10 * 4, bytes));</span>
+<span class="fc" id="L62">        return this;</span>
+    }
+
+    @Override
+    public boolean ensureCapacity(long bytes) {
+<span class="pc bpc" id="L67" title="1 of 2 branches missed.">        if (bytes &lt; 0)</span>
+<span class="nc" id="L68">            throw new IllegalArgumentException(&quot;new capacity has to be strictly positive&quot;);</span>
+
+<span class="fc" id="L70">        long cap = getCapacity();</span>
+<span class="fc" id="L71">        long newBytes = bytes - cap;</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        if (newBytes &lt;= 0)</span>
+<span class="fc" id="L73">            return false;</span>
+
+<span class="fc" id="L75">        int segmentsToCreate = (int) (newBytes / segmentSizeInBytes);</span>
+<span class="fc bfc" id="L76" title="All 2 branches covered.">        if (newBytes % segmentSizeInBytes != 0)</span>
+<span class="fc" id="L77">            segmentsToCreate++;</span>
+
+        try {
+<span class="fc" id="L80">            int[][] newSegs = Arrays.copyOf(segments, segments.length + segmentsToCreate);</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">            for (int i = segments.length; i &lt; newSegs.length; i++) {</span>
+<span class="fc" id="L82">                newSegs[i] = new int[1 &lt;&lt; segmentSizeIntsPower];</span>
+            }
+<span class="fc" id="L84">            segments = newSegs;</span>
+<span class="fc" id="L85">            return true;</span>
+<span class="nc" id="L86">        } catch (OutOfMemoryError err) {</span>
+<span class="nc" id="L87">            throw new OutOfMemoryError(err.getMessage() + &quot; - problem when allocating new memory. Old capacity: &quot;</span>
+                    + cap + &quot;, new bytes:&quot; + newBytes + &quot;, segmentSizeIntsPower:&quot; + segmentSizeIntsPower
+                    + &quot;, new segments:&quot; + segmentsToCreate + &quot;, existing:&quot; + segments.length);
+        }
+    }
+
+    @Override
+    public boolean loadExisting() {
+<span class="pc bpc" id="L95" title="1 of 2 branches missed.">        if (segments.length &gt; 0)</span>
+<span class="nc" id="L96">            throw new IllegalStateException(&quot;already initialized&quot;);</span>
+
+<span class="fc bfc" id="L98" title="All 2 branches covered.">        if (isClosed())</span>
+<span class="fc" id="L99">            throw new IllegalStateException(&quot;already closed&quot;);</span>
+
+<span class="fc bfc" id="L101" title="All 2 branches covered.">        if (!store)</span>
+<span class="fc" id="L102">            return false;</span>
+
+<span class="fc" id="L104">        File file = new File(getFullName());</span>
+<span class="pc bpc" id="L105" title="1 of 4 branches missed.">        if (!file.exists() || file.length() == 0) {</span>
+<span class="fc" id="L106">            return false;</span>
+        }
+        try {
+<span class="fc" id="L109">            try (RandomAccessFile raFile = new RandomAccessFile(getFullName(), &quot;r&quot;)) {</span>
+<span class="fc" id="L110">                long byteCount = readHeader(raFile) - HEADER_OFFSET;</span>
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">                if (byteCount &lt; 0) {</span>
+<span class="nc" id="L112">                    return false;</span>
+                }
+<span class="fc" id="L114">                byte[] bytes = new byte[segmentSizeInBytes];</span>
+<span class="fc" id="L115">                raFile.seek(HEADER_OFFSET);</span>
+                // raFile.readInt() &lt;- too slow
+<span class="fc" id="L117">                int segmentCount = (int) (byteCount / segmentSizeInBytes);</span>
+<span class="pc bpc" id="L118" title="1 of 2 branches missed.">                if (byteCount % segmentSizeInBytes != 0)</span>
+<span class="fc" id="L119">                    segmentCount++;</span>
+
+<span class="fc" id="L121">                segments = new int[segmentCount][];</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">                for (int s = 0; s &lt; segmentCount; s++) {</span>
+<span class="fc" id="L123">                    int read = raFile.read(bytes) / 4;</span>
+<span class="fc" id="L124">                    int[] area = new int[read];</span>
+<span class="fc bfc" id="L125" title="All 2 branches covered.">                    for (int j = 0; j &lt; read; j++) {</span>
+<span class="fc" id="L126">                        area[j] = bitUtil.toInt(bytes, j * 4);</span>
+                    }
+<span class="fc" id="L128">                    segments[s] = area;</span>
+                }
+<span class="fc" id="L130">                return true;</span>
+<span class="nc" id="L131">            }</span>
+<span class="nc" id="L132">        } catch (IOException ex) {</span>
+<span class="nc" id="L133">            throw new RuntimeException(&quot;Problem while loading &quot; + getFullName(), ex);</span>
+        }
+    }
+
+    @Override
+    public void flush() {
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">        if (closed) {</span>
+<span class="nc" id="L140">            throw new IllegalStateException(&quot;already closed&quot;);</span>
+        }
+<span class="fc bfc" id="L142" title="All 2 branches covered.">        if (!store) {</span>
+<span class="fc" id="L143">            return;</span>
+        }
+        try {
+<span class="fc" id="L146">            try (RandomAccessFile raFile = new RandomAccessFile(getFullName(), &quot;rw&quot;)) {</span>
+<span class="fc" id="L147">                long len = getCapacity();</span>
+<span class="fc" id="L148">                writeHeader(raFile, len, segmentSizeInBytes);</span>
+<span class="fc" id="L149">                raFile.seek(HEADER_OFFSET);</span>
+                // raFile.writeInt() &lt;- too slow, so copy into byte array
+<span class="fc bfc" id="L151" title="All 2 branches covered.">                for (int s = 0; s &lt; segments.length; s++) {</span>
+<span class="fc" id="L152">                    int[] area = segments[s];</span>
+<span class="fc" id="L153">                    int intLen = area.length;</span>
+<span class="fc" id="L154">                    byte[] byteArea = new byte[intLen * 4];</span>
+<span class="fc bfc" id="L155" title="All 2 branches covered.">                    for (int i = 0; i &lt; intLen; i++) {</span>
+<span class="fc" id="L156">                        bitUtil.fromInt(byteArea, area[i], i * 4);</span>
+                    }
+<span class="fc" id="L158">                    raFile.write(byteArea);</span>
+                }
+            }
+<span class="nc" id="L161">        } catch (Exception ex) {</span>
+<span class="nc" id="L162">            throw new RuntimeException(&quot;Couldn't store integers to &quot; + toString(), ex);</span>
+<span class="fc" id="L163">        }</span>
+<span class="fc" id="L164">    }</span>
+
+    @Override
+    public final void setInt(long bytePos, int value) {
+<span class="fc bfc" id="L168" title="All 2 branches covered.">        assert segments.length &gt; 0 : &quot;call create or loadExisting before usage!&quot;;</span>
+<span class="fc" id="L169">        bytePos &gt;&gt;&gt;= 2;</span>
+<span class="fc" id="L170">        int bufferIndex = (int) (bytePos &gt;&gt;&gt; segmentSizeIntsPower);</span>
+<span class="fc" id="L171">        int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L172">        segments[bufferIndex][index] = value;</span>
+<span class="fc" id="L173">    }</span>
+
+    @Override
+    public final int getInt(long bytePos) {
+<span class="pc bpc" id="L177" title="1 of 2 branches missed.">        assert segments.length &gt; 0 : &quot;call create or loadExisting before usage!&quot;;</span>
+<span class="fc" id="L178">        bytePos &gt;&gt;&gt;= 2;</span>
+<span class="fc" id="L179">        int bufferIndex = (int) (bytePos &gt;&gt;&gt; segmentSizeIntsPower);</span>
+<span class="fc" id="L180">        int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L181">        return segments[bufferIndex][index];</span>
+    }
+
+    @Override
+    public final void setShort(long bytePos, short value) {
+<span class="pc bpc" id="L186" title="1 of 2 branches missed.">        assert segments.length &gt; 0 : &quot;call create or loadExisting before usage!&quot;;</span>
+<span class="pc bpc" id="L187" title="1 of 4 branches missed.">        if (bytePos % 4 != 0 &amp;&amp; bytePos % 4 != 2)</span>
+<span class="nc" id="L188">            throw new IllegalMonitorStateException(&quot;bytePos of wrong multiple for RAMInt &quot; + bytePos);</span>
+
+<span class="fc" id="L190">        long tmpIndex = bytePos &gt;&gt;&gt; 2;</span>
+<span class="fc" id="L191">        int bufferIndex = (int) (tmpIndex &gt;&gt;&gt; segmentSizeIntsPower);</span>
+<span class="fc" id="L192">        int index = (int) (tmpIndex &amp; indexDivisor);</span>
+<span class="fc" id="L193">        int oldVal = segments[bufferIndex][index];</span>
+<span class="fc bfc" id="L194" title="All 2 branches covered.">        if (tmpIndex * 4 == bytePos)</span>
+<span class="fc" id="L195">            segments[bufferIndex][index] = oldVal &amp; 0xFFFF0000 | value &amp; 0x0000FFFF;</span>
+        else
+<span class="fc" id="L197">            segments[bufferIndex][index] = oldVal &amp; 0x0000FFFF | value &lt;&lt; 16;</span>
+<span class="fc" id="L198">    }</span>
+
+    @Override
+    public final short getShort(long bytePos) {
+<span class="pc bpc" id="L202" title="1 of 2 branches missed.">        assert segments.length &gt; 0 : &quot;call create or loadExisting before usage!&quot;;</span>
+<span class="pc bpc" id="L203" title="1 of 4 branches missed.">        if (bytePos % 4 != 0 &amp;&amp; bytePos % 4 != 2)</span>
+<span class="nc" id="L204">            throw new IllegalMonitorStateException(&quot;bytePos of wrong multiple for RAMInt &quot; + bytePos);</span>
+
+<span class="fc" id="L206">        long tmpIndex = bytePos &gt;&gt; 2;</span>
+<span class="fc" id="L207">        int bufferIndex = (int) (tmpIndex &gt;&gt; segmentSizeIntsPower);</span>
+<span class="fc" id="L208">        int index = (int) (tmpIndex &amp; indexDivisor);</span>
+<span class="fc bfc" id="L209" title="All 2 branches covered.">        if (tmpIndex * 4 == bytePos)</span>
+<span class="fc" id="L210">            return (short) (segments[bufferIndex][index] &amp; 0x0000FFFFL);</span>
+        else
+<span class="fc" id="L212">            return (short) (segments[bufferIndex][index] &gt;&gt; 16);</span>
+    }
+
+    @Override
+    public void getBytes(long bytePos, byte[] values, int length) {
+<span class="nc" id="L217">        throw new UnsupportedOperationException(toString() + &quot; does not support byte based acccess. Use RAMDataAccess instead&quot;);</span>
+    }
+
+    @Override
+    public void setBytes(long bytePos, byte[] values, int length) {
+<span class="nc" id="L222">        throw new UnsupportedOperationException(toString() + &quot; does not support byte based acccess. Use RAMDataAccess instead&quot;);</span>
+    }
+
+    @Override
+    public byte getByte(long bytePos) {
+<span class="nc" id="L227">        throw new UnsupportedOperationException(toString() + &quot; does not support byte based acccess. Use RAMDataAccess instead&quot;);</span>
+    }
+
+    @Override
+    public void setByte(long bytePos, byte value) {
+<span class="nc" id="L232">        throw new UnsupportedOperationException(toString() + &quot; does not support byte based acccess. Use RAMDataAccess instead&quot;);</span>
+    }
+
+    @Override
+    public void close() {
+<span class="fc" id="L237">        super.close();</span>
+<span class="fc" id="L238">        segments = new int[0][];</span>
+<span class="fc" id="L239">        closed = true;</span>
+<span class="fc" id="L240">    }</span>
+
+    @Override
+    public long getCapacity() {
+<span class="fc" id="L244">        return (long) getSegments() * segmentSizeInBytes;</span>
+    }
+
+    @Override
+    public int getSegments() {
+<span class="fc" id="L249">        return segments.length;</span>
+    }
+
+    @Override
+    DataAccess setSegmentSize(int bytes) {
+<span class="fc" id="L254">        super.setSegmentSize(bytes);</span>
+<span class="fc" id="L255">        segmentSizeIntsPower = (int) (Math.log(segmentSizeInBytes / 4) / Math.log(2));</span>
+<span class="fc" id="L256">        indexDivisor = segmentSizeInBytes / 4 - 1;</span>
+<span class="fc" id="L257">        return this;</span>
+    }
+
+    boolean releaseSegment(int segNumber) {
+<span class="nc" id="L261">        segments[segNumber] = null;</span>
+<span class="nc" id="L262">        return true;</span>
+    }
+
+    @Override
+    protected boolean isIntBased() {
+<span class="nc" id="L267">        return true;</span>
+    }
+
+    @Override
+    public DAType getType() {
+<span class="fc bfc" id="L272" title="All 2 branches covered.">        if (isStoring())</span>
+<span class="fc" id="L273">            return DAType.RAM_INT_STORE;</span>
+<span class="fc" id="L274">        return DAType.RAM_INT;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

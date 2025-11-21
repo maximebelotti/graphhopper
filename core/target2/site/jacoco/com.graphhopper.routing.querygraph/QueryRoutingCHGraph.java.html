@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QueryRoutingCHGraph.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.querygraph</a> &gt; <span class="el_source">QueryRoutingCHGraph.java</span></div><h1>QueryRoutingCHGraph.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.querygraph;
+
+import com.carrotsearch.hppc.IntObjectHashMap;
+import com.carrotsearch.hppc.IntObjectMap;
+import com.carrotsearch.hppc.procedures.IntObjectProcedure;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.*;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.Helper;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import static com.graphhopper.routing.querygraph.QueryGraph.SNAP_ADJ;
+import static com.graphhopper.routing.querygraph.QueryGraph.SNAP_BASE;
+import static com.graphhopper.util.EdgeIterator.NO_EDGE;
+
+/**
+ * This class is used to allow routing between virtual nodes (snapped coordinates that lie between the nodes of the
+ * original graph) when using CH. To use it first create a {@link QueryGraph} just as if you were not using CH and then
+ * create an instance of the present class on top of this.
+ */
+<span class="fc" id="L42">public class QueryRoutingCHGraph implements RoutingCHGraph {</span>
+    private final RoutingCHGraph routingCHGraph;
+    private final Weighting weighting;
+    private final QueryOverlay queryOverlay;
+    private final QueryGraph queryGraph;
+    private final Weighting queryGraphWeighting;
+    private final int nodes;
+
+    private final IntObjectMap&lt;List&lt;RoutingCHEdgeIteratorState&gt;&gt; virtualOutEdgesAtRealNodes;
+    private final IntObjectMap&lt;List&lt;RoutingCHEdgeIteratorState&gt;&gt; virtualInEdgesAtRealNodes;
+    private final List&lt;List&lt;RoutingCHEdgeIteratorState&gt;&gt; virtualEdgesAtVirtualNodes;
+
+<span class="fc" id="L54">    public QueryRoutingCHGraph(RoutingCHGraph routingCHGraph, QueryGraph queryGraph) {</span>
+<span class="fc" id="L55">        this.routingCHGraph = routingCHGraph;</span>
+<span class="fc" id="L56">        this.weighting = routingCHGraph.getWeighting();</span>
+<span class="fc" id="L57">        this.queryOverlay = queryGraph.getQueryOverlay();</span>
+<span class="fc" id="L58">        this.queryGraph = queryGraph;</span>
+<span class="fc" id="L59">        this.queryGraphWeighting = queryGraph.wrapWeighting(weighting);</span>
+<span class="fc" id="L60">        virtualOutEdgesAtRealNodes = buildVirtualEdgesAtRealNodes(routingCHGraph.createOutEdgeExplorer());</span>
+<span class="fc" id="L61">        virtualInEdgesAtRealNodes = buildVirtualEdgesAtRealNodes(routingCHGraph.createInEdgeExplorer());</span>
+<span class="fc" id="L62">        virtualEdgesAtVirtualNodes = buildVirtualEdgesAtVirtualNodes();</span>
+<span class="fc" id="L63">        nodes = queryGraph.getNodes();</span>
+<span class="fc" id="L64">    }</span>
+
+    @Override
+    public int getNodes() {
+<span class="fc" id="L68">        return nodes;</span>
+    }
+
+    @Override
+    public int getEdges() {
+<span class="fc" id="L73">        return routingCHGraph.getEdges() + queryOverlay.getNumVirtualEdges();</span>
+    }
+
+    @Override
+    public int getShortcuts() {
+<span class="nc" id="L78">        return routingCHGraph.getShortcuts();</span>
+    }
+
+    @Override
+    public RoutingCHEdgeExplorer createInEdgeExplorer() {
+<span class="fc" id="L83">        return createEdgeExplorer(routingCHGraph.createInEdgeExplorer(), virtualInEdgesAtRealNodes);</span>
+    }
+
+    @Override
+    public RoutingCHEdgeExplorer createOutEdgeExplorer() {
+<span class="fc" id="L88">        return createEdgeExplorer(routingCHGraph.createOutEdgeExplorer(), virtualOutEdgesAtRealNodes);</span>
+    }
+
+    private RoutingCHEdgeExplorer createEdgeExplorer(final RoutingCHEdgeExplorer explorer, final IntObjectMap&lt;List&lt;RoutingCHEdgeIteratorState&gt;&gt; virtualEdgesAtRealNodes) {
+<span class="fc" id="L92">        final VirtualCHEdgeIterator iterator = new VirtualCHEdgeIterator();</span>
+<span class="fc" id="L93">        return new RoutingCHEdgeExplorer() {</span>
+            @Override
+            public RoutingCHEdgeIterator setBaseNode(int baseNode) {
+<span class="fc bfc" id="L96" title="All 2 branches covered.">                if (isVirtualNode(baseNode)) {</span>
+<span class="fc" id="L97">                    List&lt;RoutingCHEdgeIteratorState&gt; virtualEdges = virtualEdgesAtVirtualNodes.get(baseNode - routingCHGraph.getNodes());</span>
+<span class="fc" id="L98">                    iterator.reset(virtualEdges);</span>
+<span class="fc" id="L99">                    return iterator;</span>
+                } else {
+<span class="fc" id="L101">                    List&lt;RoutingCHEdgeIteratorState&gt; virtualEdges = virtualEdgesAtRealNodes.get(baseNode);</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">                    if (virtualEdges == null) {</span>
+<span class="fc" id="L103">                        return explorer.setBaseNode(baseNode);</span>
+                    } else {
+<span class="fc" id="L105">                        iterator.reset(virtualEdges);</span>
+<span class="fc" id="L106">                        return iterator;</span>
+                    }
+                }
+            }
+        };
+    }
+
+    @Override
+    public RoutingCHEdgeIteratorState getEdgeIteratorState(int chEdge, int adjNode) {
+<span class="fc bfc" id="L115" title="All 2 branches covered.">        if (!isVirtualEdge(chEdge))</span>
+<span class="fc" id="L116">            return routingCHGraph.getEdgeIteratorState(chEdge, adjNode);</span>
+        // todo: possible optimization - instead of building a new virtual edge object use the ones we already
+        // built for virtualEdgesAtReal/VirtualNodes
+<span class="fc" id="L119">        return buildVirtualCHEdgeState(getVirtualEdgeState(chEdge, adjNode));</span>
+    }
+
+    @Override
+    public int getLevel(int node) {
+<span class="fc bfc" id="L124" title="All 2 branches covered.">        if (isVirtualNode(node))</span>
+<span class="fc" id="L125">            return Integer.MAX_VALUE;</span>
+<span class="fc" id="L126">        return routingCHGraph.getLevel(node);</span>
+    }
+
+    @Override
+    public double getTurnWeight(int inEdge, int viaNode, int outEdge) {
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        if (!routingCHGraph.hasTurnCosts())</span>
+            // this is important as node-based algorithms might pass in ch edge ids here
+<span class="fc" id="L133">            return 0;</span>
+<span class="fc" id="L134">        return queryGraphWeighting.calcTurnWeight(inEdge, viaNode, outEdge);</span>
+    }
+
+    @Override
+    public Graph getBaseGraph() {
+<span class="fc" id="L139">        return queryGraph;</span>
+    }
+
+    @Override
+    public boolean hasTurnCosts() {
+<span class="fc" id="L144">        return routingCHGraph.hasTurnCosts();</span>
+    }
+
+    @Override
+    public boolean isEdgeBased() {
+<span class="fc" id="L149">        return routingCHGraph.isEdgeBased();</span>
+    }
+
+    @Override
+    public Weighting getWeighting() {
+<span class="fc" id="L154">        return weighting;</span>
+    }
+
+    @Override
+    public void close() {
+<span class="nc" id="L159">        routingCHGraph.close();</span>
+<span class="nc" id="L160">        virtualEdgesAtVirtualNodes.clear();</span>
+<span class="nc" id="L161">        virtualInEdgesAtRealNodes.clear();</span>
+<span class="nc" id="L162">        virtualOutEdgesAtRealNodes.clear();</span>
+<span class="nc" id="L163">    }</span>
+
+    private VirtualEdgeIteratorState getVirtualEdgeState(int virtualEdgeId, int adjNode) {
+<span class="pc bpc" id="L166" title="1 of 2 branches missed.">        assert isVirtualEdge(virtualEdgeId);</span>
+<span class="fc" id="L167">        int internalVirtualEdgeId = getInternalVirtualEdgeId(virtualEdgeId);</span>
+<span class="fc" id="L168">        VirtualEdgeIteratorState virtualEdge = queryOverlay.getVirtualEdge(internalVirtualEdgeId);</span>
+<span class="pc bpc" id="L169" title="1 of 4 branches missed.">        if (virtualEdge.getAdjNode() == adjNode || adjNode == Integer.MIN_VALUE)</span>
+<span class="fc" id="L170">            return virtualEdge;</span>
+
+<span class="fc" id="L172">        internalVirtualEdgeId = QueryGraph.getPosOfReverseEdge(internalVirtualEdgeId);</span>
+<span class="fc" id="L173">        virtualEdge = queryOverlay.getVirtualEdge(internalVirtualEdgeId);</span>
+<span class="pc bpc" id="L174" title="1 of 2 branches missed.">        if (virtualEdge.getAdjNode() != adjNode)</span>
+<span class="nc" id="L175">            throw new IllegalArgumentException(&quot;The virtual edge with ID &quot; + virtualEdgeId + &quot; does not touch node &quot; + adjNode);</span>
+
+<span class="fc" id="L177">        return virtualEdge;</span>
+    }
+
+    private IntObjectMap&lt;List&lt;RoutingCHEdgeIteratorState&gt;&gt; buildVirtualEdgesAtRealNodes(final RoutingCHEdgeExplorer explorer) {
+<span class="fc" id="L181">        final IntObjectMap&lt;List&lt;RoutingCHEdgeIteratorState&gt;&gt; virtualEdgesAtRealNodes =</span>
+<span class="fc" id="L182">                new IntObjectHashMap&lt;&gt;(queryOverlay.getEdgeChangesAtRealNodes().size());</span>
+<span class="fc" id="L183">        queryOverlay.getEdgeChangesAtRealNodes().forEach(new IntObjectProcedure&lt;QueryOverlay.EdgeChanges&gt;() {</span>
+            @Override
+            public void apply(int node, QueryOverlay.EdgeChanges edgeChanges) {
+<span class="fc" id="L186">                List&lt;RoutingCHEdgeIteratorState&gt; virtualEdges = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L187" title="All 2 branches covered.">                for (EdgeIteratorState v : edgeChanges.getAdditionalEdges()) {</span>
+<span class="pc bpc" id="L188" title="1 of 2 branches missed.">                    assert v.getBaseNode() == node;</span>
+<span class="fc" id="L189">                    int edge = v.getEdge();</span>
+<span class="pc bpc" id="L190" title="1 of 2 branches missed.">                    if (queryGraph.isVirtualEdge(edge)) {</span>
+<span class="fc" id="L191">                        edge = shiftVirtualEdgeIDForCH(edge);</span>
+                    }
+<span class="fc" id="L193">                    virtualEdges.add(buildVirtualCHEdgeState(v, edge));</span>
+<span class="fc" id="L194">                }</span>
+<span class="fc" id="L195">                RoutingCHEdgeIterator iter = explorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L196" title="All 2 branches covered.">                while (iter.next()) {</span>
+                    // shortcuts cannot be in the removed edge set because this was determined on the (base) query graph
+<span class="fc bfc" id="L198" title="All 2 branches covered.">                    if (iter.isShortcut()) {</span>
+<span class="fc" id="L199">                        virtualEdges.add(new VirtualCHEdgeIteratorState(iter.getEdge(), NO_EDGE,</span>
+<span class="fc" id="L200">                                iter.getBaseNode(), iter.getAdjNode(), iter.getOrigEdgeKeyFirst(), iter.getOrigEdgeKeyLast(),</span>
+<span class="fc" id="L201">                                iter.getSkippedEdge1(), iter.getSkippedEdge2(), iter.getWeight(false), iter.getWeight(true)));</span>
+<span class="fc bfc" id="L202" title="All 2 branches covered.">                    } else if (!edgeChanges.getRemovedEdges().contains(iter.getOrigEdge())) {</span>
+<span class="fc" id="L203">                        virtualEdges.add(new VirtualCHEdgeIteratorState(iter.getEdge(), iter.getOrigEdge(),</span>
+<span class="fc" id="L204">                                iter.getBaseNode(), iter.getAdjNode(), iter.getOrigEdgeKeyFirst(), iter.getOrigEdgeKeyLast(),</span>
+<span class="fc" id="L205">                                NO_EDGE, NO_EDGE, iter.getWeight(false), iter.getWeight(true)));</span>
+                    }
+                }
+<span class="fc" id="L208">                virtualEdgesAtRealNodes.put(node, virtualEdges);</span>
+<span class="fc" id="L209">            }</span>
+        });
+<span class="fc" id="L211">        return virtualEdgesAtRealNodes;</span>
+    }
+
+    private List&lt;List&lt;RoutingCHEdgeIteratorState&gt;&gt; buildVirtualEdgesAtVirtualNodes() {
+<span class="fc" id="L215">        final int virtualNodes = queryOverlay.getVirtualNodes().size();</span>
+<span class="fc" id="L216">        final List&lt;List&lt;RoutingCHEdgeIteratorState&gt;&gt; virtualEdgesAtVirtualNodes = new ArrayList&lt;&gt;(virtualNodes);</span>
+<span class="fc bfc" id="L217" title="All 2 branches covered.">        for (int i = 0; i &lt; virtualNodes; i++) {</span>
+<span class="fc" id="L218">            List&lt;RoutingCHEdgeIteratorState&gt; virtualEdges = Arrays.&lt;RoutingCHEdgeIteratorState&gt;asList(</span>
+<span class="fc" id="L219">                    buildVirtualCHEdgeState(queryOverlay.getVirtualEdges().get(i * 4 + SNAP_BASE)),</span>
+<span class="fc" id="L220">                    buildVirtualCHEdgeState(queryOverlay.getVirtualEdges().get(i * 4 + SNAP_ADJ))</span>
+            );
+<span class="fc" id="L222">            virtualEdgesAtVirtualNodes.add(virtualEdges);</span>
+        }
+<span class="fc" id="L224">        return virtualEdgesAtVirtualNodes;</span>
+    }
+
+    private VirtualCHEdgeIteratorState buildVirtualCHEdgeState(VirtualEdgeIteratorState virtualEdgeState) {
+<span class="fc" id="L228">        int virtualCHEdge = shiftVirtualEdgeIDForCH(virtualEdgeState.getEdge());</span>
+<span class="fc" id="L229">        return buildVirtualCHEdgeState(virtualEdgeState, virtualCHEdge);</span>
+    }
+
+    private VirtualCHEdgeIteratorState buildVirtualCHEdgeState(EdgeIteratorState edgeState, int edgeID) {
+<span class="fc" id="L233">        double fwdWeight = weighting.calcEdgeWeight(edgeState, false);</span>
+<span class="fc" id="L234">        double bwdWeight = weighting.calcEdgeWeight(edgeState, true);</span>
+<span class="fc" id="L235">        return new VirtualCHEdgeIteratorState(edgeID, edgeState.getEdge(), edgeState.getBaseNode(), edgeState.getAdjNode(),</span>
+<span class="fc" id="L236">                edgeState.getEdgeKey(), edgeState.getEdgeKey(), NO_EDGE, NO_EDGE, fwdWeight, bwdWeight);</span>
+    }
+
+    private int shiftVirtualEdgeIDForCH(int edge) {
+<span class="fc" id="L240">        return edge + routingCHGraph.getEdges() - routingCHGraph.getBaseGraph().getEdges();</span>
+    }
+
+    private int getInternalVirtualEdgeId(int edge) {
+<span class="fc" id="L244">        return 2 * (edge - routingCHGraph.getEdges());</span>
+    }
+
+    private boolean isVirtualNode(int node) {
+<span class="fc bfc" id="L248" title="All 2 branches covered.">        return node &gt;= routingCHGraph.getNodes();</span>
+    }
+
+    private boolean isVirtualEdge(int edge) {
+<span class="fc bfc" id="L252" title="All 2 branches covered.">        return edge &gt;= routingCHGraph.getEdges();</span>
+    }
+
+    private static class VirtualCHEdgeIteratorState implements RoutingCHEdgeIteratorState {
+        private final int edge;
+        private final int origEdge;
+        private final int baseNode;
+        private final int adjNode;
+        private final int origEdgeKeyFirst;
+        private final int origEdgeKeyLast;
+        private final int skippedEdge1;
+        private final int skippedEdge2;
+        private final double weightFwd;
+        private final double weightBwd;
+
+<span class="fc" id="L267">        public VirtualCHEdgeIteratorState(int edge, int origEdge, int baseNode, int adjNode, int origEdgeKeyFirst, int origEdgeKeyLast, int skippedEdge1, int skippedEdge2, double weightFwd, double weightBwd) {</span>
+<span class="fc" id="L268">            this.edge = edge;</span>
+<span class="fc" id="L269">            this.origEdge = origEdge;</span>
+<span class="fc" id="L270">            this.baseNode = baseNode;</span>
+<span class="fc" id="L271">            this.adjNode = adjNode;</span>
+<span class="fc" id="L272">            this.origEdgeKeyFirst = origEdgeKeyFirst;</span>
+<span class="fc" id="L273">            this.origEdgeKeyLast = origEdgeKeyLast;</span>
+<span class="fc" id="L274">            this.skippedEdge1 = skippedEdge1;</span>
+<span class="fc" id="L275">            this.skippedEdge2 = skippedEdge2;</span>
+<span class="fc" id="L276">            this.weightFwd = weightFwd;</span>
+<span class="fc" id="L277">            this.weightBwd = weightBwd;</span>
+<span class="fc" id="L278">        }</span>
+
+        @Override
+        public int getEdge() {
+<span class="fc" id="L282">            return edge;</span>
+        }
+
+        @Override
+        public int getOrigEdge() {
+<span class="fc" id="L287">            return origEdge;</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyFirst() {
+<span class="fc" id="L292">            return origEdgeKeyFirst;</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLast() {
+<span class="fc" id="L297">            return origEdgeKeyLast;</span>
+        }
+
+        @Override
+        public int getBaseNode() {
+<span class="fc" id="L302">            return baseNode;</span>
+        }
+
+        @Override
+        public int getAdjNode() {
+<span class="fc" id="L307">            return adjNode;</span>
+        }
+
+        @Override
+        public boolean isShortcut() {
+<span class="fc bfc" id="L312" title="All 2 branches covered.">            return origEdge == NO_EDGE;</span>
+        }
+
+        @Override
+        public int getSkippedEdge1() {
+<span class="fc" id="L317">            return skippedEdge1;</span>
+        }
+
+        @Override
+        public int getSkippedEdge2() {
+<span class="fc" id="L322">            return skippedEdge2;</span>
+        }
+
+        @Override
+        public double getWeight(boolean reverse) {
+<span class="fc bfc" id="L327" title="All 2 branches covered.">            return reverse ? weightBwd : weightFwd;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L332">            return &quot;virtual: &quot; + edge + &quot;: &quot; + baseNode + &quot;-&gt;&quot; + adjNode + &quot;, orig: &quot; + origEdge + &quot;, weightFwd: &quot; + Helper.round2(weightFwd) + &quot;, weightBwd: &quot; + Helper.round2(weightBwd);</span>
+        }
+
+    }
+
+<span class="fc" id="L337">    private static class VirtualCHEdgeIterator implements RoutingCHEdgeIterator {</span>
+        private List&lt;RoutingCHEdgeIteratorState&gt; edges;
+<span class="fc" id="L339">        private int current = -1;</span>
+
+        @Override
+        public boolean next() {
+<span class="fc" id="L343">            current++;</span>
+<span class="fc bfc" id="L344" title="All 2 branches covered.">            return current &lt; edges.size();</span>
+        }
+
+        void reset(List&lt;RoutingCHEdgeIteratorState&gt; edges) {
+<span class="fc" id="L348">            this.edges = edges;</span>
+<span class="fc" id="L349">            current = -1;</span>
+<span class="fc" id="L350">        }</span>
+
+        @Override
+        public int getEdge() {
+<span class="fc" id="L354">            return getCurrent().getEdge();</span>
+        }
+
+        @Override
+        public int getOrigEdge() {
+<span class="fc" id="L359">            return getCurrent().getOrigEdge();</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyFirst() {
+<span class="fc" id="L364">            return getCurrent().getOrigEdgeKeyFirst();</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLast() {
+<span class="fc" id="L369">            return getCurrent().getOrigEdgeKeyLast();</span>
+        }
+
+        @Override
+        public int getBaseNode() {
+<span class="fc" id="L374">            return getCurrent().getBaseNode();</span>
+        }
+
+        @Override
+        public int getAdjNode() {
+<span class="fc" id="L379">            return getCurrent().getAdjNode();</span>
+        }
+
+        @Override
+        public boolean isShortcut() {
+<span class="fc" id="L384">            return getCurrent().isShortcut();</span>
+        }
+
+        @Override
+        public int getSkippedEdge1() {
+<span class="pc bpc" id="L389" title="1 of 2 branches missed.">            if (!isShortcut())</span>
+<span class="nc" id="L390">                throw new IllegalStateException(&quot;Skipped edges are only available for shortcuts&quot;);</span>
+<span class="fc" id="L391">            return getCurrent().getSkippedEdge1();</span>
+        }
+
+        @Override
+        public int getSkippedEdge2() {
+<span class="pc bpc" id="L396" title="1 of 2 branches missed.">            if (!isShortcut())</span>
+<span class="nc" id="L397">                throw new IllegalStateException(&quot;Skipped edges are only available for shortcuts&quot;);</span>
+<span class="fc" id="L398">            return getCurrent().getSkippedEdge2();</span>
+        }
+
+        @Override
+        public double getWeight(boolean reverse) {
+<span class="fc" id="L403">            return getCurrent().getWeight(reverse);</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc bnc" id="L408" title="All 2 branches missed.">            if (current &lt; 0)</span>
+<span class="nc" id="L409">                return &quot;not started&quot;;</span>
+<span class="nc" id="L410">            return edges.get(current).toString() + &quot;, current: &quot; + (current + 1) + &quot;/&quot; + edges.size();</span>
+        }
+
+        private RoutingCHEdgeIteratorState getCurrent() {
+<span class="fc" id="L414">            return edges.get(current);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

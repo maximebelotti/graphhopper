@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DistancePlaneProjection.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">DistancePlaneProjection.java</span></div><h1>DistancePlaneProjection.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import static java.lang.Math.*;
+
+/**
+ * Calculates the approximate distance of two points on earth. Very good results if delat_lon is
+ * not too big (see DistanceCalcTest), e.g. the distance is small.
+ * &lt;p&gt;
+ * http://en.wikipedia.org/wiki/Geographical_distance#Spherical_Earth_projected_to_a_plane
+ * &lt;p&gt;
+ * http://stackoverflow.com/q/1006654
+ * &lt;p&gt;
+ * http://en.wikipedia.org/wiki/Mercator_projection#Mathematics_of_the_Mercator_projection
+ * http://gis.stackexchange.com/questions/4906/why-is-law-of-cosines-more-preferable-than-haversine-when-calculating-distance-b
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+<span class="fc" id="L36">public class DistancePlaneProjection extends DistanceCalcEarth {</span>
+<span class="fc" id="L37">    public static final DistancePlaneProjection DIST_PLANE = new DistancePlaneProjection();</span>
+
+    @Override
+    public double calcDist(double fromLat, double fromLon, double toLat, double toLon) {
+<span class="fc" id="L41">        double normedDist = calcNormalizedDist(fromLat, fromLon, toLat, toLon);</span>
+<span class="fc" id="L42">        return R * sqrt(normedDist);</span>
+    }
+
+    @Override
+    public double calcDist3D(double fromLat, double fromLon, double fromHeight,
+                             double toLat, double toLon, double toHeight) {
+<span class="fc bfc" id="L48" title="All 2 branches covered.">        double dEleNorm = hasElevationDiff(fromHeight, toHeight) ? calcNormalizedDist(toHeight - fromHeight) : 0;</span>
+<span class="fc" id="L49">        double normedDist = calcNormalizedDist(fromLat, fromLon, toLat, toLon);</span>
+<span class="fc" id="L50">        return R * sqrt(normedDist + dEleNorm);</span>
+    }
+
+    @Override
+    public double calcDenormalizedDist(double normedDist) {
+<span class="fc" id="L55">        return R * sqrt(normedDist);</span>
+    }
+
+    @Override
+    public double calcNormalizedDist(double dist) {
+<span class="fc" id="L60">        double tmp = dist / R;</span>
+<span class="fc" id="L61">        return tmp * tmp;</span>
+    }
+
+    @Override
+    public double calcNormalizedDist(double fromLat, double fromLon, double toLat, double toLon) {
+<span class="fc" id="L66">        double dLat = toRadians(toLat - fromLat);</span>
+<span class="fc" id="L67">        double dLon = toRadians(toLon - fromLon);</span>
+<span class="fc" id="L68">        double left = cos(toRadians((fromLat + toLat) / 2)) * dLon;</span>
+<span class="fc" id="L69">        return dLat * dLat + left * left;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L74">        return &quot;PLANE_PROJ&quot;;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

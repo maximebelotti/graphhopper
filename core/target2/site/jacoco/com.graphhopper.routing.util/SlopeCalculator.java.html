@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SlopeCalculator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util</a> &gt; <span class="el_source">SlopeCalculator.java</span></div><h1>SlopeCalculator.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.routing.util.parsers.TagParser;
+import com.graphhopper.storage.IntsRef;
+import com.graphhopper.util.DistanceCalcEarth;
+import com.graphhopper.util.PointList;
+
+public class SlopeCalculator implements TagParser {
+    private final DecimalEncodedValue maxSlopeEnc;
+    private final DecimalEncodedValue averageSlopeEnc;
+    // the elevation data fluctuates a lot and so the slope is not that precise for short edges.
+    private static final double MIN_LENGTH = 8;
+
+<span class="fc" id="L17">    public SlopeCalculator(DecimalEncodedValue max, DecimalEncodedValue averageEnc) {</span>
+<span class="fc" id="L18">        this.maxSlopeEnc = max;</span>
+<span class="fc" id="L19">        this.averageSlopeEnc = averageEnc;</span>
+<span class="fc" id="L20">    }</span>
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
+<span class="fc" id="L24">        PointList pointList = way.getTag(&quot;point_list&quot;, null);</span>
+<span class="pc bpc" id="L25" title="1 of 2 branches missed.">        if (pointList != null) {</span>
+<span class="pc bpc" id="L26" title="1 of 4 branches missed.">            if (pointList.isEmpty() || !pointList.is3D()) {</span>
+<span class="pc bpc" id="L27" title="1 of 2 branches missed.">                if (maxSlopeEnc != null)</span>
+<span class="fc" id="L28">                    maxSlopeEnc.setDecimal(false, edgeId, edgeIntAccess, 0);</span>
+<span class="pc bpc" id="L29" title="1 of 2 branches missed.">                if (averageSlopeEnc != null)</span>
+<span class="fc" id="L30">                    averageSlopeEnc.setDecimal(false, edgeId, edgeIntAccess, 0);</span>
+<span class="fc" id="L31">                return;</span>
+            }
+            // Calculate 2d distance, although pointList might be 3D.
+            // This calculation is a bit expensive and edge_distance is available already, but this would be in 3D
+<span class="fc" id="L35">            double distance2D = DistanceCalcEarth.calcDistance(pointList, false);</span>
+<span class="fc bfc" id="L36" title="All 2 branches covered.">            if (distance2D &lt; MIN_LENGTH) {</span>
+<span class="pc bpc" id="L37" title="1 of 2 branches missed.">                if (averageSlopeEnc != null)</span>
+                    // default is minimum of average_slope is negative so we have to explicitly set it to 0
+<span class="fc" id="L39">                    averageSlopeEnc.setDecimal(false, edgeId, edgeIntAccess, 0);</span>
+<span class="fc" id="L40">                return;</span>
+            }
+
+<span class="fc" id="L43">            double towerNodeSlope = calcSlope(pointList.getEle(pointList.size() - 1) - pointList.getEle(0), distance2D);</span>
+<span class="pc bpc" id="L44" title="1 of 2 branches missed.">            if (Double.isNaN(towerNodeSlope))</span>
+<span class="nc" id="L45">                throw new IllegalArgumentException(&quot;average_slope was NaN for OSM way ID &quot; + way.getId());</span>
+
+<span class="pc bpc" id="L47" title="1 of 2 branches missed.">            if (averageSlopeEnc != null) {</span>
+<span class="fc bfc" id="L48" title="All 2 branches covered.">                if (towerNodeSlope &gt;= 0)</span>
+<span class="fc" id="L49">                    averageSlopeEnc.setDecimal(false, edgeId, edgeIntAccess, Math.min(towerNodeSlope, averageSlopeEnc.getMaxStorableDecimal()));</span>
+                else
+<span class="fc" id="L51">                    averageSlopeEnc.setDecimal(true, edgeId, edgeIntAccess, Math.min(Math.abs(towerNodeSlope), averageSlopeEnc.getMaxStorableDecimal()));</span>
+            }
+
+<span class="pc bpc" id="L54" title="1 of 2 branches missed.">            if (maxSlopeEnc != null) {</span>
+                // max_slope is more error-prone as the shorter distances increase the fluctuation
+                // so apply some more filtering (here we use the average elevation delta of the previous two points)
+<span class="fc" id="L57">                double maxSlope = 0, prevDist = 0, prevLat = pointList.getLat(0), prevLon = pointList.getLon(0);</span>
+<span class="fc bfc" id="L58" title="All 2 branches covered.">                for (int i = 1; i &lt; pointList.size(); i++) {</span>
+<span class="fc" id="L59">                    double pillarDistance2D = DistanceCalcEarth.DIST_EARTH.calcDist(prevLat, prevLon, pointList.getLat(i), pointList.getLon(i));</span>
+<span class="fc bfc" id="L60" title="All 4 branches covered.">                    if (i &gt; 1 &amp;&amp; prevDist &gt; MIN_LENGTH) {</span>
+<span class="fc" id="L61">                        double averagedPrevEle = (pointList.getEle(i - 1) + pointList.getEle(i - 2)) / 2;</span>
+<span class="fc" id="L62">                        double tmpSlope = calcSlope(pointList.getEle(i) - averagedPrevEle, pillarDistance2D + prevDist / 2);</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">                        maxSlope = Math.abs(tmpSlope) &gt; Math.abs(maxSlope) ? tmpSlope : maxSlope;</span>
+                    }
+<span class="fc" id="L65">                    prevDist = pillarDistance2D;</span>
+<span class="fc" id="L66">                    prevLat = pointList.getLat(i);</span>
+<span class="fc" id="L67">                    prevLon = pointList.getLon(i);</span>
+                }
+
+                // For tunnels and bridges we cannot trust the pillar node elevation and ignore all changes.
+                // Probably we should somehow recalculate even the average_slope after elevation interpolation? See EdgeElevationInterpolator
+<span class="fc bfc" id="L72" title="All 6 branches covered.">                if (way.hasTag(&quot;tunnel&quot;, &quot;yes&quot;) || way.hasTag(&quot;bridge&quot;, &quot;yes&quot;) || way.hasTag(&quot;highway&quot;, &quot;steps&quot;))</span>
+<span class="fc" id="L73">                    maxSlope = towerNodeSlope;</span>
+                else
+<span class="fc bfc" id="L75" title="All 2 branches covered.">                    maxSlope = Math.abs(towerNodeSlope) &gt; Math.abs(maxSlope) ? towerNodeSlope : maxSlope;</span>
+
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">                if (Double.isNaN(maxSlope))</span>
+<span class="nc" id="L78">                    throw new IllegalArgumentException(&quot;max_slope was NaN for OSM way ID &quot; + way.getId());</span>
+
+<span class="fc" id="L80">                double val = Math.max(maxSlope, maxSlopeEnc.getMinStorableDecimal());</span>
+<span class="fc" id="L81">                maxSlopeEnc.setDecimal(false, edgeId, edgeIntAccess, Math.min(maxSlopeEnc.getMaxStorableDecimal(), val));</span>
+            }
+        }
+<span class="fc" id="L84">    }</span>
+
+    static double calcSlope(double eleDelta, double distance2D) {
+<span class="fc" id="L87">        return eleDelta * 100 / distance2D;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

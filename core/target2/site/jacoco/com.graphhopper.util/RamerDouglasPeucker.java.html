@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RamerDouglasPeucker.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">RamerDouglasPeucker.java</span></div><h1>RamerDouglasPeucker.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+/**
+ * Simplifies a list of 2D points which are not too far away.
+ * http://en.wikipedia.org/wiki/Ramer%E2%80%93Douglas%E2%80%93Peucker_algorithm
+ * &lt;p&gt;
+ * Calling simplify is thread safe.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class RamerDouglasPeucker {
+    private double normedMaxDist;
+    private double elevationMaxDistance;
+    private double maxDistance;
+    private DistanceCalc calc;
+    private boolean approx;
+
+<span class="fc" id="L36">    public RamerDouglasPeucker() {</span>
+<span class="fc" id="L37">        setApproximation(true);</span>
+        // 1m
+<span class="fc" id="L39">        setMaxDistance(1);</span>
+        // elevation ignored by default
+<span class="fc" id="L41">        setElevationMaxDistance(Double.MAX_VALUE);</span>
+<span class="fc" id="L42">    }</span>
+
+    public void setApproximation(boolean a) {
+<span class="fc" id="L45">        approx = a;</span>
+<span class="pc bpc" id="L46" title="1 of 2 branches missed.">        if (approx)</span>
+<span class="fc" id="L47">            calc = DistancePlaneProjection.DIST_PLANE;</span>
+        else
+<span class="nc" id="L49">            calc = DistanceCalcEarth.DIST_EARTH;</span>
+<span class="fc" id="L50">    }</span>
+
+    /**
+     * maximum distance of discrepancy (from the normal way) in meter
+     */
+    public RamerDouglasPeucker setMaxDistance(double dist) {
+<span class="fc" id="L56">        this.normedMaxDist = calc.calcNormalizedDist(dist);</span>
+<span class="fc" id="L57">        this.maxDistance = dist;</span>
+<span class="fc" id="L58">        return this;</span>
+    }
+
+    /**
+     * maximum elevation distance of discrepancy (from the normal way) in meters
+     */
+    public RamerDouglasPeucker setElevationMaxDistance(double dist) {
+<span class="fc" id="L65">        this.elevationMaxDistance = dist;</span>
+<span class="fc" id="L66">        return this;</span>
+    }
+
+    /**
+     * Simplifies the &lt;code&gt;points&lt;/code&gt;, from index 0 to size-1.
+     * &lt;p&gt;
+     * It is a wrapper method for {@link RamerDouglasPeucker#simplify(PointList, int, int)}.
+     *
+     * @return The number removed points
+     */
+    public int simplify(PointList points) {
+<span class="fc" id="L77">        return simplify(points, 0, points.size() - 1);</span>
+    }
+
+    public int simplify(PointList points, int fromIndex, int lastIndex) {
+<span class="fc" id="L81">        return simplify(points, fromIndex, lastIndex, true);</span>
+    }
+
+    /**
+     * Simplifies a part of the &lt;code&gt;points&lt;/code&gt;. The &lt;code&gt;fromIndex&lt;/code&gt; and &lt;code&gt;lastIndex&lt;/code&gt;
+     * are guaranteed to be kept.
+     *
+     * @param points    The PointList to simplify
+     * @param fromIndex Start index to simplify, should be &lt;= &lt;code&gt;lastIndex&lt;/code&gt;
+     * @param lastIndex Simplify up to this index
+     * @param compress  Whether the &lt;code&gt;points&lt;/code&gt; shall be compressed or not, if set to false no points
+     *                  are actually removed, but instead their lat/lon/ele is only set to NaN
+     * @return The number of removed points
+     */
+    public int simplify(PointList points, int fromIndex, int lastIndex, boolean compress) {
+<span class="fc" id="L96">        int removed = 0;</span>
+<span class="fc" id="L97">        int size = lastIndex - fromIndex;</span>
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">        if (approx) {</span>
+<span class="fc" id="L99">            int delta = 500;</span>
+<span class="fc" id="L100">            int segments = size / delta + 1;</span>
+<span class="fc" id="L101">            int start = fromIndex;</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">            for (int i = 0; i &lt; segments; i++) {</span>
+                // start of next is end of last segment, except for the last
+<span class="fc" id="L104">                removed += subSimplify(points, start, Math.min(lastIndex, start + delta));</span>
+<span class="fc" id="L105">                start += delta;</span>
+            }
+<span class="fc" id="L107">        } else {</span>
+<span class="nc" id="L108">            removed = subSimplify(points, fromIndex, lastIndex);</span>
+        }
+
+<span class="fc bfc" id="L111" title="All 4 branches covered.">        if (removed &gt; 0 &amp;&amp; compress)</span>
+<span class="fc" id="L112">            removeNaN(points);</span>
+
+<span class="fc" id="L114">        return removed;</span>
+    }
+
+    // keep the points of fromIndex and lastIndex
+    int subSimplify(PointList points, int fromIndex, int lastIndex) {
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        if (lastIndex - fromIndex &lt; 2) {</span>
+<span class="fc" id="L120">            return 0;</span>
+        }
+<span class="fc" id="L122">        int indexWithMaxDist = -1;</span>
+<span class="fc" id="L123">        double maxDist = -1;</span>
+<span class="fc" id="L124">        double elevationFactor = maxDistance / elevationMaxDistance;</span>
+<span class="fc" id="L125">        double firstLat = points.getLat(fromIndex);</span>
+<span class="fc" id="L126">        double firstLon = points.getLon(fromIndex);</span>
+<span class="fc" id="L127">        double firstEle = points.getEle(fromIndex);</span>
+<span class="fc" id="L128">        double lastLat = points.getLat(lastIndex);</span>
+<span class="fc" id="L129">        double lastLon = points.getLon(lastIndex);</span>
+<span class="fc" id="L130">        double lastEle = points.getEle(lastIndex);</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        for (int i = fromIndex + 1; i &lt; lastIndex; i++) {</span>
+<span class="fc" id="L132">            double lat = points.getLat(i);</span>
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">            if (Double.isNaN(lat)) {</span>
+<span class="nc" id="L134">                continue;</span>
+            }
+<span class="fc" id="L136">            double lon = points.getLon(i);</span>
+<span class="fc" id="L137">            double ele = points.getEle(i);</span>
+<span class="pc bpc" id="L138" title="2 of 10 branches missed.">            double dist = (points.is3D() &amp;&amp; elevationMaxDistance &lt; Double.MAX_VALUE &amp;&amp; !Double.isNaN(firstEle) &amp;&amp; !Double.isNaN(lastEle) &amp;&amp; !Double.isNaN(ele))</span>
+<span class="fc" id="L139">                    ? calc.calcNormalizedEdgeDistance3D(</span>
+                    lat, lon, ele * elevationFactor,
+                    firstLat, firstLon, firstEle * elevationFactor,
+                    lastLat, lastLon, lastEle * elevationFactor)
+<span class="fc" id="L143">                    : calc.calcNormalizedEdgeDistance(lat, lon, firstLat, firstLon, lastLat, lastLon);</span>
+<span class="fc bfc" id="L144" title="All 2 branches covered.">            if (maxDist &lt; dist) {</span>
+<span class="fc" id="L145">                indexWithMaxDist = i;</span>
+<span class="fc" id="L146">                maxDist = dist;</span>
+            }
+        }
+
+<span class="pc bpc" id="L150" title="1 of 2 branches missed.">        if (indexWithMaxDist &lt; 0) {</span>
+<span class="nc" id="L151">            throw new IllegalStateException(&quot;maximum not found in [&quot; + fromIndex + &quot;,&quot; + lastIndex + &quot;]&quot;);</span>
+        }
+
+<span class="fc" id="L154">        int counter = 0;</span>
+<span class="fc bfc" id="L155" title="All 2 branches covered.">        if (maxDist &lt; normedMaxDist) {</span>
+<span class="fc bfc" id="L156" title="All 2 branches covered.">            for (int i = fromIndex + 1; i &lt; lastIndex; i++) {</span>
+<span class="fc" id="L157">                points.set(i, Double.NaN, Double.NaN, Double.NaN);</span>
+<span class="fc" id="L158">                counter++;</span>
+            }
+        } else {
+<span class="fc" id="L161">            counter = subSimplify(points, fromIndex, indexWithMaxDist);</span>
+<span class="fc" id="L162">            counter += subSimplify(points, indexWithMaxDist, lastIndex);</span>
+        }
+<span class="fc" id="L164">        return counter;</span>
+    }
+
+    /**
+     * Fills all entries of the point list that are NaN with the subsequent values (and therefore shortens the list)
+     */
+    static void removeNaN(PointList pointList) {
+<span class="fc" id="L171">        int curr = 0;</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">        for (int i = 0; i &lt; pointList.size(); i++) {</span>
+<span class="fc bfc" id="L173" title="All 2 branches covered.">            if (!Double.isNaN(pointList.getLat(i))) {</span>
+<span class="fc" id="L174">                pointList.set(curr, pointList.getLat(i), pointList.getLon(i), pointList.getEle(i));</span>
+<span class="fc" id="L175">                curr++;</span>
+            }
+        }
+<span class="fc" id="L178">        pointList.trimToSize(curr);</span>
+<span class="fc" id="L179">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

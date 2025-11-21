@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RoutingCHEdgeIteratorStateImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">RoutingCHEdgeIteratorStateImpl.java</span></div><h1>RoutingCHEdgeIteratorStateImpl.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.storage;
+
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.util.EdgeIteratorState;
+
+import static com.graphhopper.util.EdgeIterator.NO_EDGE;
+
+public class RoutingCHEdgeIteratorStateImpl implements RoutingCHEdgeIteratorState {
+    final CHStorage store;
+    final BaseGraph baseGraph;
+    private final Weighting weighting;
+<span class="fc" id="L30">    int edgeId = -1;</span>
+    int baseNode;
+    int adjNode;
+    final BaseGraph.EdgeIteratorStateImpl baseEdgeState;
+<span class="fc" id="L34">    long shortcutPointer = -1;</span>
+
+<span class="fc" id="L36">    public RoutingCHEdgeIteratorStateImpl(CHStorage store, BaseGraph baseGraph, BaseGraph.EdgeIteratorStateImpl baseEdgeState, Weighting weighting) {</span>
+<span class="fc" id="L37">        this.store = store;</span>
+<span class="fc" id="L38">        this.baseGraph = baseGraph;</span>
+<span class="fc" id="L39">        this.baseEdgeState = baseEdgeState;</span>
+<span class="fc" id="L40">        this.weighting = weighting;</span>
+<span class="fc" id="L41">    }</span>
+
+    boolean init(int edge, int expectedAdjNode) {
+<span class="pc bpc" id="L44" title="1 of 4 branches missed.">        if (edge &lt; 0 || edge &gt;= baseGraph.getEdges() + store.getShortcuts())</span>
+<span class="fc" id="L45">            throw new IllegalArgumentException(&quot;edge must be in bounds: [0,&quot; + (baseGraph.getEdges() + store.getShortcuts()) + &quot;[&quot;);</span>
+<span class="fc" id="L46">        edgeId = edge;</span>
+<span class="fc bfc" id="L47" title="All 2 branches covered.">        if (isShortcut()) {</span>
+<span class="fc" id="L48">            shortcutPointer = store.toShortcutPointer(edge - baseGraph.getEdges());</span>
+<span class="fc" id="L49">            baseNode = store.getNodeA(shortcutPointer);</span>
+<span class="fc" id="L50">            adjNode = store.getNodeB(shortcutPointer);</span>
+
+<span class="pc bpc" id="L52" title="1 of 4 branches missed.">            if (expectedAdjNode == adjNode || expectedAdjNode == Integer.MIN_VALUE) {</span>
+<span class="fc" id="L53">                return true;</span>
+<span class="fc bfc" id="L54" title="All 2 branches covered.">            } else if (expectedAdjNode == baseNode) {</span>
+<span class="fc" id="L55">                baseNode = adjNode;</span>
+<span class="fc" id="L56">                adjNode = expectedAdjNode;</span>
+<span class="fc" id="L57">                return true;</span>
+            }
+<span class="fc" id="L59">            return false;</span>
+        } else {
+<span class="fc" id="L61">            return baseEdgeState.init(edge, expectedAdjNode);</span>
+        }
+    }
+
+    @Override
+    public int getEdge() {
+        // we maintain this even for base edges, maybe try if not maintaining it is faster
+<span class="fc" id="L68">        return edgeId;</span>
+    }
+
+    @Override
+    public int getOrigEdge() {
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        return isShortcut() ? NO_EDGE : edgeState().getEdge();</span>
+    }
+
+    @Override
+    public int getOrigEdgeKeyFirst() {
+<span class="fc bfc" id="L78" title="All 4 branches covered.">        if (!isShortcut() || !store.isEdgeBased())</span>
+<span class="fc" id="L79">            return edgeState().getEdgeKey();</span>
+<span class="fc" id="L80">        return store.getOrigEdgeKeyFirst(shortcutPointer);</span>
+    }
+
+    @Override
+    public int getOrigEdgeKeyLast() {
+<span class="fc bfc" id="L85" title="All 4 branches covered.">        if (!isShortcut() || !store.isEdgeBased())</span>
+<span class="fc" id="L86">            return edgeState().getEdgeKey();</span>
+<span class="fc" id="L87">        return store.getOrigEdgeKeyLast(shortcutPointer);</span>
+    }
+
+    @Override
+    public int getBaseNode() {
+<span class="fc bfc" id="L92" title="All 2 branches covered.">        return isShortcut() ? baseNode : edgeState().getBaseNode();</span>
+    }
+
+    @Override
+    public int getAdjNode() {
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        return isShortcut() ? adjNode : edgeState().getAdjNode();</span>
+    }
+
+    @Override
+    public boolean isShortcut() {
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        return edgeId &gt;= baseGraph.getEdges();</span>
+    }
+
+    @Override
+    public int getSkippedEdge1() {
+<span class="fc" id="L107">        checkShortcut(true, &quot;getSkippedEdge1&quot;);</span>
+<span class="fc" id="L108">        return store.getSkippedEdge1(shortcutPointer);</span>
+    }
+
+    @Override
+    public int getSkippedEdge2() {
+<span class="fc" id="L113">        checkShortcut(true, &quot;getSkippedEdge2&quot;);</span>
+<span class="fc" id="L114">        return store.getSkippedEdge2(shortcutPointer);</span>
+    }
+
+    @Override
+    public double getWeight(boolean reverse) {
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        if (isShortcut()) {</span>
+<span class="fc" id="L120">            return store.getWeight(shortcutPointer);</span>
+        } else {
+<span class="fc" id="L122">            return getOrigEdgeWeight(reverse);</span>
+        }
+    }
+
+    double getOrigEdgeWeight(boolean reverse) {
+<span class="fc" id="L127">        return weighting.calcEdgeWeight(getBaseGraphEdgeState(), reverse);</span>
+    }
+
+    private EdgeIteratorState getBaseGraphEdgeState() {
+<span class="fc" id="L131">        checkShortcut(false, &quot;getBaseGraphEdgeState&quot;);</span>
+<span class="fc" id="L132">        return edgeState();</span>
+    }
+
+    EdgeIteratorState edgeState() {
+        // use this only via this getter method as it might have been overwritten
+<span class="fc" id="L137">        return baseEdgeState;</span>
+    }
+
+    void checkShortcut(boolean shouldBeShortcut, String methodName) {
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        if (isShortcut()) {</span>
+<span class="pc bpc" id="L142" title="1 of 2 branches missed.">            if (!shouldBeShortcut)</span>
+<span class="nc" id="L143">                throw new IllegalStateException(&quot;Cannot call &quot; + methodName + &quot; on shortcut &quot; + getEdge());</span>
+<span class="pc bpc" id="L144" title="1 of 2 branches missed.">        } else if (shouldBeShortcut)</span>
+<span class="nc" id="L145">            throw new IllegalStateException(&quot;Method &quot; + methodName + &quot; only for shortcuts &quot; + getEdge());</span>
+<span class="fc" id="L146">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

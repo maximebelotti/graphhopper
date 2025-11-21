@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RoutingCHGraphImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">RoutingCHGraphImpl.java</span></div><h1>RoutingCHGraphImpl.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.storage;
+
+import com.graphhopper.routing.weighting.Weighting;
+
+public class RoutingCHGraphImpl implements RoutingCHGraph {
+    private final BaseGraph baseGraph;
+    private final CHStorage chStorage;
+    private final Weighting weighting;
+
+    public static RoutingCHGraph fromGraph(BaseGraph baseGraph, CHStorage chStorage, CHConfig chConfig) {
+<span class="fc" id="L29">        return new RoutingCHGraphImpl(baseGraph, chStorage, chConfig.getWeighting());</span>
+    }
+
+<span class="fc" id="L32">    public RoutingCHGraphImpl(BaseGraph baseGraph, CHStorage chStorage, Weighting weighting) {</span>
+<span class="pc bpc" id="L33" title="1 of 4 branches missed.">        if (weighting.hasTurnCosts() &amp;&amp; !chStorage.isEdgeBased())</span>
+<span class="nc" id="L34">            throw new IllegalArgumentException(&quot;Weighting has turn costs, but CHStorage is node-based&quot;);</span>
+<span class="fc" id="L35">        this.baseGraph = baseGraph;</span>
+<span class="fc" id="L36">        this.chStorage = chStorage;</span>
+<span class="fc" id="L37">        this.weighting = weighting;</span>
+<span class="fc" id="L38">    }</span>
+
+    @Override
+    public int getNodes() {
+<span class="fc" id="L42">        return baseGraph.getNodes();</span>
+    }
+
+    @Override
+    public int getEdges() {
+<span class="fc" id="L47">        return baseGraph.getEdges() + chStorage.getShortcuts();</span>
+    }
+
+    @Override
+    public int getShortcuts() {
+<span class="fc" id="L52">        return chStorage.getShortcuts();</span>
+    }
+
+    @Override
+    public RoutingCHEdgeExplorer createInEdgeExplorer() {
+<span class="fc" id="L57">        return RoutingCHEdgeIteratorImpl.inEdges(chStorage, baseGraph, weighting);</span>
+    }
+
+    @Override
+    public RoutingCHEdgeExplorer createOutEdgeExplorer() {
+<span class="fc" id="L62">        return RoutingCHEdgeIteratorImpl.outEdges(chStorage, baseGraph, weighting);</span>
+    }
+
+    @Override
+    public RoutingCHEdgeIteratorState getEdgeIteratorState(int chEdge, int adjNode) {
+<span class="fc" id="L67">        RoutingCHEdgeIteratorStateImpl edgeState =</span>
+                new RoutingCHEdgeIteratorStateImpl(chStorage, baseGraph, new BaseGraph.EdgeIteratorStateImpl(baseGraph), weighting);
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        if (edgeState.init(chEdge, adjNode))</span>
+<span class="fc" id="L70">            return edgeState;</span>
+        // if edgeId exists, but adjacent nodes do not match
+<span class="fc" id="L72">        return null;</span>
+    }
+
+    @Override
+    public int getLevel(int node) {
+<span class="fc" id="L77">        return chStorage.getLevel(chStorage.toNodePointer(node));</span>
+    }
+
+    @Override
+    public Graph getBaseGraph() {
+<span class="fc" id="L82">        return baseGraph;</span>
+    }
+
+    @Override
+    public Weighting getWeighting() {
+<span class="fc" id="L87">        return weighting;</span>
+    }
+
+    @Override
+    public boolean hasTurnCosts() {
+<span class="fc" id="L92">        return weighting.hasTurnCosts();</span>
+    }
+
+    @Override
+    public boolean isEdgeBased() {
+<span class="fc" id="L97">        return chStorage.isEdgeBased();</span>
+    }
+
+    @Override
+    public double getTurnWeight(int edgeFrom, int nodeVia, int edgeTo) {
+<span class="fc" id="L102">        return weighting.calcTurnWeight(edgeFrom, nodeVia, edgeTo);</span>
+    }
+
+    @Override
+    public void close() {
+<span class="pc bpc" id="L107" title="1 of 2 branches missed.">        if (!baseGraph.isClosed()) baseGraph.close();</span>
+<span class="fc" id="L108">        chStorage.close();</span>
+<span class="fc" id="L109">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

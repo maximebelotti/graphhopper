@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NativeFSLockFactory.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">NativeFSLockFactory.java</span></div><h1>NativeFSLockFactory.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import com.graphhopper.util.Helper;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+
+/**
+ * Creates a write lock file. Influenced by Lucene code
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class NativeFSLockFactory implements LockFactory {
+    private File lockDir;
+
+<span class="fc" id="L37">    public NativeFSLockFactory() {</span>
+<span class="fc" id="L38">    }</span>
+
+<span class="fc" id="L40">    public NativeFSLockFactory(File dir) {</span>
+<span class="fc" id="L41">        this.lockDir = dir;</span>
+<span class="fc" id="L42">    }</span>
+
+    public static void main(String[] args) throws IOException {
+        // trying FileLock mechanics in different processes
+<span class="nc" id="L46">        File file = new File(&quot;tmp.lock&quot;);</span>
+
+<span class="nc" id="L48">        file.createNewFile();</span>
+<span class="nc" id="L49">        FileChannel channel = new RandomAccessFile(file, &quot;r&quot;).getChannel();</span>
+
+<span class="nc" id="L51">        boolean shared = true;</span>
+<span class="nc" id="L52">        FileLock lock1 = channel.tryLock(0, Long.MAX_VALUE, shared);</span>
+
+<span class="nc" id="L54">        System.out.println(&quot;locked &quot; + lock1);</span>
+<span class="nc" id="L55">        System.in.read();</span>
+
+<span class="nc" id="L57">        System.out.println(&quot;release &quot; + lock1);</span>
+<span class="nc" id="L58">        lock1.release();</span>
+<span class="nc" id="L59">    }</span>
+
+    @Override
+    public void setLockDir(File lockDir) {
+<span class="fc" id="L63">        this.lockDir = lockDir;</span>
+<span class="fc" id="L64">    }</span>
+
+    @Override
+    public synchronized GHLock create(String fileName, boolean writeAccess) {
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">        if (lockDir == null)</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">            throw new RuntimeException(&quot;Set lockDir before creating &quot; + (writeAccess ? &quot;write&quot; : &quot;read&quot;) + &quot; locks&quot;);</span>
+
+<span class="fc" id="L71">        return new NativeLock(lockDir, fileName, writeAccess);</span>
+    }
+
+    @Override
+    public synchronized void forceRemove(String fileName, boolean writeAccess) {
+<span class="pc bpc" id="L76" title="1 of 2 branches missed.">        if (lockDir.exists()) {</span>
+<span class="fc" id="L77">            create(fileName, writeAccess).release();</span>
+<span class="fc" id="L78">            File lockFile = new File(lockDir, fileName);</span>
+<span class="pc bpc" id="L79" title="1 of 4 branches missed.">            if (lockFile.exists() &amp;&amp; !lockFile.delete())</span>
+<span class="fc" id="L80">                throw new RuntimeException(&quot;Cannot delete &quot; + lockFile);</span>
+        }
+<span class="fc" id="L82">    }</span>
+
+    static class NativeLock implements GHLock {
+        private final String name;
+        private final File lockDir;
+        private final File lockFile;
+        private final boolean writeLock;
+        private RandomAccessFile tmpRaFile;
+        private FileChannel tmpChannel;
+        private FileLock tmpLock;
+        private Exception failedReason;
+
+<span class="fc" id="L94">        public NativeLock(File lockDir, String fileName, boolean writeLock) {</span>
+<span class="fc" id="L95">            this.name = fileName;</span>
+<span class="fc" id="L96">            this.lockDir = lockDir;</span>
+<span class="fc" id="L97">            this.lockFile = new File(lockDir, fileName);</span>
+<span class="fc" id="L98">            this.writeLock = writeLock;</span>
+<span class="fc" id="L99">        }</span>
+
+        @Override
+        public synchronized boolean tryLock() {
+            // already locked
+<span class="fc bfc" id="L104" title="All 2 branches covered.">            if (lockExists())</span>
+<span class="fc" id="L105">                return false;</span>
+
+            // on-the-fly: make sure directory exists
+<span class="fc bfc" id="L108" title="All 2 branches covered.">            if (!lockDir.exists()) {</span>
+<span class="pc bpc" id="L109" title="1 of 2 branches missed.">                if (!lockDir.mkdirs())</span>
+<span class="nc" id="L110">                    throw new RuntimeException(&quot;Directory &quot; + lockDir + &quot; does not exist and cannot be created to place lock file there: &quot; + lockFile);</span>
+            }
+
+<span class="pc bpc" id="L113" title="1 of 2 branches missed.">            if (!lockDir.isDirectory())</span>
+<span class="nc" id="L114">                throw new IllegalArgumentException(&quot;lockDir has to be a directory: &quot; + lockDir);</span>
+
+            try {
+<span class="fc" id="L117">                failedReason = null;</span>
+                // we need write access even for read locks - in order to create the lock file!
+<span class="fc" id="L119">                tmpRaFile = new RandomAccessFile(lockFile, &quot;rw&quot;);</span>
+<span class="nc" id="L120">            } catch (IOException ex) {</span>
+<span class="nc" id="L121">                failedReason = ex;</span>
+<span class="nc" id="L122">                return false;</span>
+<span class="fc" id="L123">            }</span>
+
+            try {
+<span class="fc" id="L126">                tmpChannel = tmpRaFile.getChannel();</span>
+                try {
+<span class="fc bfc" id="L128" title="All 2 branches covered.">                    tmpLock = tmpChannel.tryLock(0, Long.MAX_VALUE, !writeLock);</span>
+                    // OverlappingFileLockException is not an IOException!
+<span class="fc" id="L130">                } catch (Exception ex) {</span>
+<span class="fc" id="L131">                    failedReason = ex;</span>
+                } finally {
+<span class="fc bfc" id="L133" title="All 2 branches covered.">                    if (tmpLock == null) {</span>
+<span class="fc" id="L134">                        Helper.close(tmpChannel);</span>
+<span class="fc" id="L135">                        tmpChannel = null;</span>
+                    }
+                }
+            } finally {
+<span class="fc bfc" id="L139" title="All 2 branches covered.">                if (tmpChannel == null) {</span>
+<span class="fc" id="L140">                    Helper.close(tmpRaFile);</span>
+<span class="fc" id="L141">                    tmpRaFile = null;</span>
+                }
+            }
+<span class="fc" id="L144">            return lockExists();</span>
+        }
+
+        private synchronized boolean lockExists() {
+<span class="fc bfc" id="L148" title="All 2 branches covered.">            return tmpLock != null;</span>
+        }
+
+        @Override
+        public synchronized boolean isLocked() {
+<span class="fc bfc" id="L153" title="All 2 branches covered.">            if (!lockFile.exists())</span>
+<span class="fc" id="L154">                return false;</span>
+
+<span class="fc bfc" id="L156" title="All 2 branches covered.">            if (lockExists())</span>
+<span class="fc" id="L157">                return true;</span>
+
+            try {
+<span class="fc" id="L160">                boolean obtained = tryLock();</span>
+<span class="pc bpc" id="L161" title="1 of 2 branches missed.">                if (obtained)</span>
+<span class="nc" id="L162">                    release();</span>
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">                return !obtained;</span>
+<span class="nc" id="L164">            } catch (Exception ex) {</span>
+<span class="nc" id="L165">                return false;</span>
+            }
+        }
+
+        @Override
+        public synchronized void release() {
+<span class="fc bfc" id="L171" title="All 2 branches covered.">            if (lockExists()) {</span>
+                try {
+<span class="fc" id="L173">                    failedReason = null;</span>
+<span class="fc" id="L174">                    tmpLock.release();</span>
+<span class="nc" id="L175">                } catch (Exception ex) {</span>
+<span class="nc" id="L176">                    throw new RuntimeException(ex);</span>
+                } finally {
+<span class="fc" id="L178">                    tmpLock = null;</span>
+                    try {
+<span class="fc" id="L180">                        tmpChannel.close();</span>
+<span class="nc" id="L181">                    } catch (Exception ex) {</span>
+<span class="nc" id="L182">                        throw new RuntimeException(ex);</span>
+                    } finally {
+<span class="fc" id="L184">                        tmpChannel = null;</span>
+                        try {
+<span class="fc" id="L186">                            tmpRaFile.close();</span>
+<span class="nc" id="L187">                        } catch (Exception ex) {</span>
+<span class="nc" id="L188">                            throw new RuntimeException(ex);</span>
+                        } finally {
+<span class="fc" id="L190">                            tmpRaFile = null;</span>
+                        }
+                    }
+                }
+<span class="fc" id="L194">                lockFile.delete();</span>
+            }
+<span class="fc" id="L196">        }</span>
+
+        @Override
+        public String getName() {
+<span class="fc" id="L200">            return name;</span>
+        }
+
+        @Override
+        public Exception getObtainFailedReason() {
+<span class="fc" id="L205">            return failedReason;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L210">            return lockFile.toString();</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

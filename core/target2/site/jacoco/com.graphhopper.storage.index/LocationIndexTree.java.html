@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LocationIndexTree.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage.index</a> &gt; <span class="el_source">LocationIndexTree.java</span></div><h1>LocationIndexTree.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage.index;
+
+import com.carrotsearch.hppc.IntHashSet;
+import com.graphhopper.routing.util.AllEdgesIterator;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.storage.Directory;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.BBox;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
+
+import static com.graphhopper.util.DistancePlaneProjection.DIST_PLANE;
+
+/**
+ * This class implements a Quadtree to get the closest node or edge from GPS coordinates.
+ * The following properties are different to an ordinary implementation:
+ * &lt;ol&gt;
+ * &lt;li&gt;To reduce overall size it can use 16 instead of just 4 cell if required&lt;/li&gt;
+ * &lt;li&gt;Still all leafs are at the same depth, otherwise it is too complicated to calculate the Bresenham line for different
+ * resolutions, especially if a leaf node could be split into a tree-node and resolution changes.&lt;/li&gt;
+ * &lt;li&gt;To further reduce size this Quadtree avoids storing the bounding box of every cell and calculates this per request instead.&lt;/li&gt;
+ * &lt;li&gt;To simplify this querying and avoid a slow down for the most frequent queries ala &quot;lat,lon&quot; it encodes the point
+ * into a spatial key {@see SpatialKeyAlgo} and can the use the resulting raw bits as cell index to recurse
+ * into the subtrees. E.g. if there are 3 layers with 16, 4 and 4 cells each, then the spatial key has
+ * three parts: 4 bits for the cellIndex into the 16 cells, 2 bits for the next layer and 2 bits for the last layer.&lt;/li&gt;
+ * &lt;li&gt;An array structure (DataAccess) is internally used and stores the offset to the next cell.
+ * E.g. in case of 4 cells, the offset is 0,1,2 or 3. Except when the leaf-depth is reached, then the value
+ * is the number of node IDs stored in the cell or, if negative, just a single node ID.&lt;/li&gt;
+ * &lt;/ol&gt;
+ *
+ * @author Peter Karich
+ */
+public class LocationIndexTree implements LocationIndex {
+    private final Directory directory;
+    private final Graph graph;
+<span class="fc" id="L57">    private final Logger logger = LoggerFactory.getLogger(getClass());</span>
+    private final NodeAccess nodeAccess;
+<span class="fc" id="L59">    private int maxRegionSearch = 4;</span>
+<span class="fc" id="L60">    private int minResolutionInMeter = 300;</span>
+<span class="fc" id="L61">    private boolean initialized = false;</span>
+
+    LineIntIndex lineIntIndex;
+
+    /**
+     * If normed distance is smaller than this value the node or edge is 'identical' and the
+     * algorithm can stop search.
+     */
+<span class="fc" id="L69">    private final double equalNormedDelta = DIST_PLANE.calcNormalizedDist(0.1); // 0.1 meters</span>
+    private IndexStructureInfo indexStructureInfo;
+
+    /**
+     * @param g the graph for which this index should do the lookup based on latitude,longitude.
+     */
+<span class="fc" id="L75">    public LocationIndexTree(Graph g, Directory dir) {</span>
+<span class="fc" id="L76">        this.graph = g;</span>
+<span class="fc" id="L77">        this.nodeAccess = g.getNodeAccess();</span>
+<span class="fc" id="L78">        this.directory = dir;</span>
+
+        // Clone this defensively -- In case something funny happens and things get added to the Graph after
+        // this index is built. Reason is that the expected structure of the index is a function of the bbox, so we
+        // need it to be immutable.
+<span class="fc" id="L83">        BBox bounds = graph.getBounds().clone();</span>
+
+        // I want to be able to create a location index for the empty graph without error, but for that
+        // I need valid bounds so that the initialization logic works.
+<span class="fc bfc" id="L87" title="All 2 branches covered.">        if (!bounds.isValid())</span>
+<span class="fc" id="L88">            bounds = new BBox(-10.0, 10.0, -10.0, 10.0);</span>
+
+<span class="fc" id="L90">        lineIntIndex = new LineIntIndex(bounds, directory, &quot;location_index&quot;);</span>
+<span class="fc" id="L91">    }</span>
+
+    public int getMinResolutionInMeter() {
+<span class="nc" id="L94">        return minResolutionInMeter;</span>
+    }
+
+    /**
+     * Minimum width in meter of one tile. Decrease this if you need faster queries, but keep in
+     * mind that then queries with different coordinates are more likely to fail.
+     */
+    public LocationIndexTree setMinResolutionInMeter(int minResolutionInMeter) {
+<span class="fc" id="L102">        this.minResolutionInMeter = minResolutionInMeter;</span>
+<span class="fc" id="L103">        return this;</span>
+    }
+
+    /**
+     * Searches also neighbouring tiles until the maximum distance from the query point is reached
+     * (minResolutionInMeter*regionAround). Set to 1 to only search one tile. Good if you
+     * have strict performance requirements and want the search to terminate early, and you can tolerate
+     * that edges that may be in neighboring tiles are not found. Default is 4, which means approximately
+     * that a square of three tiles upwards, downwards, leftwards and rightwards from the tile the query tile
+     * is in is searched.
+     */
+    public LocationIndexTree setMaxRegionSearch(int numTiles) {
+<span class="pc bpc" id="L115" title="1 of 2 branches missed.">        if (numTiles &lt; 1)</span>
+<span class="nc" id="L116">            throw new IllegalArgumentException(&quot;Region of location index must be at least 1 but was &quot; + numTiles);</span>
+<span class="fc" id="L117">        this.maxRegionSearch = numTiles;</span>
+<span class="fc" id="L118">        return this;</span>
+    }
+
+
+    public LocationIndex setResolution(int minResolutionInMeter) {
+<span class="pc bpc" id="L123" title="1 of 2 branches missed.">        if (minResolutionInMeter &lt;= 0)</span>
+<span class="nc" id="L124">            throw new IllegalStateException(&quot;Negative precision is not allowed!&quot;);</span>
+
+<span class="fc" id="L126">        setMinResolutionInMeter(minResolutionInMeter);</span>
+<span class="fc" id="L127">        return this;</span>
+    }
+
+    public boolean loadExisting() {
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        if (!lineIntIndex.loadExisting())</span>
+<span class="fc" id="L132">            return false;</span>
+
+<span class="pc bpc" id="L134" title="1 of 2 branches missed.">        if (lineIntIndex.getChecksum() != checksum())</span>
+<span class="nc" id="L135">            throw new IllegalStateException(&quot;location index was opened with incorrect graph: &quot;</span>
+<span class="nc" id="L136">                    + lineIntIndex.getChecksum() + &quot; vs. &quot; + checksum());</span>
+<span class="fc" id="L137">        minResolutionInMeter = lineIntIndex.getMinResolutionInMeter();</span>
+<span class="fc" id="L138">        indexStructureInfo = IndexStructureInfo.create(graph.getBounds(), minResolutionInMeter);</span>
+<span class="fc" id="L139">        initialized = true;</span>
+<span class="fc" id="L140">        return true;</span>
+    }
+
+    public void flush() {
+<span class="fc" id="L144">        lineIntIndex.flush();</span>
+<span class="fc" id="L145">    }</span>
+
+    public LocationIndex prepareIndex() {
+<span class="fc" id="L148">        return prepareIndex(EdgeFilter.ALL_EDGES);</span>
+    }
+
+    public LocationIndex prepareIndex(EdgeFilter edgeFilter) {
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">        if (initialized)</span>
+<span class="nc" id="L153">            throw new IllegalStateException(&quot;Call prepareIndex only once&quot;);</span>
+
+<span class="fc" id="L155">        StopWatch sw = new StopWatch().start();</span>
+
+        // Clone this defensively -- In case something funny happens and things get added to the Graph after
+        // this index is built. Reason is that the expected structure of the index is a function of the bbox, so we
+        // need it to be immutable.
+<span class="fc" id="L160">        BBox bounds = graph.getBounds().clone();</span>
+
+        // I want to be able to create a location index for the empty graph without error, but for that
+        // I need valid bounds so that the initialization logic works.
+<span class="fc bfc" id="L164" title="All 2 branches covered.">        if (!bounds.isValid())</span>
+<span class="fc" id="L165">            bounds = new BBox(-10.0, 10.0, -10.0, 10.0);</span>
+
+<span class="fc" id="L167">        InMemConstructionIndex inMemConstructionIndex = prepareInMemConstructionIndex(bounds, edgeFilter);</span>
+
+<span class="fc" id="L169">        lineIntIndex.setMinResolutionInMeter(minResolutionInMeter);</span>
+<span class="fc" id="L170">        lineIntIndex.store(inMemConstructionIndex);</span>
+<span class="fc" id="L171">        lineIntIndex.setChecksum(checksum());</span>
+<span class="fc" id="L172">        flush();</span>
+<span class="fc" id="L173">        logger.info(&quot;location index created in &quot; + sw.stop().getSeconds()</span>
+<span class="fc" id="L174">                + &quot;s, size:&quot; + Helper.nf(lineIntIndex.getSize())</span>
+<span class="fc" id="L175">                + &quot;, leafs:&quot; + Helper.nf(lineIntIndex.getLeafs())</span>
+                + &quot;, precision:&quot; + minResolutionInMeter
+<span class="fc" id="L177">                + &quot;, depth:&quot; + indexStructureInfo.getEntries().length</span>
+<span class="fc" id="L178">                + &quot;, checksum:&quot; + checksum()</span>
+<span class="fc" id="L179">                + &quot;, entries:&quot; + Arrays.toString(indexStructureInfo.getEntries())</span>
+<span class="fc" id="L180">                + &quot;, entriesPerLeaf:&quot; + (float) lineIntIndex.getSize() / lineIntIndex.getLeafs());</span>
+
+<span class="fc" id="L182">        return this;</span>
+    }
+
+    InMemConstructionIndex prepareInMemConstructionIndex(BBox bounds, EdgeFilter edgeFilter) {
+<span class="fc" id="L186">        indexStructureInfo = IndexStructureInfo.create(bounds, minResolutionInMeter);</span>
+<span class="fc" id="L187">        InMemConstructionIndex inMem = new InMemConstructionIndex(indexStructureInfo);</span>
+<span class="fc" id="L188">        AllEdgesIterator allIter = graph.getAllEdges();</span>
+        try {
+<span class="fc bfc" id="L190" title="All 2 branches covered.">            while (allIter.next()) {</span>
+<span class="pc bpc" id="L191" title="1 of 2 branches missed.">                if (!edgeFilter.accept(allIter))</span>
+<span class="nc" id="L192">                    continue;</span>
+<span class="fc" id="L193">                int edge = allIter.getEdge();</span>
+<span class="fc" id="L194">                int nodeA = allIter.getBaseNode();</span>
+<span class="fc" id="L195">                int nodeB = allIter.getAdjNode();</span>
+<span class="fc" id="L196">                double lat1 = nodeAccess.getLat(nodeA);</span>
+<span class="fc" id="L197">                double lon1 = nodeAccess.getLon(nodeA);</span>
+                double lat2;
+                double lon2;
+<span class="fc" id="L200">                PointList points = allIter.fetchWayGeometry(FetchMode.PILLAR_ONLY);</span>
+<span class="fc" id="L201">                int len = points.size();</span>
+<span class="fc bfc" id="L202" title="All 2 branches covered.">                for (int i = 0; i &lt; len; i++) {</span>
+<span class="fc" id="L203">                    lat2 = points.getLat(i);</span>
+<span class="fc" id="L204">                    lon2 = points.getLon(i);</span>
+<span class="fc" id="L205">                    inMem.addToAllTilesOnLine(edge, lat1, lon1, lat2, lon2);</span>
+<span class="fc" id="L206">                    lat1 = lat2;</span>
+<span class="fc" id="L207">                    lon1 = lon2;</span>
+                }
+<span class="fc" id="L209">                lat2 = nodeAccess.getLat(nodeB);</span>
+<span class="fc" id="L210">                lon2 = nodeAccess.getLon(nodeB);</span>
+<span class="fc" id="L211">                inMem.addToAllTilesOnLine(edge, lat1, lon1, lat2, lon2);</span>
+<span class="fc" id="L212">            }</span>
+<span class="nc" id="L213">        } catch (Exception ex1) {</span>
+<span class="nc" id="L214">            logger.error(&quot;Problem! base:&quot; + allIter.getBaseNode() + &quot;, adj:&quot; + allIter.getAdjNode()</span>
+<span class="nc" id="L215">                    + &quot;, edge:&quot; + allIter.getEdge(), ex1);</span>
+<span class="fc" id="L216">        }</span>
+<span class="fc" id="L217">        return inMem;</span>
+    }
+
+    int checksum() {
+<span class="fc" id="L221">        return graph.getNodes() ^ graph.getAllEdges().length();</span>
+    }
+
+    public void close() {
+<span class="fc" id="L225">        lineIntIndex.close();</span>
+<span class="fc" id="L226">    }</span>
+
+    public boolean isClosed() {
+<span class="fc" id="L229">        return lineIntIndex.isClosed();</span>
+    }
+
+    public long getCapacity() {
+<span class="nc" id="L233">        return lineIntIndex.getCapacity();</span>
+    }
+
+    /**
+     * Calculates the distance to the nearest tile border, where the tile border is the rectangular
+     * region with dimension 2*paddingTiles + 1 and where the center tile contains the given lat/lon
+     * coordinate
+     */
+    final double calculateRMin(double lat, double lon, int paddingTiles) {
+<span class="fc" id="L242">        int x = indexStructureInfo.getKeyAlgo().x(lon);</span>
+<span class="fc" id="L243">        int y = indexStructureInfo.getKeyAlgo().y(lat);</span>
+
+<span class="fc" id="L245">        double minLat = graph.getBounds().minLat + (y - paddingTiles) * indexStructureInfo.getDeltaLat();</span>
+<span class="fc" id="L246">        double maxLat = graph.getBounds().minLat + (y + paddingTiles + 1) * indexStructureInfo.getDeltaLat();</span>
+<span class="fc" id="L247">        double minLon = graph.getBounds().minLon + (x - paddingTiles) * indexStructureInfo.getDeltaLon();</span>
+<span class="fc" id="L248">        double maxLon = graph.getBounds().minLon + (x + paddingTiles + 1) * indexStructureInfo.getDeltaLon();</span>
+
+<span class="fc" id="L250">        double dSouthernLat = lat - minLat;</span>
+<span class="fc" id="L251">        double dNorthernLat = maxLat - lat;</span>
+<span class="fc" id="L252">        double dWesternLon = lon - minLon;</span>
+<span class="fc" id="L253">        double dEasternLon = maxLon - lon;</span>
+
+        // convert degree deltas into a radius in meter
+        double dMinLat, dMinLon;
+<span class="fc bfc" id="L257" title="All 2 branches covered.">        if (dSouthernLat &lt; dNorthernLat) {</span>
+<span class="fc" id="L258">            dMinLat = DIST_PLANE.calcDist(lat, lon, minLat, lon);</span>
+        } else {
+<span class="fc" id="L260">            dMinLat = DIST_PLANE.calcDist(lat, lon, maxLat, lon);</span>
+        }
+
+<span class="fc bfc" id="L263" title="All 2 branches covered.">        if (dWesternLon &lt; dEasternLon) {</span>
+<span class="fc" id="L264">            dMinLon = DIST_PLANE.calcDist(lat, lon, lat, minLon);</span>
+        } else {
+<span class="fc" id="L266">            dMinLon = DIST_PLANE.calcDist(lat, lon, lat, maxLon);</span>
+        }
+
+<span class="fc" id="L269">        return Math.min(dMinLat, dMinLon);</span>
+    }
+
+    @Override
+    public Snap findClosest(final double queryLat, final double queryLon, final EdgeFilter edgeFilter) {
+<span class="fc bfc" id="L274" title="All 2 branches covered.">        if (isClosed())</span>
+<span class="fc" id="L275">            throw new IllegalStateException(&quot;You need to create a new LocationIndex instance as it is already closed&quot;);</span>
+
+<span class="fc" id="L277">        final Snap closestMatch = new Snap(queryLat, queryLon);</span>
+<span class="fc" id="L278">        IntHashSet seenEdges = new IntHashSet();</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">        for (int iteration = 0; iteration &lt; maxRegionSearch; iteration++) {</span>
+<span class="fc" id="L280">            lineIntIndex.findEdgeIdsInNeighborhood(queryLat, queryLon, iteration, edgeId -&gt; {</span>
+<span class="fc" id="L281">                EdgeIteratorState edgeIteratorState = graph.getEdgeIteratorStateForKey(edgeId * 2);</span>
+<span class="fc bfc" id="L282" title="All 4 branches covered.">                if (seenEdges.add(edgeId) &amp;&amp; edgeFilter.accept(edgeIteratorState)) { // TODO: or reverse?</span>
+<span class="fc" id="L283">                    traverseEdge(queryLat, queryLon, edgeIteratorState, (node, normedDist, wayIndex, pos) -&gt; {</span>
+<span class="fc bfc" id="L284" title="All 2 branches covered.">                        if (normedDist &lt; closestMatch.getQueryDistance()) {</span>
+<span class="fc" id="L285">                            closestMatch.setQueryDistance(normedDist);</span>
+<span class="fc" id="L286">                            closestMatch.setClosestNode(node);</span>
+<span class="fc" id="L287">                            closestMatch.setClosestEdge(edgeIteratorState.detach(false));</span>
+<span class="fc" id="L288">                            closestMatch.setWayIndex(wayIndex);</span>
+<span class="fc" id="L289">                            closestMatch.setSnappedPosition(pos);</span>
+                        }
+<span class="fc" id="L291">                    });</span>
+                }
+<span class="fc" id="L293">            });</span>
+<span class="fc bfc" id="L294" title="All 2 branches covered.">            if (closestMatch.isValid()) {</span>
+                // Check if we can stop...
+<span class="fc" id="L296">                double rMin = calculateRMin(queryLat, queryLon, iteration);</span>
+<span class="fc" id="L297">                double minDistance = DIST_PLANE.calcDenormalizedDist(closestMatch.getQueryDistance());</span>
+<span class="fc bfc" id="L298" title="All 2 branches covered.">                if (minDistance &lt; rMin) {</span>
+<span class="fc" id="L299">                    break; // We can (approximately?) guarantee that no closer edges are anywhere else</span>
+                }
+            }
+        }
+
+<span class="fc bfc" id="L304" title="All 2 branches covered.">        if (closestMatch.isValid()) {</span>
+<span class="fc" id="L305">            closestMatch.calcSnappedPoint(DIST_PLANE);</span>
+<span class="fc" id="L306">            closestMatch.setQueryDistance(DIST_PLANE.calcDist(closestMatch.getSnappedPoint().lat, closestMatch.getSnappedPoint().lon, queryLat, queryLon));</span>
+        }
+<span class="fc" id="L308">        return closestMatch;</span>
+    }
+
+    @Override
+    public void query(TileFilter tileFilter, Visitor function) {
+<span class="fc" id="L313">        lineIntIndex.query(tileFilter, function);</span>
+<span class="fc" id="L314">    }</span>
+
+    public interface EdgeCheck {
+        void check(int node, double normedDist, int wayIndex, Snap.Position pos);
+    }
+
+    public void traverseEdge(double queryLat, double queryLon, EdgeIteratorState currEdge, EdgeCheck edgeCheck) {
+<span class="fc" id="L321">        int baseNode = currEdge.getBaseNode();</span>
+<span class="fc" id="L322">        double baseLat = nodeAccess.getLat(baseNode);</span>
+<span class="fc" id="L323">        double baseLon = nodeAccess.getLon(baseNode);</span>
+<span class="fc" id="L324">        double baseDist = DIST_PLANE.calcNormalizedDist(queryLat, queryLon, baseLat, baseLon);</span>
+
+<span class="fc" id="L326">        int adjNode = currEdge.getAdjNode();</span>
+<span class="fc" id="L327">        double adjLat = nodeAccess.getLat(adjNode);</span>
+<span class="fc" id="L328">        double adjLon = nodeAccess.getLon(adjNode);</span>
+<span class="fc" id="L329">        double adjDist = DIST_PLANE.calcNormalizedDist(queryLat, queryLon, adjLat, adjLon);</span>
+
+<span class="fc" id="L331">        PointList pointList = currEdge.fetchWayGeometry(FetchMode.PILLAR_AND_ADJ);</span>
+<span class="fc" id="L332">        final int len = pointList.size();</span>
+
+        int closestTowerNode;
+        double closestDist;
+<span class="fc bfc" id="L336" title="All 2 branches covered.">        if (baseDist &lt; adjDist) {</span>
+<span class="fc" id="L337">            closestTowerNode = baseNode;</span>
+<span class="fc" id="L338">            closestDist = baseDist;</span>
+<span class="fc" id="L339">            edgeCheck.check(baseNode, baseDist, 0, Snap.Position.TOWER);</span>
+        } else {
+<span class="fc" id="L341">            closestTowerNode = adjNode;</span>
+<span class="fc" id="L342">            closestDist = adjDist;</span>
+<span class="fc" id="L343">            edgeCheck.check(adjNode, adjDist, len, Snap.Position.TOWER);</span>
+        }
+<span class="fc bfc" id="L345" title="All 2 branches covered.">        if (closestDist &lt;= equalNormedDelta)</span>
+            // if a tower node is close to the query point we stop
+<span class="fc" id="L347">            return;</span>
+
+<span class="fc" id="L349">        double lastLat = baseLat;</span>
+<span class="fc" id="L350">        double lastLon = baseLon;</span>
+<span class="fc bfc" id="L351" title="All 2 branches covered.">        for (int i = 0; i &lt; len; i++) {</span>
+<span class="fc" id="L352">            double lat = pointList.getLat(i);</span>
+<span class="fc" id="L353">            double lon = pointList.getLon(i);</span>
+<span class="fc bfc" id="L354" title="All 2 branches covered.">            if (DIST_PLANE.isCrossBoundary(lastLon, lon)) {</span>
+<span class="fc" id="L355">                lastLat = lat;</span>
+<span class="fc" id="L356">                lastLon = lon;</span>
+<span class="fc" id="L357">                continue;</span>
+            }
+
+            // +1 because we skipped the base node
+<span class="fc" id="L361">            final int indexInFullPointList = i + 1;</span>
+<span class="fc bfc" id="L362" title="All 2 branches covered.">            if (DIST_PLANE.validEdgeDistance(queryLat, queryLon, lastLat, lastLon, lat, lon)) {</span>
+<span class="fc" id="L363">                closestDist = DIST_PLANE.calcNormalizedEdgeDistance(queryLat, queryLon, lastLat, lastLon, lat, lon);</span>
+<span class="fc" id="L364">                edgeCheck.check(closestTowerNode, closestDist, indexInFullPointList - 1, Snap.Position.EDGE);</span>
+<span class="fc bfc" id="L365" title="All 2 branches covered.">            } else if (i &lt; len - 1) {</span>
+<span class="fc" id="L366">                closestDist = DIST_PLANE.calcNormalizedDist(queryLat, queryLon, lat, lon);</span>
+<span class="fc" id="L367">                edgeCheck.check(closestTowerNode, closestDist, indexInFullPointList, Snap.Position.PILLAR);</span>
+            } else {
+                // we snapped onto the last tower node, but we already handled this before so do nothing
+            }
+<span class="fc bfc" id="L371" title="All 2 branches covered.">            if (closestDist &lt;= equalNormedDelta)</span>
+<span class="fc" id="L372">                return;</span>
+<span class="fc" id="L373">            lastLat = lat;</span>
+<span class="fc" id="L374">            lastLon = lon;</span>
+        }
+<span class="fc" id="L376">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

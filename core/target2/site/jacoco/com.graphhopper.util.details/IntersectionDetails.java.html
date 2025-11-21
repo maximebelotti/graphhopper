@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IntersectionDetails.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util.details</a> &gt; <span class="el_source">IntersectionDetails.java</span></div><h1>IntersectionDetails.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util.details;
+
+import com.graphhopper.routing.querygraph.VirtualEdgeIteratorState;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.util.*;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import static com.graphhopper.util.Parameters.Details.INTERSECTION;
+
+/**
+ * Calculate the intersections for a route. Every change of the edge id is considered an intersection.
+ * &lt;p&gt;
+ * The format is inspired by the format that is consumed by Maplibre Navigation SDK.
+ * &lt;p&gt;
+ * Explanation of the format:
+ * - &lt;code&gt;entries&lt;/code&gt; contain an array of the edges at that intersection. They are sorted by bearing, starting from 0 (which is 0° north) to 359. Every edge that we can turn onto is marked with “true” in the array.
+ * - &lt;code&gt;bearings&lt;/code&gt; contain an array of the edges at that intersection. They are sorted by bearing, starting from 0 (which is 0° north) to 359.  The array contains the bearings of each edge at that intersection.
+ * - &lt;code&gt;in&lt;/code&gt; marks the index in the “bearings” edge we are coming from.
+ * - &lt;code&gt;out&lt;/code&gt; the index we are going to.
+ *
+ * @author Robin Boldt
+ */
+public class IntersectionDetails extends AbstractPathDetailsBuilder {
+
+<span class="fc" id="L49">    private int fromEdge = -1;</span>
+
+<span class="fc" id="L51">    private Map&lt;String, Object&gt; intersectionMap = null;</span>
+
+    private final EdgeExplorer crossingExplorer;
+    private final NodeAccess nodeAccess;
+    private final Weighting weighting;
+
+    public IntersectionDetails(Graph graph, Weighting weighting) {
+<span class="fc" id="L58">        super(INTERSECTION);</span>
+
+<span class="fc" id="L60">        crossingExplorer = graph.createEdgeExplorer();</span>
+<span class="fc" id="L61">        nodeAccess = graph.getNodeAccess();</span>
+<span class="fc" id="L62">        this.weighting = weighting;</span>
+<span class="fc" id="L63">    }</span>
+
+    @Override
+    public boolean isEdgeDifferentToLastEdge(EdgeIteratorState edge) {
+<span class="fc" id="L67">        int toEdge = edgeId(edge);</span>
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">        if (toEdge != fromEdge) {</span>
+            // Important to create a new map and not to clean the old map!
+<span class="fc" id="L70">            intersectionMap = new HashMap&lt;&gt;();</span>
+
+<span class="fc" id="L72">            List&lt;IntersectionValues&gt; intersectingEdges = new ArrayList&lt;&gt;();</span>
+
+<span class="fc" id="L74">            int baseNode = edge.getBaseNode();</span>
+            EdgeIteratorState tmpEdge;
+
+<span class="fc" id="L77">            double startLat = nodeAccess.getLat(baseNode);</span>
+<span class="fc" id="L78">            double startLon = nodeAccess.getLon(baseNode);</span>
+
+
+<span class="fc" id="L81">            EdgeIterator edgeIter = crossingExplorer.setBaseNode(baseNode);</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">            while (edgeIter.next()) {</span>
+                // We need to call detach to get the edgeId, as we need to check for VirtualEdgeIteratorState in #edgeId(), see discussion in #2590
+<span class="fc" id="L84">                tmpEdge = edgeIter.detach(false);</span>
+
+<span class="fc" id="L86">                IntersectionValues intersectionValues = new IntersectionValues();</span>
+<span class="fc" id="L87">                intersectionValues.bearing = calculateBearing(startLat, startLon, tmpEdge);</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">                intersectionValues.in = edgeId(tmpEdge) == fromEdge;</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">                intersectionValues.out = edgeId(tmpEdge) == edgeId(edge);</span>
+                // The in edge is always false, this means that u-turns are not considered as possible turning option
+<span class="pc bpc" id="L91" title="1 of 4 branches missed.">                intersectionValues.entry = !intersectionValues.in &amp;&amp; Double.isFinite(weighting.calcEdgeWeight(tmpEdge, false));</span>
+
+<span class="fc" id="L93">                intersectingEdges.add(intersectionValues);</span>
+<span class="fc" id="L94">            }</span>
+
+<span class="fc" id="L96">            intersectingEdges = intersectingEdges.stream().</span>
+<span class="fc" id="L97">                sorted((x, y) -&gt; Integer.compare(x.bearing, y.bearing)).collect(Collectors.toList());</span>
+
+<span class="fc" id="L99">            intersectionMap = IntersectionValues.createIntersection(intersectingEdges);</span>
+
+<span class="fc" id="L101">            fromEdge = toEdge;</span>
+<span class="fc" id="L102">            return true;</span>
+        }
+<span class="nc" id="L104">        return false;</span>
+    }
+
+    private int calculateBearing(double startLat, double startLon, EdgeIteratorState tmpEdge) {
+<span class="fc" id="L108">        PointList wayGeo = tmpEdge.fetchWayGeometry(FetchMode.PILLAR_AND_ADJ);</span>
+<span class="fc" id="L109">        final double latitude = wayGeo.getLat(0);</span>
+<span class="fc" id="L110">        final double longitude = wayGeo.getLon(0);</span>
+<span class="fc" id="L111">        return (int) Math.round(AngleCalc.ANGLE_CALC.calcAzimuth(startLat, startLon, latitude, longitude));</span>
+    }
+
+    private int edgeId(EdgeIteratorState edge) {
+<span class="pc bpc" id="L115" title="1 of 2 branches missed.">        if (edge instanceof VirtualEdgeIteratorState) {</span>
+<span class="nc" id="L116">            return GHUtility.getEdgeFromEdgeKey(((VirtualEdgeIteratorState) edge).getOriginalEdgeKey());</span>
+        } else {
+<span class="fc" id="L118">            return edge.getEdge();</span>
+        }
+    }
+
+    @Override
+    public Object getCurrentValue() {
+<span class="fc" id="L124">        return this.intersectionMap;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

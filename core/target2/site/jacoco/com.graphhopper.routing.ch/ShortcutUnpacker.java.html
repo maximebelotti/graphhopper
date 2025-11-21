@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ShortcutUnpacker.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ch</a> &gt; <span class="el_source">ShortcutUnpacker.java</span></div><h1>ShortcutUnpacker.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.ch;
+
+import com.graphhopper.storage.RoutingCHEdgeIteratorState;
+import com.graphhopper.storage.RoutingCHGraph;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.GHUtility;
+
+import java.util.Locale;
+
+import static com.graphhopper.util.EdgeIterator.NO_EDGE;
+
+/**
+ * Recursively unpack shortcuts.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ * @author easbar
+ * @see PrepareContractionHierarchies
+ */
+<span class="fc" id="L20">public class ShortcutUnpacker {</span>
+    private final RoutingCHGraph graph;
+    private final Visitor visitor;
+    private final boolean edgeBased;
+    private boolean reverseOrder;
+
+<span class="fc" id="L26">    public ShortcutUnpacker(RoutingCHGraph graph, Visitor visitor, boolean edgeBased) {</span>
+<span class="fc" id="L27">        this.graph = graph;</span>
+<span class="fc" id="L28">        this.visitor = visitor;</span>
+<span class="fc" id="L29">        this.edgeBased = edgeBased;</span>
+<span class="fc" id="L30">    }</span>
+
+    /**
+     * Finds an edge/shortcut with the given id and adjNode and calls the visitor for each original edge that is
+     * packed inside this shortcut (or if an original edge is given simply calls the visitor on it).
+     *
+     * @param reverseOrder if true the original edges will be traversed in reverse order
+     */
+    public void visitOriginalEdgesFwd(int edgeId, int adjNode, boolean reverseOrder, int prevOrNextEdgeId) {
+<span class="fc" id="L39">        doVisitOriginalEdges(edgeId, adjNode, reverseOrder, false, prevOrNextEdgeId);</span>
+<span class="fc" id="L40">    }</span>
+
+    public void visitOriginalEdgesBwd(int edgeId, int adjNode, boolean reverseOrder, int prevOrNextEdgeId) {
+<span class="fc" id="L43">        doVisitOriginalEdges(edgeId, adjNode, reverseOrder, true, prevOrNextEdgeId);</span>
+<span class="fc" id="L44">    }</span>
+
+    private void doVisitOriginalEdges(int edgeId, int adjNode, boolean reverseOrder, boolean reverse, int prevOrNextEdgeId) {
+<span class="fc" id="L47">        this.reverseOrder = reverseOrder;</span>
+<span class="fc" id="L48">        RoutingCHEdgeIteratorState edge = getEdge(edgeId, adjNode);</span>
+<span class="pc bpc" id="L49" title="1 of 2 branches missed.">        if (edge == null) {</span>
+<span class="nc" id="L50">            throw new IllegalArgumentException(&quot;Edge with id: &quot; + edgeId + &quot; does not exist or does not touch node &quot; + adjNode);</span>
+        }
+<span class="fc" id="L52">        expandEdge(edge, reverse, prevOrNextEdgeId);</span>
+<span class="fc" id="L53">    }</span>
+
+    private void expandEdge(RoutingCHEdgeIteratorState edge, boolean reverse, int prevOrNextEdgeId) {
+<span class="fc bfc" id="L56" title="All 2 branches covered.">        if (!edge.isShortcut()) {</span>
+<span class="fc" id="L57">            visitor.visit(graph.getBaseGraph().getEdgeIteratorState(edge.getOrigEdge(), edge.getAdjNode()), reverse, prevOrNextEdgeId);</span>
+<span class="fc" id="L58">            return;</span>
+        }
+<span class="fc bfc" id="L60" title="All 2 branches covered.">        if (edgeBased) {</span>
+<span class="fc" id="L61">            expandSkippedEdgesEdgeBased(edge.getSkippedEdge1(), edge.getSkippedEdge2(), edge.getBaseNode(), edge.getAdjNode(), reverse, prevOrNextEdgeId);</span>
+        } else {
+<span class="fc" id="L63">            expandSkippedEdgesNodeBased(edge.getSkippedEdge1(), edge.getSkippedEdge2(), edge.getBaseNode(), edge.getAdjNode(), reverse);</span>
+        }
+<span class="fc" id="L65">    }</span>
+
+    private void expandSkippedEdgesEdgeBased(int skippedEdge1, int skippedEdge2, int base, int adj, boolean reverse, int prevOrNextEdgeId) {
+<span class="fc bfc" id="L68" title="All 2 branches covered.">        if (reverse) {</span>
+<span class="fc" id="L69">            int tmp = skippedEdge1;</span>
+<span class="fc" id="L70">            skippedEdge1 = skippedEdge2;</span>
+<span class="fc" id="L71">            skippedEdge2 = tmp;</span>
+        }
+<span class="fc" id="L73">        RoutingCHEdgeIteratorState sk2 = getEdge(skippedEdge2, adj);</span>
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">        assert sk2 != null : &quot;skipped edge &quot; + skippedEdge2 + &quot; is not attached to adjNode &quot; + adj + &quot;. this should &quot; +</span>
+                &quot;never happen because edge-based CH does not use bidirectional shortcuts at the moment&quot;;
+<span class="fc" id="L76">        RoutingCHEdgeIteratorState sk1 = getEdge(skippedEdge1, sk2.getBaseNode());</span>
+<span class="pc bpc" id="L77" title="2 of 6 branches missed.">        if (base == adj &amp;&amp; (sk1.getAdjNode() == sk1.getBaseNode() || sk2.getAdjNode() == sk2.getBaseNode())) {</span>
+<span class="nc" id="L78">            throw new IllegalStateException(String.format(Locale.ROOT,</span>
+                    &quot;error: detected edge where a skipped edges is a loop. this should never happen. base: %d, adj: %d, &quot; +
+<span class="nc" id="L80">                            &quot;skip-edge1: %d, skip-edge2: %d, reverse: %b&quot;, base, adj, skippedEdge1, skippedEdge2, reverse));</span>
+        }
+<span class="fc" id="L82">        int adjEdge = getOppositeEdge(sk1, base);</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">        if (reverseOrder) {</span>
+<span class="fc" id="L84">            expandEdge(sk2, reverse, adjEdge);</span>
+<span class="fc" id="L85">            expandEdge(sk1, reverse, prevOrNextEdgeId);</span>
+        } else {
+<span class="fc" id="L87">            expandEdge(sk1, reverse, prevOrNextEdgeId);</span>
+<span class="fc" id="L88">            expandEdge(sk2, reverse, adjEdge);</span>
+        }
+<span class="fc" id="L90">    }</span>
+
+    private void expandSkippedEdgesNodeBased(int skippedEdge1, int skippedEdge2, int base, int adj, boolean reverse) {
+<span class="fc" id="L93">        RoutingCHEdgeIteratorState sk2 = getEdge(skippedEdge2, adj);</span>
+        RoutingCHEdgeIteratorState sk1;
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        if (sk2 == null) {</span>
+<span class="fc" id="L96">            sk2 = getEdge(skippedEdge1, adj);</span>
+<span class="fc" id="L97">            sk1 = getEdge(skippedEdge2, sk2.getBaseNode());</span>
+        } else {
+<span class="fc" id="L99">            sk1 = getEdge(skippedEdge1, sk2.getBaseNode());</span>
+        }
+<span class="fc bfc" id="L101" title="All 2 branches covered.">        if (reverseOrder) {</span>
+<span class="fc" id="L102">            expandEdge(sk2, reverse, NO_EDGE);</span>
+<span class="fc" id="L103">            expandEdge(sk1, reverse, NO_EDGE);</span>
+        } else {
+<span class="fc" id="L105">            expandEdge(sk1, reverse, NO_EDGE);</span>
+<span class="fc" id="L106">            expandEdge(sk2, reverse, NO_EDGE);</span>
+        }
+<span class="fc" id="L108">    }</span>
+
+    private int getOppositeEdge(RoutingCHEdgeIteratorState edgeState, int adjNode) {
+<span class="pc bpc" id="L111" title="3 of 4 branches missed.">        assert edgeState.getBaseNode() == adjNode || edgeState.getAdjNode() == adjNode : &quot;adjNode &quot; + adjNode + &quot; must be one of adj/base of edgeState: &quot; + edgeState;</span>
+        // since the first/last orig edge key is not stateful (just like skipped1/2) we have to find out which one
+        // is attached to adjNode, similar as we do for skipped1/2.
+<span class="fc" id="L114">        boolean adjacentToNode = graph.getBaseGraph().isAdjacentToNode(GHUtility.getEdgeFromEdgeKey(edgeState.getOrigEdgeKeyLast()), adjNode);</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">        return GHUtility.getEdgeFromEdgeKey(adjacentToNode ? edgeState.getOrigEdgeKeyFirst() : edgeState.getOrigEdgeKeyLast());</span>
+    }
+
+    private RoutingCHEdgeIteratorState getEdge(int edgeId, int adjNode) {
+<span class="fc" id="L119">        return graph.getEdgeIteratorState(edgeId, adjNode);</span>
+    }
+
+    public interface Visitor {
+        void visit(EdgeIteratorState edge, boolean reverse, int prevOrNextEdgeId);
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

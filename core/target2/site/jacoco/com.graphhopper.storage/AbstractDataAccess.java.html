@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractDataAccess.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">AbstractDataAccess.java</span></div><h1>AbstractDataAccess.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import com.graphhopper.util.BitUtil;
+import com.graphhopper.util.Helper;
+
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteOrder;
+
+/**
+ * @author Peter Karich
+ */
+public abstract class AbstractDataAccess implements DataAccess {
+    protected static final int SEGMENT_SIZE_MIN = 1 &lt;&lt; 7;
+    // reserve some space for downstream usage (in classes using/extending this)
+    protected static final int HEADER_OFFSET = 20 * 4 + 20;
+<span class="fc" id="L34">    protected static final byte[] EMPTY = new byte[1024];</span>
+    private static final int SEGMENT_SIZE_DEFAULT = 1 &lt;&lt; 20;
+<span class="fc" id="L36">    protected final ByteOrder byteOrder = ByteOrder.LITTLE_ENDIAN;</span>
+<span class="fc" id="L37">    protected final BitUtil bitUtil = BitUtil.LITTLE;</span>
+    private final String location;
+<span class="fc" id="L39">    protected int[] header = new int[(HEADER_OFFSET - 20) / 4];</span>
+    protected String name;
+    protected int segmentSizeInBytes;
+    protected int segmentSizePower;
+    protected int indexDivisor;
+<span class="fc" id="L44">    protected boolean closed = false;</span>
+
+<span class="fc" id="L46">    public AbstractDataAccess(String name, String location, int segmentSize) {</span>
+<span class="fc" id="L47">        this.name = name;</span>
+<span class="pc bpc" id="L48" title="1 of 4 branches missed.">        if (!Helper.isEmpty(location) &amp;&amp; !location.endsWith(&quot;/&quot;))</span>
+<span class="nc" id="L49">            throw new IllegalArgumentException(&quot;Create DataAccess object via its corresponding Directory!&quot;);</span>
+
+<span class="fc" id="L51">        this.location = location;</span>
+<span class="fc bfc" id="L52" title="All 2 branches covered.">        if (segmentSize &lt; 0)</span>
+<span class="fc" id="L53">            segmentSize = SEGMENT_SIZE_DEFAULT;</span>
+<span class="fc" id="L54">        setSegmentSize(segmentSize);</span>
+<span class="fc" id="L55">    }</span>
+
+    @Override
+    public String getName() {
+<span class="fc" id="L59">        return name;</span>
+    }
+
+    protected String getFullName() {
+<span class="fc" id="L63">        return location + name;</span>
+    }
+
+    @Override
+    public void close() {
+<span class="fc" id="L68">        closed = true;</span>
+<span class="fc" id="L69">    }</span>
+
+    @Override
+    public boolean isClosed() {
+<span class="fc" id="L73">        return closed;</span>
+    }
+
+    @Override
+    public void setHeader(int bytePos, int value) {
+<span class="fc" id="L78">        bytePos &gt;&gt;= 2;</span>
+<span class="fc" id="L79">        header[bytePos] = value;</span>
+<span class="fc" id="L80">    }</span>
+
+    @Override
+    public int getHeader(int bytePos) {
+<span class="fc" id="L84">        bytePos &gt;&gt;= 2;</span>
+<span class="fc" id="L85">        return header[bytePos];</span>
+    }
+
+    /**
+     * Writes some internal data into the beginning of the specified file.
+     */
+    protected void writeHeader(RandomAccessFile file, long length, int segmentSize) throws IOException {
+<span class="fc" id="L92">        file.seek(0);</span>
+<span class="fc" id="L93">        file.writeUTF(&quot;GH&quot;);</span>
+<span class="fc" id="L94">        file.writeLong(length);</span>
+<span class="fc" id="L95">        file.writeInt(segmentSize);</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">        for (int i = 0; i &lt; header.length; i++) {</span>
+<span class="fc" id="L97">            file.writeInt(header[i]);</span>
+        }
+<span class="fc" id="L99">    }</span>
+
+    protected long readHeader(RandomAccessFile raFile) throws IOException {
+<span class="fc" id="L102">        raFile.seek(0);</span>
+<span class="pc bpc" id="L103" title="1 of 2 branches missed.">        if (raFile.length() == 0)</span>
+<span class="nc" id="L104">            return -1;</span>
+
+<span class="fc" id="L106">        String versionHint = raFile.readUTF();</span>
+<span class="pc bpc" id="L107" title="1 of 2 branches missed.">        if (!&quot;GH&quot;.equals(versionHint))</span>
+<span class="nc" id="L108">            throw new IllegalArgumentException(&quot;Not a GraphHopper file &quot; + getFullName() + &quot;! Expected 'GH' as file marker but was &quot; + versionHint);</span>
+
+<span class="fc" id="L110">        long bytes = raFile.readLong();</span>
+<span class="fc" id="L111">        setSegmentSize(raFile.readInt());</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        for (int i = 0; i &lt; header.length; i++) {</span>
+<span class="fc" id="L113">            header[i] = raFile.readInt();</span>
+        }
+<span class="fc" id="L115">        return bytes;</span>
+    }
+
+    protected void copyHeader(DataAccess da) {
+<span class="nc bnc" id="L119" title="All 2 branches missed.">        for (int h = 0; h &lt; header.length * 4; h += 4) {</span>
+<span class="nc" id="L120">            da.setHeader(h, getHeader(h));</span>
+        }
+<span class="nc" id="L122">    }</span>
+
+    DataAccess setSegmentSize(int bytes) {
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">        if (bytes &gt; 0) {</span>
+            // segment size should be a power of 2
+<span class="fc" id="L127">            int tmp = (int) (Math.log(bytes) / Math.log(2));</span>
+<span class="fc" id="L128">            segmentSizeInBytes = Math.max((int) Math.pow(2, tmp), SEGMENT_SIZE_MIN);</span>
+        }
+<span class="fc" id="L130">        segmentSizePower = (int) (Math.log(segmentSizeInBytes) / Math.log(2));</span>
+<span class="fc" id="L131">        indexDivisor = segmentSizeInBytes - 1;</span>
+<span class="fc" id="L132">        return this;</span>
+    }
+
+    @Override
+    public int getSegmentSize() {
+<span class="fc" id="L137">        return segmentSizeInBytes;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L142">        return getFullName();</span>
+    }
+
+    public boolean isStoring() {
+<span class="nc" id="L146">        return true;</span>
+    }
+
+    protected boolean isIntBased() {
+<span class="nc" id="L150">        return false;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

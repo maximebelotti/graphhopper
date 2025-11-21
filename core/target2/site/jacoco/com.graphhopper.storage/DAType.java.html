@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DAType.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">DAType.java</span></div><h1>DAType.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import static com.graphhopper.util.Helper.toUpperCase;
+
+/**
+ * Defines how a DataAccess object is created.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class DAType {
+    /**
+     * The DA object is hold entirely in-memory. Loading and flushing is a no-op. See RAMDataAccess.
+     */
+<span class="fc" id="L32">    public static final DAType RAM = new DAType(MemRef.HEAP, false, false, true);</span>
+    /**
+     * Optimized RAM DA type for integer access. The set and getBytes methods cannot be used.
+     */
+<span class="fc" id="L36">    public static final DAType RAM_INT = new DAType(MemRef.HEAP, false, true, true);</span>
+    /**
+     * The DA object is hold entirely in-memory. It will read load disc and flush to it if they
+     * equivalent methods are called. See RAMDataAccess.
+     */
+<span class="fc" id="L41">    public static final DAType RAM_STORE = new DAType(MemRef.HEAP, true, false, true);</span>
+    /**
+     * Optimized RAM_STORE DA type for integer access. The set and getBytes methods cannot be used.
+     */
+<span class="fc" id="L45">    public static final DAType RAM_INT_STORE = new DAType(MemRef.HEAP, true, true, true);</span>
+    /**
+     * Memory mapped DA object. See MMapDataAccess.
+     */
+<span class="fc" id="L49">    public static final DAType MMAP = new DAType(MemRef.MMAP, true, false, true);</span>
+
+    /**
+     * Read-only memory mapped DA object. To avoid write access useful for reading on mobile or
+     * embedded data stores.
+     */
+<span class="fc" id="L55">    public static final DAType MMAP_RO = new DAType(MemRef.MMAP, true, false, false);</span>
+    private final MemRef memRef;
+    private final boolean storing;
+    private final boolean integ;
+    private final boolean allowWrites;
+
+    public DAType(DAType type) {
+<span class="nc" id="L62">        this(type.getMemRef(), type.isStoring(), type.isInteg(), type.isAllowWrites());</span>
+<span class="nc" id="L63">    }</span>
+
+<span class="fc" id="L65">    public DAType(MemRef memRef, boolean storing, boolean integ, boolean allowWrites) {</span>
+<span class="fc" id="L66">        this.memRef = memRef;</span>
+<span class="fc" id="L67">        this.storing = storing;</span>
+<span class="fc" id="L68">        this.integ = integ;</span>
+<span class="fc" id="L69">        this.allowWrites = allowWrites;</span>
+<span class="fc" id="L70">    }</span>
+
+    public static DAType fromString(String dataAccess) {
+<span class="fc" id="L73">        dataAccess = toUpperCase(dataAccess);</span>
+        DAType type;
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (dataAccess.contains(&quot;SYNC&quot;))</span>
+<span class="nc" id="L76">            throw new IllegalArgumentException(&quot;SYNC option is no longer supported, see #982&quot;);</span>
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">        else if (dataAccess.contains(&quot;MMAP_RO&quot;))</span>
+<span class="nc" id="L78">            type = DAType.MMAP_RO;</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        else if (dataAccess.contains(&quot;MMAP&quot;))</span>
+<span class="fc" id="L80">            type = DAType.MMAP;</span>
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">        else if (dataAccess.contains(&quot;UNSAFE&quot;))</span>
+<span class="nc" id="L82">            throw new IllegalArgumentException(&quot;UNSAFE option is no longer supported, see #1620&quot;);</span>
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">        else if (dataAccess.equals(&quot;RAM&quot;))</span>
+<span class="nc" id="L84">            type = DAType.RAM;</span>
+        else
+<span class="fc" id="L86">            type = DAType.RAM_STORE;</span>
+<span class="fc" id="L87">        return type;</span>
+    }
+
+    /**
+     * Memory mapped or purely in memory? default is HEAP
+     */
+    MemRef getMemRef() {
+<span class="fc" id="L94">        return memRef;</span>
+    }
+
+    public boolean isAllowWrites() {
+<span class="fc" id="L98">        return allowWrites;</span>
+    }
+
+    /**
+     * @return true if data resides in the JVM heap.
+     */
+    public boolean isInMemory() {
+<span class="fc bfc" id="L105" title="All 2 branches covered.">        return memRef == MemRef.HEAP;</span>
+    }
+
+    public boolean isMMap() {
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        return memRef == MemRef.MMAP;</span>
+    }
+
+    /**
+     * Temporary data or store (with loading and storing)? default is false
+     */
+    public boolean isStoring() {
+<span class="fc" id="L116">        return storing;</span>
+    }
+
+    /**
+     * Optimized for integer values? default is false
+     */
+    public boolean isInteg() {
+<span class="fc" id="L123">        return integ;</span>
+    }
+
+    @Override
+    public String toString() {
+        String str;
+<span class="fc bfc" id="L129" title="All 2 branches covered.">        if (getMemRef() == MemRef.MMAP)</span>
+<span class="fc" id="L130">            str = &quot;MMAP&quot;;</span>
+        else
+<span class="fc" id="L132">            str = &quot;RAM&quot;;</span>
+
+<span class="pc bpc" id="L134" title="1 of 2 branches missed.">        if (isInteg())</span>
+<span class="nc" id="L135">            str += &quot;_INT&quot;;</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">        if (isStoring())</span>
+<span class="fc" id="L137">            str += &quot;_STORE&quot;;</span>
+<span class="fc" id="L138">        return str;</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc" id="L143">        int hash = 7;</span>
+<span class="nc" id="L144">        hash = 59 * hash + 37 * this.memRef.hashCode();</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">        hash = 59 * hash + (this.storing ? 1 : 0);</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">        hash = 59 * hash + (this.integ ? 1 : 0);</span>
+<span class="nc" id="L147">        return hash;</span>
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">        if (obj == null)</span>
+<span class="nc" id="L153">            return false;</span>
+<span class="pc bpc" id="L154" title="1 of 2 branches missed.">        if (getClass() != obj.getClass())</span>
+<span class="nc" id="L155">            return false;</span>
+<span class="fc" id="L156">        final DAType other = (DAType) obj;</span>
+<span class="pc bpc" id="L157" title="1 of 2 branches missed.">        if (this.memRef != other.memRef)</span>
+<span class="nc" id="L158">            return false;</span>
+<span class="pc bpc" id="L159" title="1 of 2 branches missed.">        if (this.storing != other.storing)</span>
+<span class="nc" id="L160">            return false;</span>
+<span class="pc bpc" id="L161" title="1 of 2 branches missed.">        if (this.integ != other.integ)</span>
+<span class="nc" id="L162">            return false;</span>
+<span class="fc" id="L163">        return true;</span>
+    }
+
+<span class="fc" id="L166">    public enum MemRef {</span>
+<span class="fc" id="L167">        HEAP, MMAP</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

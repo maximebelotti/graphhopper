@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Polygon.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util.shapes</a> &gt; <span class="el_source">Polygon.java</span></div><h1>Polygon.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util.shapes;
+
+import com.graphhopper.util.PointList;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Envelope;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.impl.PackedCoordinateSequence;
+import org.locationtech.jts.geom.prep.PreparedGeometry;
+import org.locationtech.jts.geom.prep.PreparedPolygon;
+
+/**
+ * This class represents a polygon that is defined by a set of points.
+ * Every point i is connected to point i-1 and i+1.
+ *
+ * @author Robin Boldt
+ */
+public class Polygon implements Shape {
+
+<span class="fc" id="L36">    private static final GeometryFactory factory = new GeometryFactory();</span>
+    public final PreparedGeometry prepPolygon;
+    public final boolean rectangle;
+    public final Envelope envelope;
+    public final BBox bbox;
+
+<span class="fc" id="L42">    public Polygon(PreparedPolygon prepPolygon) {</span>
+<span class="fc" id="L43">        this.prepPolygon = prepPolygon;</span>
+<span class="fc" id="L44">        this.rectangle = prepPolygon.getGeometry().isRectangle();</span>
+<span class="fc" id="L45">        this.envelope = prepPolygon.getGeometry().getEnvelopeInternal();</span>
+<span class="fc" id="L46">        this.bbox = BBox.fromEnvelope(envelope);</span>
+<span class="fc" id="L47">    }</span>
+
+<span class="fc" id="L49">    public Polygon(double[] lats, double[] lons) {</span>
+<span class="pc bpc" id="L50" title="1 of 2 branches missed.">        if (lats.length != lons.length)</span>
+<span class="nc" id="L51">            throw new IllegalArgumentException(&quot;Points must be of equal length but was &quot; + lats.length + &quot; vs. &quot; + lons.length);</span>
+
+<span class="pc bpc" id="L53" title="1 of 2 branches missed.">        if (lats.length == 0)</span>
+<span class="nc" id="L54">            throw new IllegalArgumentException(&quot;Points must not be empty&quot;);</span>
+
+<span class="fc" id="L56">        Coordinate[] coordinates = new Coordinate[lats.length + 1];</span>
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        for (int i = 0; i &lt; lats.length; i++) {</span>
+<span class="fc" id="L58">            coordinates[i] = new Coordinate(lons[i], lats[i]);</span>
+        }
+<span class="fc" id="L60">        coordinates[lats.length] = coordinates[0];</span>
+<span class="fc" id="L61">        this.prepPolygon = new PreparedPolygon(factory.createPolygon(new PackedCoordinateSequence.Double(coordinates, 2)));</span>
+<span class="fc" id="L62">        this.rectangle = prepPolygon.getGeometry().isRectangle();</span>
+<span class="fc" id="L63">        this.envelope = prepPolygon.getGeometry().getEnvelopeInternal();</span>
+<span class="fc" id="L64">        this.bbox = BBox.fromEnvelope(envelope);</span>
+<span class="fc" id="L65">    }</span>
+
+    public static Polygon create(org.locationtech.jts.geom.Polygon polygon) {
+<span class="nc" id="L68">        return new Polygon(new PreparedPolygon(polygon));</span>
+    }
+
+    public boolean intersects(PointList pointList) {
+<span class="fc" id="L72">        return prepPolygon.intersects(pointList.getCachedLineString(false));</span>
+    }
+
+    /**
+     * Does the point in polygon check.
+     *
+     * @param lat Latitude of the point to be checked
+     * @param lon Longitude of the point to be checked
+     * @return true if point is inside polygon
+     */
+    public boolean contains(double lat, double lon) {
+<span class="fc" id="L83">        return prepPolygon.contains(factory.createPoint(new Coordinate(lon, lat)));</span>
+    }
+
+    @Override
+    public BBox getBounds() {
+<span class="fc" id="L88">        return bbox;</span>
+    }
+
+    public double getMinLat() {
+<span class="nc" id="L92">        return envelope.getMinY();</span>
+    }
+
+    public double getMinLon() {
+<span class="nc" id="L96">        return envelope.getMinX();</span>
+    }
+
+    public double getMaxLat() {
+<span class="nc" id="L100">        return envelope.getMaxY();</span>
+    }
+
+    public double getMaxLon() {
+<span class="nc" id="L104">        return envelope.getMaxX();</span>
+    }
+
+    public boolean isRectangle() {
+<span class="fc" id="L108">        return rectangle;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L113">        return &quot;polygon (&quot; + prepPolygon.getGeometry().getNumPoints() + &quot; points,&quot; + prepPolygon.getGeometry().getNumGeometries() + &quot; geometries)&quot;;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

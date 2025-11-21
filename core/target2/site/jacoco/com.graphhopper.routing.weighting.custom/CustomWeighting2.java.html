@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CustomWeighting2.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting.custom</a> &gt; <span class="el_source">CustomWeighting2.java</span></div><h1>CustomWeighting2.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.weighting.custom;
+
+import com.graphhopper.routing.weighting.TurnCostProvider;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.util.EdgeIteratorState;
+
+import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PROVIDER;
+
+public class CustomWeighting2 implements Weighting {
+    public static final String NAME = &quot;custom_two&quot;;
+    private final double distanceInfluence;
+    private final CustomWeighting.EdgeToDoubleMapping edgeToSpeedMapping;
+    private final CustomWeighting.EdgeToDoubleMapping edgeToPriorityMapping;
+    private final TurnCostProvider turnCostProvider;
+
+<span class="nc" id="L33">    public CustomWeighting2(TurnCostProvider turnCostProvider, CustomWeighting.Parameters parameters) {</span>
+<span class="nc bnc" id="L34" title="All 2 branches missed.">        if (!Weighting.isValidName(getName()))</span>
+<span class="nc" id="L35">            throw new IllegalStateException(&quot;Not a valid name for a Weighting: &quot; + getName());</span>
+<span class="nc" id="L36">        this.turnCostProvider = turnCostProvider;</span>
+<span class="nc" id="L37">        this.edgeToSpeedMapping = parameters.getEdgeToSpeedMapping();</span>
+<span class="nc" id="L38">        this.edgeToPriorityMapping = parameters.getEdgeToPriorityMapping();</span>
+<span class="nc" id="L39">        this.distanceInfluence = parameters.getDistanceInfluence();</span>
+<span class="nc" id="L40">    }</span>
+
+    @Override
+    public double calcMinWeightPerDistance() {
+<span class="nc" id="L44">        return 0.01;</span>
+    }
+
+    @Override
+    public double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse) {
+<span class="nc" id="L49">        double priority = edgeToPriorityMapping.get(edgeState, reverse);</span>
+<span class="nc bnc" id="L50" title="All 4 branches missed.">        if (priority &lt; 0 || priority &gt; 100)</span>
+<span class="nc" id="L51">            throw new IllegalArgumentException(&quot;Invalid priority: &quot; + priority + &quot;, must be in [0, 100]&quot;);</span>
+<span class="nc bnc" id="L52" title="All 2 branches missed.">        else if (priority == 0)</span>
+<span class="nc" id="L53">            return Double.POSITIVE_INFINITY;</span>
+<span class="nc" id="L54">        return edgeState.getDistance() * (1.0 / priority + distanceInfluence / 1000.0);</span>
+    }
+
+    @Override
+    public long calcEdgeMillis(EdgeIteratorState edgeState, boolean reverse) {
+<span class="nc" id="L59">        double speed = edgeToSpeedMapping.get(edgeState, reverse);</span>
+<span class="nc bnc" id="L60" title="All 2 branches missed.">        if (speed == 0) return Long.MAX_VALUE;</span>
+<span class="nc" id="L61">        return Math.round(edgeState.getDistance() * 1000 / speed * 3.6);</span>
+    }
+
+    @Override
+    public double calcTurnWeight(int inEdge, int viaNode, int outEdge) {
+<span class="nc" id="L66">        return turnCostProvider.calcTurnWeight(inEdge, viaNode, outEdge);</span>
+    }
+
+    @Override
+    public long calcTurnMillis(int inEdge, int viaNode, int outEdge) {
+<span class="nc" id="L71">        return turnCostProvider.calcTurnMillis(inEdge, viaNode, outEdge);</span>
+    }
+
+    @Override
+    public boolean hasTurnCosts() {
+<span class="nc bnc" id="L76" title="All 2 branches missed.">        return turnCostProvider != NO_TURN_COST_PROVIDER;</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="nc" id="L81">        return NAME;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

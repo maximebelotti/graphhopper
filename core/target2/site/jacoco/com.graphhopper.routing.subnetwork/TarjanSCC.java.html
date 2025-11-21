@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TarjanSCC.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.subnetwork</a> &gt; <span class="el_source">TarjanSCC.java</span></div><h1>TarjanSCC.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.subnetwork;
+
+import com.carrotsearch.hppc.BitSet;
+import com.carrotsearch.hppc.IntArrayDeque;
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.LongArrayDeque;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.BitUtil;
+import com.graphhopper.util.EdgeExplorer;
+import com.graphhopper.util.EdgeIterator;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * Tarjan's algorithm to find strongly connected components of a directed graph. Two nodes belong to the same connected
+ * component iff they are reachable from each other. Reachability from A to B is not necessarily equal to reachability
+ * from B to A because the graph is directed.
+ * &lt;p&gt;
+ * This class offers two ways to run the algorithm: Either using (function call) recursion {@link #findComponentsRecursive()}
+ * or recursion using an explicit stack {@link #findComponents()}. The first one is easier to implement and understand
+ * and the second one allows running the algorithm  also on large graphs without having to deal with JVM stack size
+ * limits.
+ * &lt;p&gt;
+ * Tarjan's algorithm is explained for example here:
+ * - http://en.wikipedia.org/wiki/Tarjan's_strongly_connected_components_algorithm
+ * - http://www.timl.id.au/?p=327
+ * - http://homepages.ecs.vuw.ac.nz/~djp/files/P05.pdf
+ *
+ * @author easbar
+ */
+<span class="fc" id="L52">public class TarjanSCC {</span>
+    private final Graph graph;
+    private final EdgeExplorer explorer;
+    private final EdgeFilter edgeFilter;
+<span class="fc" id="L56">    private final BitUtil bitUtil = BitUtil.LITTLE;</span>
+    private final int[] nodeIndex;
+    private final int[] nodeLowLink;
+    private final BitSet nodeOnStack;
+    private final IntArrayDeque tarjanStack;
+    private final LongArrayDeque dfsStack;
+    private final ConnectedComponents components;
+    private final boolean excludeSingleNodeComponents;
+
+<span class="fc" id="L65">    private int currIndex = 0;</span>
+    private int v;
+    private int w;
+    private State dfsState;
+
+    /**
+     * Runs Tarjan's algorithm using an explicit stack.
+     *
+     * @param excludeSingleNodeComponents if set to true components that only contain a single node will not be
+     *                                    returned when calling {@link #findComponents} or {@link #findComponentsRecursive()},
+     *                                    which can be useful to save some memory.
+     */
+    public static ConnectedComponents findComponents(Graph graph, EdgeFilter edgeFilter, boolean excludeSingleNodeComponents) {
+<span class="fc" id="L78">        return new TarjanSCC(graph, edgeFilter, excludeSingleNodeComponents).findComponents();</span>
+    }
+
+    /**
+     * Runs Tarjan's algorithm in a recursive way. Doing it like this requires a large stack size for large graphs,
+     * which can be set like `-Xss1024M`. Usually the version using an explicit stack ({@link #findComponents()}) should be
+     * preferred. However, this recursive implementation is easier to understand.
+     *
+     * @see #findComponents(Graph, EdgeFilter, boolean)
+     */
+    public static ConnectedComponents findComponentsRecursive(Graph graph, EdgeFilter edgeFilter, boolean excludeSingleNodeComponents) {
+<span class="fc" id="L89">        return new TarjanSCC(graph, edgeFilter, excludeSingleNodeComponents).findComponentsRecursive();</span>
+    }
+
+<span class="fc" id="L92">    private TarjanSCC(Graph graph, EdgeFilter edgeFilter, boolean excludeSingleNodeComponents) {</span>
+<span class="fc" id="L93">        this.graph = graph;</span>
+<span class="fc" id="L94">        this.edgeFilter = edgeFilter;</span>
+<span class="fc" id="L95">        explorer = graph.createEdgeExplorer(edgeFilter);</span>
+
+<span class="fc" id="L97">        nodeIndex = new int[graph.getNodes()];</span>
+<span class="fc" id="L98">        nodeLowLink = new int[graph.getNodes()];</span>
+<span class="fc" id="L99">        Arrays.fill(nodeIndex, -1);</span>
+<span class="fc" id="L100">        Arrays.fill(nodeLowLink, -1);</span>
+<span class="fc" id="L101">        nodeOnStack = new BitSet(graph.getNodes());</span>
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">        if (!nodeOnStack.getClass().getName().contains(&quot;hppc&quot;))</span>
+<span class="nc" id="L103">            throw new IllegalStateException(&quot;Was meant to be hppc BitSet&quot;);</span>
+<span class="fc" id="L104">        tarjanStack = new IntArrayDeque();</span>
+<span class="fc" id="L105">        dfsStack = new LongArrayDeque();</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        components = new ConnectedComponents(excludeSingleNodeComponents ? -1 : graph.getNodes());</span>
+<span class="fc" id="L107">        this.excludeSingleNodeComponents = excludeSingleNodeComponents;</span>
+<span class="fc" id="L108">    }</span>
+
+<span class="fc" id="L110">    private enum State {</span>
+<span class="fc" id="L111">        UPDATE,</span>
+<span class="fc" id="L112">        HANDLE_NEIGHBOR,</span>
+<span class="fc" id="L113">        FIND_COMPONENT,</span>
+<span class="fc" id="L114">        BUILD_COMPONENT</span>
+    }
+
+    private ConnectedComponents findComponentsRecursive() {
+<span class="fc bfc" id="L118" title="All 2 branches covered.">        for (int node = 0; node &lt; graph.getNodes(); node++) {</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">            if (nodeIndex[node] == -1) {</span>
+<span class="fc" id="L120">                findComponentForNode(node);</span>
+            }
+        }
+<span class="fc" id="L123">        return components;</span>
+    }
+
+    private void findComponentForNode(int v) {
+<span class="fc" id="L127">        setupNextNode(v);</span>
+        // we have to create a new explorer on each iteration because of the nested edge iterations
+<span class="fc" id="L129">        EdgeExplorer explorer = graph.createEdgeExplorer(edgeFilter);</span>
+<span class="fc" id="L130">        EdgeIterator iter = explorer.setBaseNode(v);</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L132">            int w = iter.getAdjNode();</span>
+<span class="fc bfc" id="L133" title="All 2 branches covered.">            if (nodeIndex[w] == -1) {</span>
+<span class="fc" id="L134">                findComponentForNode(w);</span>
+<span class="fc" id="L135">                nodeLowLink[v] = Math.min(nodeLowLink[v], nodeLowLink[w]);</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">            } else if (nodeOnStack.get(w))</span>
+<span class="fc" id="L137">                nodeLowLink[v] = Math.min(nodeLowLink[v], nodeIndex[w]);</span>
+<span class="fc" id="L138">        }</span>
+<span class="fc" id="L139">        buildComponent(v);</span>
+<span class="fc" id="L140">    }</span>
+
+    private void setupNextNode(int v) {
+<span class="fc" id="L143">        nodeIndex[v] = currIndex;</span>
+<span class="fc" id="L144">        nodeLowLink[v] = currIndex;</span>
+<span class="fc" id="L145">        currIndex++;</span>
+<span class="fc" id="L146">        tarjanStack.addLast(v);</span>
+<span class="fc" id="L147">        nodeOnStack.set(v);</span>
+<span class="fc" id="L148">    }</span>
+
+    private void buildComponent(int v) {
+<span class="fc bfc" id="L151" title="All 2 branches covered.">        if (nodeLowLink[v] == nodeIndex[v]) {</span>
+<span class="fc bfc" id="L152" title="All 2 branches covered.">            if (tarjanStack.getLast() == v) {</span>
+<span class="fc" id="L153">                tarjanStack.removeLast();</span>
+<span class="fc" id="L154">                nodeOnStack.clear(v);</span>
+<span class="fc" id="L155">                components.numComponents++;</span>
+<span class="fc" id="L156">                components.numNodes++;</span>
+<span class="fc bfc" id="L157" title="All 2 branches covered.">                if (!excludeSingleNodeComponents)</span>
+<span class="fc" id="L158">                    components.singleNodeComponents.set(v);</span>
+            } else {
+<span class="fc" id="L160">                IntArrayList component = new IntArrayList();</span>
+                while (true) {
+<span class="fc" id="L162">                    int w = tarjanStack.removeLast();</span>
+<span class="fc" id="L163">                    component.add(w);</span>
+<span class="fc" id="L164">                    nodeOnStack.clear(w);</span>
+<span class="fc bfc" id="L165" title="All 2 branches covered.">                    if (w == v)</span>
+<span class="fc" id="L166">                        break;</span>
+<span class="fc" id="L167">                }</span>
+<span class="fc" id="L168">                component.trimToSize();</span>
+<span class="pc bpc" id="L169" title="1 of 2 branches missed.">                assert component.size() &gt; 1;</span>
+<span class="fc" id="L170">                components.numComponents++;</span>
+<span class="fc" id="L171">                components.numNodes += component.size();</span>
+<span class="fc" id="L172">                components.components.add(component);</span>
+<span class="fc bfc" id="L173" title="All 2 branches covered.">                if (component.size() &gt; components.biggestComponent.size())</span>
+<span class="fc" id="L174">                    components.biggestComponent = component;</span>
+            }
+        }
+<span class="fc" id="L177">    }</span>
+
+    private ConnectedComponents findComponents() {
+<span class="fc bfc" id="L180" title="All 2 branches covered.">        for (int node = 0; node &lt; graph.getNodes(); ++node) {</span>
+<span class="fc bfc" id="L181" title="All 2 branches covered.">            if (nodeIndex[node] != -1)</span>
+<span class="fc" id="L182">                continue;</span>
+
+<span class="fc" id="L184">            pushFindComponentForNode(node);</span>
+<span class="fc bfc" id="L185" title="All 2 branches covered.">            while (hasNext()) {</span>
+<span class="fc" id="L186">                pop();</span>
+<span class="pc bpc" id="L187" title="1 of 5 branches missed.">                switch (dfsState) {</span>
+                    case BUILD_COMPONENT:
+<span class="fc" id="L189">                        buildComponent(v);</span>
+<span class="fc" id="L190">                        break;</span>
+                    case UPDATE:
+<span class="fc" id="L192">                        nodeLowLink[v] = Math.min(nodeLowLink[v], nodeLowLink[w]);</span>
+<span class="fc" id="L193">                        break;</span>
+                    case HANDLE_NEIGHBOR: {
+<span class="fc bfc" id="L195" title="All 4 branches covered.">                        if (nodeIndex[w] != -1 &amp;&amp; nodeOnStack.get(w))</span>
+<span class="fc" id="L196">                            nodeLowLink[v] = Math.min(nodeLowLink[v], nodeIndex[w]);</span>
+<span class="fc bfc" id="L197" title="All 2 branches covered.">                        if (nodeIndex[w] == -1) {</span>
+                            // we are pushing updateLowLinks first so it will run *after* findComponent finishes
+<span class="fc" id="L199">                            pushUpdateLowLinks(v, w);</span>
+<span class="fc" id="L200">                            pushFindComponentForNode(w);</span>
+                        }
+                        break;
+                    }
+                    case FIND_COMPONENT: {
+<span class="fc" id="L205">                        setupNextNode(v);</span>
+                        // we push buildComponent first so it will run *after* we finished traversing the edges
+<span class="fc" id="L207">                        pushBuildComponent(v);</span>
+<span class="fc" id="L208">                        EdgeIterator iter = explorer.setBaseNode(v);</span>
+<span class="fc bfc" id="L209" title="All 2 branches covered.">                        while (iter.next()) {</span>
+<span class="fc" id="L210">                            pushHandleNeighbor(v, iter.getAdjNode());</span>
+                        }
+                        break;
+                    }
+                    default:
+<span class="nc" id="L215">                        throw new IllegalStateException(&quot;Unknown state: &quot; + dfsState);</span>
+                }
+            }
+        }
+<span class="fc" id="L219">        return components;</span>
+    }
+
+    private boolean hasNext() {
+<span class="fc bfc" id="L223" title="All 2 branches covered.">        return !dfsStack.isEmpty();</span>
+    }
+
+    private void pop() {
+<span class="fc" id="L227">        long l = dfsStack.removeLast();</span>
+        // We are maintaining a stack of longs to hold three kinds of information: two node indices (v&amp;w) and the kind
+        // of code ('state') we want to execute for a given stack item. The following code combined with the pushXYZ
+        // methods does the fwd/bwd conversion between this information and a single long value.
+<span class="fc" id="L231">        int low = bitUtil.getIntLow(l);</span>
+<span class="fc" id="L232">        int high = bitUtil.getIntHigh(l);</span>
+<span class="fc bfc" id="L233" title="All 4 branches covered.">        if (low &gt; 0 &amp;&amp; high &gt; 0) {</span>
+<span class="fc" id="L234">            dfsState = State.HANDLE_NEIGHBOR;</span>
+<span class="fc" id="L235">            v = low - 1;</span>
+<span class="fc" id="L236">            w = high - 1;</span>
+<span class="fc bfc" id="L237" title="All 4 branches covered.">        } else if (low &gt; 0 &amp;&amp; high &lt; 0) {</span>
+<span class="fc" id="L238">            dfsState = State.UPDATE;</span>
+<span class="fc" id="L239">            v = low - 1;</span>
+<span class="fc" id="L240">            w = -high - 1;</span>
+<span class="fc bfc" id="L241" title="All 2 branches covered.">        } else if (low == 0) {</span>
+<span class="fc" id="L242">            dfsState = State.BUILD_COMPONENT;</span>
+<span class="fc" id="L243">            v = high - 1;</span>
+<span class="fc" id="L244">            w = -1;</span>
+        } else {
+<span class="fc" id="L246">            dfsState = State.FIND_COMPONENT;</span>
+<span class="fc" id="L247">            v = low - 1;</span>
+<span class="fc" id="L248">            w = -1;</span>
+        }
+<span class="fc" id="L250">    }</span>
+
+    private void pushHandleNeighbor(int v, int w) {
+<span class="pc bpc" id="L253" title="2 of 4 branches missed.">        assert v &gt;= 0 &amp;&amp; v &lt; Integer.MAX_VALUE;</span>
+<span class="pc bpc" id="L254" title="2 of 4 branches missed.">        assert w &gt;= 0 &amp;&amp; w &lt; Integer.MAX_VALUE;</span>
+<span class="fc" id="L255">        dfsStack.addLast(bitUtil.toLong(v + 1, w + 1));</span>
+<span class="fc" id="L256">    }</span>
+
+    private void pushUpdateLowLinks(int v, int w) {
+<span class="pc bpc" id="L259" title="2 of 4 branches missed.">        assert v &gt;= 0 &amp;&amp; v &lt; Integer.MAX_VALUE;</span>
+<span class="pc bpc" id="L260" title="2 of 4 branches missed.">        assert w &gt;= 0 &amp;&amp; w &lt; Integer.MAX_VALUE;</span>
+<span class="fc" id="L261">        dfsStack.addLast(bitUtil.toLong(v + 1, -(w + 1)));</span>
+<span class="fc" id="L262">    }</span>
+
+    private void pushBuildComponent(int v) {
+<span class="pc bpc" id="L265" title="2 of 4 branches missed.">        assert v &gt;= 0 &amp;&amp; v &lt; Integer.MAX_VALUE;</span>
+<span class="fc" id="L266">        dfsStack.addLast(bitUtil.toLong(0, v + 1));</span>
+<span class="fc" id="L267">    }</span>
+
+    private void pushFindComponentForNode(int v) {
+<span class="pc bpc" id="L270" title="2 of 4 branches missed.">        assert v &gt;= 0 &amp;&amp; v &lt; Integer.MAX_VALUE;</span>
+<span class="fc" id="L271">        dfsStack.addLast(bitUtil.toLong(v + 1, 0));</span>
+<span class="fc" id="L272">    }</span>
+
+    public static class ConnectedComponents {
+        private final List&lt;IntArrayList&gt; components;
+        private final BitSet singleNodeComponents;
+        private IntArrayList biggestComponent;
+        private int numComponents;
+        private int numNodes;
+
+<span class="fc" id="L281">        ConnectedComponents(int nodes) {</span>
+<span class="fc" id="L282">            components = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L283">            singleNodeComponents = new BitSet(Math.max(nodes, 0));</span>
+<span class="pc bpc" id="L284" title="1 of 2 branches missed.">            if (!(singleNodeComponents.getClass().getName().contains(&quot;hppc&quot;)))</span>
+<span class="nc" id="L285">                throw new IllegalStateException(&quot;Was meant to be hppc BitSet&quot;);</span>
+<span class="fc" id="L286">            biggestComponent = new IntArrayList();</span>
+<span class="fc" id="L287">        }</span>
+
+        /**
+         * A list of arrays each containing the nodes of a strongly connected component. Components with only a single
+         * node are not included here, but need to be obtained using {@link #getSingleNodeComponents()}.
+         */
+        public List&lt;IntArrayList&gt; getComponents() {
+<span class="fc" id="L294">            return components;</span>
+        }
+
+        /**
+         * The set of nodes that form their own (single-node) component. If {@link TarjanSCC#excludeSingleNodeComponents}
+         * is enabled this set will be empty.
+         */
+        public BitSet getSingleNodeComponents() {
+<span class="fc" id="L302">            return singleNodeComponents;</span>
+        }
+
+        /**
+         * The total number of strongly connected components. This always includes single-node components.
+         */
+        public int getTotalComponents() {
+<span class="fc" id="L309">            return numComponents;</span>
+        }
+
+        /**
+         * A reference to the biggest component contained in {@link #getComponents()} or an empty list if there are
+         * either no components or the biggest component has only a single node (and hence {@link #getComponents()} is
+         * empty).
+         */
+        public IntArrayList getBiggestComponent() {
+<span class="fc" id="L318">            return biggestComponent;</span>
+        }
+
+        public int getNodes() {
+<span class="fc" id="L322">            return numNodes;</span>
+        }
+
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

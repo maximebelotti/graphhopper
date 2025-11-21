@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ArrayUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">ArrayUtil.java</span></div><h1>ArrayUtil.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.util;
+
+import com.carrotsearch.hppc.BitSet;
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntIndexedContainer;
+import com.carrotsearch.hppc.cursors.IntCursor;
+import com.carrotsearch.hppc.sorting.IndirectComparator;
+import com.carrotsearch.hppc.sorting.IndirectSort;
+
+import java.util.Arrays;
+import java.util.Random;
+
+<span class="nc" id="L31">public class ArrayUtil {</span>
+
+    /**
+     * Creates an IntArrayList of a given size where each element is set to the given value
+     */
+    public static IntArrayList constant(int size, int value) {
+<span class="fc" id="L37">        IntArrayList result = new IntArrayList(size);</span>
+<span class="fc" id="L38">        Arrays.fill(result.buffer, value);</span>
+<span class="fc" id="L39">        result.elementsCount = size;</span>
+<span class="fc" id="L40">        return result;</span>
+    }
+
+    /**
+     * Creates an IntArrayList filled with zeros
+     */
+    public static IntArrayList zero(int size) {
+<span class="fc" id="L47">        IntArrayList result = new IntArrayList(size);</span>
+<span class="fc" id="L48">        result.elementsCount = size;</span>
+<span class="fc" id="L49">        return result;</span>
+    }
+
+    /**
+     * Creates an IntArrayList filled with the integers 0,1,2,3,...,size-1
+     */
+    public static IntArrayList iota(int size) {
+<span class="fc" id="L56">        return range(0, size);</span>
+    }
+
+    /**
+     * Creates an IntArrayList filled with the integers [startIncl,endExcl[
+     */
+    public static IntArrayList range(int startIncl, int endExcl) {
+<span class="fc" id="L63">        IntArrayList result = new IntArrayList(endExcl - startIncl);</span>
+<span class="fc" id="L64">        result.elementsCount = endExcl - startIncl;</span>
+<span class="fc bfc" id="L65" title="All 2 branches covered.">        for (int i = 0; i &lt; result.size(); ++i)</span>
+<span class="fc" id="L66">            result.set(i, startIncl + i);</span>
+<span class="fc" id="L67">        return result;</span>
+    }
+
+    /**
+     * Creates an IntArrayList filled with the integers [startIncl,endIncl]
+     */
+    public static IntArrayList rangeClosed(int startIncl, int endIncl) {
+<span class="fc" id="L74">        return range(startIncl, endIncl + 1);</span>
+    }
+
+    /**
+     * Creates an IntArrayList filled with a permutation of the numbers 0,1,2,...,size-1
+     */
+    public static IntArrayList permutation(int size, Random rnd) {
+<span class="fc" id="L81">        IntArrayList result = iota(size);</span>
+<span class="fc" id="L82">        shuffle(result, rnd);</span>
+<span class="fc" id="L83">        return result;</span>
+    }
+
+    public static boolean isPermutation(IntArrayList arr) {
+<span class="fc" id="L87">        BitSet present = new BitSet(arr.size());</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        for (IntCursor e : arr) {</span>
+<span class="fc bfc" id="L89" title="All 4 branches covered.">            if (e.value &gt;= arr.size() || e.value &lt; 0)</span>
+<span class="fc" id="L90">                return false;</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">            if (present.get(e.value))</span>
+<span class="fc" id="L92">                return false;</span>
+<span class="fc" id="L93">            present.set(e.value);</span>
+<span class="fc" id="L94">        }</span>
+<span class="fc" id="L95">        return true;</span>
+    }
+
+    /**
+     * Reverses the order of the given list's elements in place and returns it
+     */
+    public static IntArrayList reverse(IntArrayList list) {
+<span class="fc" id="L102">        final int[] buffer = list.buffer;</span>
+        int tmp;
+<span class="fc bfc" id="L104" title="All 2 branches covered.">        for (int start = 0, end = list.size() - 1; start &lt; end; start++, end--) {</span>
+            // swap the values
+<span class="fc" id="L106">            tmp = buffer[start];</span>
+<span class="fc" id="L107">            buffer[start] = buffer[end];</span>
+<span class="fc" id="L108">            buffer[end] = tmp;</span>
+        }
+<span class="fc" id="L110">        return list;</span>
+    }
+
+    /**
+     * Shuffles the elements of the given list in place and returns it
+     */
+    public static IntArrayList shuffle(IntArrayList list, Random random) {
+<span class="fc" id="L117">        int maxHalf = list.size() / 2;</span>
+<span class="fc bfc" id="L118" title="All 2 branches covered.">        for (int x1 = 0; x1 &lt; maxHalf; x1++) {</span>
+<span class="fc" id="L119">            int x2 = random.nextInt(maxHalf) + maxHalf;</span>
+<span class="fc" id="L120">            int tmp = list.buffer[x1];</span>
+<span class="fc" id="L121">            list.buffer[x1] = list.buffer[x2];</span>
+<span class="fc" id="L122">            list.buffer[x2] = tmp;</span>
+        }
+<span class="fc" id="L124">        return list;</span>
+    }
+
+    /**
+     * Removes all duplicate elements of the given array in the range [0, end[ in place
+     *
+     * @return the size of the new range that contains no duplicates (smaller or equal to end).
+     */
+    public static int removeConsecutiveDuplicates(int[] arr, int end) {
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">        if (end &lt; 0)</span>
+<span class="nc" id="L134">            throw new IllegalArgumentException(&quot;end less than 0&quot;);</span>
+<span class="fc bfc" id="L135" title="All 2 branches covered.">        if (end == 0)</span>
+<span class="fc" id="L136">            return 0;</span>
+<span class="fc" id="L137">        int curr = 0;</span>
+<span class="fc bfc" id="L138" title="All 2 branches covered.">        for (int i = 1; i &lt; end; ++i) {</span>
+<span class="fc bfc" id="L139" title="All 2 branches covered.">            if (arr[i] != arr[curr])</span>
+<span class="fc" id="L140">                arr[++curr] = arr[i];</span>
+        }
+<span class="fc" id="L142">        return curr + 1;</span>
+    }
+
+    /**
+     * Creates a copy of the given list where all consecutive duplicates are removed
+     */
+    public static IntIndexedContainer withoutConsecutiveDuplicates(IntIndexedContainer arr) {
+<span class="fc" id="L149">        IntArrayList result = new IntArrayList();</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (arr.isEmpty())</span>
+<span class="fc" id="L151">            return result;</span>
+<span class="fc" id="L152">        int prev = arr.get(0);</span>
+<span class="fc" id="L153">        result.add(prev);</span>
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        for (int i = 1; i &lt; arr.size(); i++) {</span>
+<span class="fc" id="L155">            int val = arr.get(i);</span>
+<span class="fc bfc" id="L156" title="All 2 branches covered.">            if (val != prev)</span>
+<span class="fc" id="L157">                result.add(val);</span>
+<span class="fc" id="L158">            prev = val;</span>
+        }
+<span class="fc" id="L160">        return result;</span>
+    }
+
+    /**
+     * Maps one array using another, i.e. every element arr[x] is replaced by map[arr[x]]
+     */
+    public static void transform(IntIndexedContainer arr, IntIndexedContainer map) {
+<span class="fc bfc" id="L167" title="All 2 branches covered.">        for (int i = 0; i &lt; arr.size(); ++i)</span>
+<span class="fc" id="L168">            arr.set(i, map.get(arr.get(i)));</span>
+<span class="fc" id="L169">    }</span>
+
+    public static int[] calcSortOrder(IntArrayList arr1, IntArrayList arr2) {
+<span class="pc bpc" id="L172" title="1 of 2 branches missed.">        if (arr1.elementsCount != arr2.elementsCount) {</span>
+<span class="nc" id="L173">            throw new IllegalArgumentException(&quot;Arrays must have equal size&quot;);</span>
+        }
+<span class="fc" id="L175">        return calcSortOrder(arr1.buffer, arr2.buffer, arr1.elementsCount);</span>
+    }
+
+    /**
+     * This method calculates the sort order of the first {@param length} element-pairs given by two arrays.
+     * The order is chosen such that it sorts the element-pairs first by the first and second by the second array.
+     * The input arrays are not manipulated by this method.
+     *
+     * @param length must not be larger than either of the two input array lengths.
+     * @return an array x of length {@param length}. e.g. if this method returns x = {2, 0, 1} it means that that
+     * the element-pair with index 2 comes first in the order and so on
+     */
+    public static int[] calcSortOrder(final int[] arr1, final int[] arr2, int length) {
+<span class="pc bpc" id="L188" title="2 of 4 branches missed.">        if (arr1.length &lt; length || arr2.length &lt; length)</span>
+<span class="nc" id="L189">            throw new IllegalArgumentException(&quot;Arrays must not be shorter than given length&quot;);</span>
+<span class="fc" id="L190">        IndirectComparator comp = (indexA, indexB) -&gt; {</span>
+<span class="fc" id="L191">            final int arr1cmp = Integer.compare(arr1[indexA], arr1[indexB]);</span>
+<span class="fc bfc" id="L192" title="All 2 branches covered.">            return arr1cmp != 0 ? arr1cmp : Integer.compare(arr2[indexA], arr2[indexB]);</span>
+        };
+<span class="fc" id="L194">        return IndirectSort.mergesort(0, length, comp);</span>
+    }
+
+    /**
+     * Creates a copy of the given array such that it is ordered by the given order.
+     * The order can be shorter or equal, but not longer than the array.
+     */
+    public static int[] applyOrder(int[] arr, int[] order) {
+<span class="pc bpc" id="L202" title="1 of 2 branches missed.">        if (order.length &gt; arr.length)</span>
+<span class="nc" id="L203">            throw new IllegalArgumentException(&quot;sort order must not be shorter than array&quot;);</span>
+<span class="fc" id="L204">        int[] result = new int[order.length];</span>
+<span class="fc bfc" id="L205" title="All 2 branches covered.">        for (int i = 0; i &lt; result.length; ++i)</span>
+<span class="fc" id="L206">            result[i] = arr[order[i]];</span>
+<span class="fc" id="L207">        return result;</span>
+    }
+
+    /**
+     * Creates a new array where each element represents the index position of this element in the given array
+     * or is set to -1 if this element does not appear in the input array. None of the elements of the input array may
+     * be equal or larger than the arrays length.
+     */
+    public static int[] invert(int[] arr) {
+<span class="fc" id="L216">        int[] result = new int[arr.length];</span>
+<span class="fc" id="L217">        Arrays.fill(result, -1);</span>
+<span class="fc bfc" id="L218" title="All 2 branches covered.">        for (int i = 0; i &lt; arr.length; i++)</span>
+<span class="fc" id="L219">            result[arr[i]] = i;</span>
+<span class="fc" id="L220">        return result;</span>
+    }
+
+    public static IntArrayList invert(IntArrayList list) {
+<span class="fc" id="L224">        IntArrayList result = new IntArrayList(list.size());</span>
+<span class="fc" id="L225">        result.elementsCount = list.size();</span>
+<span class="fc bfc" id="L226" title="All 2 branches covered.">        for (int i = 0; i &lt; result.elementsCount; ++i)</span>
+<span class="fc" id="L227">            result.set(list.get(i), i);</span>
+<span class="fc" id="L228">        return result;</span>
+    }
+
+    public static IntArrayList subList(IntArrayList list, int fromIndex, int toIndex) {
+<span class="nc" id="L232">        IntArrayList result = new IntArrayList(toIndex - fromIndex);</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">        for (int i = fromIndex; i &lt; toIndex; i++)</span>
+<span class="nc" id="L234">            result.add(list.get(i));</span>
+<span class="nc" id="L235">        return result;</span>
+    }
+
+    /**
+     * @param a sorted array
+     * @param b sorted array
+     * @return sorted array consisting of the elements of a and b, duplicates get removed
+     */
+    public static int[] merge(int[] a, int[] b) {
+<span class="fc bfc" id="L244" title="All 2 branches covered.">        if (a.length + b.length == 0)</span>
+<span class="fc" id="L245">            return new int[]{};</span>
+<span class="fc" id="L246">        int[] result = new int[a.length + b.length];</span>
+<span class="fc" id="L247">        int size = 0;</span>
+<span class="fc" id="L248">        int i = 0;</span>
+<span class="fc" id="L249">        int j = 0;</span>
+<span class="fc bfc" id="L250" title="All 4 branches covered.">        while (i &lt; a.length &amp;&amp; j &lt; b.length) {</span>
+<span class="fc bfc" id="L251" title="All 2 branches covered.">            if (a[i] &lt; b[j])</span>
+<span class="fc" id="L252">                result[size++] = a[i++];</span>
+            else
+<span class="fc" id="L254">                result[size++] = b[j++];</span>
+        }
+<span class="fc bfc" id="L256" title="All 2 branches covered.">        if (i == a.length) {</span>
+<span class="fc" id="L257">            System.arraycopy(b, j, result, size, b.length - j);</span>
+<span class="fc" id="L258">            size += b.length - j;</span>
+        } else {
+<span class="fc" id="L260">            System.arraycopy(a, i, result, size, a.length - i);</span>
+<span class="fc" id="L261">            size += a.length - i;</span>
+        }
+<span class="fc" id="L263">        int sizeWithoutDuplicates = removeConsecutiveDuplicates(result, size);</span>
+<span class="fc" id="L264">        return Arrays.copyOf(result, sizeWithoutDuplicates);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

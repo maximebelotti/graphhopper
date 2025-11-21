@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DefaultMaxSpeedParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">DefaultMaxSpeedParser.java</span></div><h1>DefaultMaxSpeedParser.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.storage.IntsRef;
+import de.westnordost.osm_legal_default_speeds.LegalDefaultSpeeds;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import static com.graphhopper.routing.ev.MaxSpeed.MAXSPEED_150;
+import static com.graphhopper.routing.ev.MaxSpeed.MAXSPEED_MISSING;
+
+public class DefaultMaxSpeedParser implements TagParser {
+    private final LegalDefaultSpeeds speeds;
+    private DecimalEncodedValue ruralMaxSpeedEnc;
+    private DecimalEncodedValue urbanMaxSpeedEnc;
+    private EdgeIntAccess externalAccess;
+
+<span class="fc" id="L22">    public DefaultMaxSpeedParser(LegalDefaultSpeeds speeds) {</span>
+<span class="fc" id="L23">        this.speeds = speeds;</span>
+<span class="fc" id="L24">    }</span>
+
+    public void init(DecimalEncodedValue ruralMaxSpeedEnc, DecimalEncodedValue urbanMaxSpeedEnc, EdgeIntAccess externalAccess) {
+<span class="fc" id="L27">        this.ruralMaxSpeedEnc = ruralMaxSpeedEnc;</span>
+<span class="fc" id="L28">        this.urbanMaxSpeedEnc = urbanMaxSpeedEnc;</span>
+<span class="fc" id="L29">        this.externalAccess = externalAccess;</span>
+<span class="fc" id="L30">    }</span>
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess _ignoreAccess, ReaderWay way, IntsRef relationFlags) {
+<span class="pc bpc" id="L34" title="1 of 2 branches missed.">        if (externalAccess == null)</span>
+<span class="nc" id="L35">            throw new IllegalArgumentException(&quot;Call init before using &quot; + getClass().getName());</span>
+<span class="fc" id="L36">        double maxSpeed = Math.max(OSMMaxSpeedParser.parseMaxSpeed(way, false), OSMMaxSpeedParser.parseMaxSpeed(way, true));</span>
+<span class="fc" id="L37">        Integer ruralSpeedInt = null, urbanSpeedInt = null;</span>
+<span class="fc bfc" id="L38" title="All 2 branches covered.">        if (maxSpeed == MAXSPEED_MISSING) {</span>
+<span class="fc" id="L39">            Country country = way.getTag(&quot;country&quot;, Country.MISSING);</span>
+<span class="fc" id="L40">            State state = way.getTag(&quot;country_state&quot;, State.MISSING);</span>
+<span class="pc bpc" id="L41" title="1 of 2 branches missed.">            if (country != Country.MISSING) {</span>
+<span class="fc bfc" id="L42" title="All 2 branches covered.">                String code = state == State.MISSING ? country.getAlpha2() : state.getStateCode();</span>
+<span class="fc" id="L43">                Map&lt;String, String&gt; tags = filter(way.getTags());</span>
+                // Workaround for GBR. Default is used for &quot;urban&quot; but ignored for &quot;rural&quot;.
+<span class="fc bfc" id="L45" title="All 2 branches covered.">                if (country == Country.GBR) tags.put(&quot;lit&quot;, &quot;yes&quot;);</span>
+
+                // with computeIfAbsent we calculate the expensive hashCode of the key only once
+<span class="fc" id="L48">                Result result = cache.computeIfAbsent(tags, (key) -&gt; {</span>
+<span class="fc" id="L49">                    Result internRes = new Result();</span>
+<span class="fc" id="L50">                    LegalDefaultSpeeds.Result tmpResult = speeds.getSpeedLimits(code,</span>
+<span class="fc bfc" id="L51" title="All 4 branches covered.">                            tags, Collections.emptyList(), (name, eval) -&gt; eval.invoke() || &quot;rural&quot;.equals(name));</span>
+<span class="fc bfc" id="L52" title="All 2 branches covered.">                    if (tmpResult != null) {</span>
+<span class="fc" id="L53">                        internRes.rural = parseInt(tmpResult.getTags().get(&quot;maxspeed&quot;));</span>
+<span class="pc bpc" id="L54" title="1 of 4 branches missed.">                        if (internRes.rural == null &amp;&amp; &quot;130&quot;.equals(tmpResult.getTags().get(&quot;maxspeed:advisory&quot;)))</span>
+<span class="fc" id="L55">                            internRes.rural = (int) MAXSPEED_150;</span>
+                    }
+
+<span class="fc" id="L58">                    tmpResult = speeds.getSpeedLimits(code,</span>
+<span class="fc bfc" id="L59" title="All 4 branches covered.">                            tags, Collections.emptyList(), (name, eval) -&gt; eval.invoke() || &quot;urban&quot;.equals(name));</span>
+<span class="fc bfc" id="L60" title="All 2 branches covered.">                    if (tmpResult != null) {</span>
+<span class="fc" id="L61">                        internRes.urban = parseInt(tmpResult.getTags().get(&quot;maxspeed&quot;));</span>
+<span class="pc bpc" id="L62" title="1 of 4 branches missed.">                        if (internRes.urban == null &amp;&amp; &quot;130&quot;.equals(tmpResult.getTags().get(&quot;maxspeed:advisory&quot;)))</span>
+<span class="fc" id="L63">                            internRes.urban = (int) MAXSPEED_150;</span>
+                    }
+<span class="fc" id="L65">                    return internRes;</span>
+                });
+
+<span class="fc" id="L68">                ruralSpeedInt = result.rural;</span>
+<span class="fc" id="L69">                urbanSpeedInt = result.urban;</span>
+            }
+        }
+
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        urbanMaxSpeedEnc.setDecimal(false, edgeId, externalAccess, urbanSpeedInt == null ? MAXSPEED_MISSING : urbanSpeedInt);</span>
+<span class="fc bfc" id="L74" title="All 2 branches covered.">        ruralMaxSpeedEnc.setDecimal(false, edgeId, externalAccess, ruralSpeedInt == null ? MAXSPEED_MISSING : ruralSpeedInt);</span>
+<span class="fc" id="L75">    }</span>
+
+    private Map&lt;String, String&gt; filter(Map&lt;String, Object&gt; tags) {
+<span class="fc" id="L78">        Map&lt;String, String&gt; map = new HashMap&lt;&gt;(tags.size());</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        for (Map.Entry&lt;String, Object&gt; entry : tags.entrySet()) {</span>
+<span class="fc" id="L80">            String key = entry.getKey();</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">            if (speeds.isRelevantTagKey(key)</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">                    || key.equals(&quot;country&quot;)</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">                    || key.equals(&quot;country_state&quot;)</span>
+                    // the :conditional tags are not yet necessary for us and expensive in the speeds library
+                    // see https://github.com/westnordost/osm-legal-default-speeds/issues/7
+<span class="pc bpc" id="L86" title="2 of 4 branches missed.">                    || key.startsWith(&quot;maxspeed:&quot;) &amp;&amp; !key.endsWith(&quot;:conditional&quot;))</span>
+<span class="fc" id="L87">                map.put(key, entry.getValue().toString());</span>
+<span class="fc" id="L88">        }</span>
+<span class="fc" id="L89">        return map;</span>
+    }
+
+    private static class Result {
+        Integer urban, rural;
+    }
+
+<span class="fc" id="L96">    private final int SIZE = 3_000;</span>
+<span class="fc" id="L97">    private final Map&lt;Map&lt;String, String&gt;, Result&gt; cache = new LinkedHashMap&lt;Map&lt;String, String&gt;, Result&gt;(SIZE + 1, .75F, true) {</span>
+        public boolean removeEldestEntry(Map.Entry eldest) {
+<span class="pc bpc" id="L99" title="1 of 2 branches missed.">            return size() &gt; SIZE;</span>
+        }
+    };
+
+    private static Integer parseInt(String str) {
+        try {
+<span class="fc" id="L105">            return Integer.parseInt(str);</span>
+<span class="fc" id="L106">        } catch (NumberFormatException ex) {</span>
+<span class="fc" id="L107">            return null;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

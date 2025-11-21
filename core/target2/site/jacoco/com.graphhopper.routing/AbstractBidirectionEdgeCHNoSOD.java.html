@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractBidirectionEdgeCHNoSOD.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AbstractBidirectionEdgeCHNoSOD.java</span></div><h1>AbstractBidirectionEdgeCHNoSOD.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.ch.CHEntry;
+import com.graphhopper.routing.ch.EdgeBasedCHBidirPathExtractor;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.storage.CHEdgeFilter;
+import com.graphhopper.storage.RoutingCHEdgeIteratorState;
+import com.graphhopper.storage.RoutingCHGraph;
+import com.graphhopper.util.EdgeExplorer;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.GHUtility;
+
+import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
+
+/**
+ * @author easbar
+ */
+<span class="fc" id="L35">public abstract class AbstractBidirectionEdgeCHNoSOD extends AbstractBidirCHAlgo {</span>
+    private final EdgeExplorer innerExplorer;
+
+    public AbstractBidirectionEdgeCHNoSOD(RoutingCHGraph graph) {
+<span class="fc" id="L39">        super(graph, TraversalMode.EDGE_BASED);</span>
+<span class="pc bpc" id="L40" title="1 of 2 branches missed.">        if (!graph.isEdgeBased()) {</span>
+<span class="nc" id="L41">            throw new IllegalArgumentException(&quot;Edge-based CH algorithms only work with edge-based CH graphs&quot;);</span>
+        }
+        // the inner explorer will run on the base-(or base-query-)graph edges only.
+        // we need an extra edge explorer, because it is called inside a loop that already iterates over edges
+        // note that we do not need to filter edges with the inner explorer, because inaccessible edges won't be added
+        // to bestWeightMapOther in the first place
+<span class="fc" id="L47">        innerExplorer = graph.getBaseGraph().createEdgeExplorer();</span>
+<span class="fc" id="L48">        setPathExtractorSupplier(() -&gt; new EdgeBasedCHBidirPathExtractor(graph));</span>
+<span class="fc" id="L49">    }</span>
+
+    @Override
+    protected void postInitFrom() {
+        // We use the levelEdgeFilter to filter out edges leading or coming from lower rank nodes.
+        // For the first step though we need all edges, so we need to ignore this filter.
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        if (fromOutEdge == ANY_EDGE) {</span>
+<span class="fc" id="L56">            fillEdgesFromUsingFilter(CHEdgeFilter.ALL_EDGES);</span>
+        } else {
+<span class="fc bfc" id="L58" title="All 2 branches covered.">            fillEdgesFromUsingFilter(edgeState -&gt; GHUtility.getEdgeFromEdgeKey(edgeState.getOrigEdgeKeyFirst()) == fromOutEdge);</span>
+        }
+<span class="fc" id="L60">    }</span>
+
+    @Override
+    protected void postInitTo() {
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        if (toInEdge == ANY_EDGE) {</span>
+<span class="fc" id="L65">            fillEdgesToUsingFilter(CHEdgeFilter.ALL_EDGES);</span>
+        } else {
+<span class="fc bfc" id="L67" title="All 2 branches covered.">            fillEdgesToUsingFilter(edgeState -&gt; GHUtility.getEdgeFromEdgeKey(edgeState.getOrigEdgeKeyLast()) == toInEdge);</span>
+        }
+<span class="fc" id="L69">    }</span>
+
+    @Override
+    protected void updateBestPath(double edgeWeight, SPTEntry entry, int origEdgeId, int traversalId, boolean reverse) {
+<span class="pc bpc" id="L73" title="1 of 2 branches missed.">        assert Double.isInfinite(edgeWeight) : &quot;edge-based CH does not use pre-calculated edge weight&quot;;</span>
+        // special case where the fwd/bwd search runs directly into the opposite node, for example if the highest level
+        // node of the shortest path matches the source or target. in this case one of the searches does not contribute
+        // anything to the shortest path.
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        int oppositeNode = reverse ? from : to;</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">        int oppositeEdge = reverse ? fromOutEdge : toInEdge;</span>
+<span class="fc bfc" id="L79" title="All 6 branches covered.">        boolean oppositeEdgeRestricted = reverse ? (fromOutEdge != ANY_EDGE) : (toInEdge != ANY_EDGE);</span>
+<span class="fc bfc" id="L80" title="All 6 branches covered.">        if (entry.adjNode == oppositeNode &amp;&amp; (!oppositeEdgeRestricted || origEdgeId == oppositeEdge)) {</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">            if (entry.getWeightOfVisitedPath() &lt; bestWeight) {</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">                bestFwdEntry = reverse ? new CHEntry(oppositeNode, 0) : entry;</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">                bestBwdEntry = reverse ? entry : new CHEntry(oppositeNode, 0);</span>
+<span class="fc" id="L84">                bestWeight = entry.getWeightOfVisitedPath();</span>
+<span class="fc" id="L85">                return;</span>
+            }
+        }
+
+        // todo: for a-star it should be possible to skip bridge node check at the beginning of the search as long as
+        // the minimum source-target distance lies above total sum of fwd+bwd path candidates.
+<span class="fc" id="L91">        EdgeIterator iter = innerExplorer.setBaseNode(entry.adjNode);</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L93">            final int edgeId = iter.getEdge();</span>
+<span class="fc" id="L94">            int key = traversalMode.createTraversalId(iter, reverse);</span>
+<span class="fc" id="L95">            SPTEntry entryOther = bestWeightMapOther.get(key);</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">            if (entryOther == null) {</span>
+<span class="fc" id="L97">                continue;</span>
+            }
+
+<span class="fc bfc" id="L100" title="All 2 branches covered.">            double turnCostsAtBridgeNode = reverse ?</span>
+<span class="fc" id="L101">                    graph.getTurnWeight(edgeId, iter.getBaseNode(), origEdgeId) :</span>
+<span class="fc" id="L102">                    graph.getTurnWeight(origEdgeId, iter.getBaseNode(), edgeId);</span>
+
+<span class="fc" id="L104">            double newWeight = entry.getWeightOfVisitedPath() + entryOther.getWeightOfVisitedPath() + turnCostsAtBridgeNode;</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">            if (newWeight &lt; bestWeight) {</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">                bestFwdEntry = reverse ? entryOther : entry;</span>
+<span class="fc bfc" id="L107" title="All 2 branches covered.">                bestBwdEntry = reverse ? entry : entryOther;</span>
+<span class="pc bpc" id="L108" title="1 of 2 branches missed.">                assert bestFwdEntry.adjNode == bestBwdEntry.adjNode;</span>
+<span class="fc" id="L109">                bestWeight = newWeight;</span>
+            }
+<span class="fc" id="L111">        }</span>
+<span class="fc" id="L112">    }</span>
+
+    @Override
+    protected int getIncomingEdge(SPTEntry entry) {
+<span class="fc" id="L116">        return ((CHEntry) entry).incEdge;</span>
+    }
+
+    @Override
+    protected boolean accept(RoutingCHEdgeIteratorState edge, SPTEntry currEdge, boolean reverse) {
+<span class="pc bpc" id="L121" title="1 of 4 branches missed.">        return levelEdgeFilter == null || levelEdgeFilter.accept(edge);</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

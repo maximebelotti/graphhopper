@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CHConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">CHConfig.java</span></div><h1>CHConfig.java</h1><pre class="source lang-java linenums">package com.graphhopper.storage;
+
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.Weighting;
+
+import static com.graphhopper.config.Profile.validateProfileName;
+
+/**
+ * Container to hold properties used for CH preparation Specifies all properties of a CH routing profile.
+ *
+ * @author easbar
+ */
+public class CHConfig {
+    /**
+     * will be used to store and identify the CH graph data on disk
+     */
+    private final String chGraphName;
+    private final Weighting weighting;
+    private final boolean edgeBased;
+
+    public static CHConfig nodeBased(String chGraphName, Weighting weighting) {
+<span class="fc" id="L22">        return new CHConfig(chGraphName, weighting, false);</span>
+    }
+
+    public static CHConfig edgeBased(String chGraphName, Weighting weighting) {
+<span class="fc" id="L26">        return new CHConfig(chGraphName, weighting, true);</span>
+    }
+
+<span class="fc" id="L29">    public CHConfig(String chGraphName, Weighting weighting, boolean edgeBased) {</span>
+<span class="fc" id="L30">        validateProfileName(chGraphName);</span>
+<span class="fc" id="L31">        this.chGraphName = chGraphName;</span>
+<span class="fc" id="L32">        this.weighting = weighting;</span>
+<span class="fc" id="L33">        this.edgeBased = edgeBased;</span>
+<span class="fc" id="L34">    }</span>
+
+    public Weighting getWeighting() {
+<span class="fc" id="L37">        return weighting;</span>
+    }
+
+    public boolean isEdgeBased() {
+<span class="fc" id="L41">        return edgeBased;</span>
+    }
+
+    public TraversalMode getTraversalMode() {
+<span class="fc bfc" id="L45" title="All 2 branches covered.">        return edgeBased ? TraversalMode.EDGE_BASED : TraversalMode.NODE_BASED;</span>
+    }
+
+    public String toFileName() {
+<span class="nc" id="L49">        return chGraphName;</span>
+    }
+
+    public String toString() {
+<span class="fc" id="L53">        return chGraphName;</span>
+    }
+
+    public String getName() {
+<span class="fc" id="L57">        return chGraphName;</span>
+    }
+
+    @Override
+    public boolean equals(Object o) {
+<span class="nc bnc" id="L62" title="All 2 branches missed.">        if (this == o) return true;</span>
+<span class="nc bnc" id="L63" title="All 4 branches missed.">        if (o == null || getClass() != o.getClass()) return false;</span>
+<span class="nc" id="L64">        CHConfig chConfig = (CHConfig) o;</span>
+<span class="nc" id="L65">        return getName().equals(chConfig.getName());</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="fc" id="L70">        return getName().hashCode();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

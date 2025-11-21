@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NameSimilarityEdgeFilter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util</a> &gt; <span class="el_source">NameSimilarityEdgeFilter.java</span></div><h1>NameSimilarityEdgeFilter.java</h1><pre class="source lang-java linenums"><span class="fc" id="L1">/*</span>
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.util;
+
+import com.graphhopper.apache.commons.lang3.StringUtils;
+import com.graphhopper.debatty.java.stringsimilarity.JaroWinkler;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.FetchMode;
+import com.graphhopper.util.PointList;
+import com.graphhopper.util.shapes.BBox;
+import com.graphhopper.util.shapes.Circle;
+import com.graphhopper.util.shapes.GHPoint;
+
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static com.graphhopper.util.Helper.toLowerCase;
+
+/**
+ * This class defines the basis for NameSimilarity matching using an EdgeFilter. It is not thread-safe.
+ * The typical use-case is to match not the nearest edge in
+ * {@link com.graphhopper.storage.index.LocationIndex#findClosest(double, double, EdgeFilter)}
+ * but the edge with the name that is similar to the specified pointHint and still close.
+ * &lt;p&gt;
+ * Names that are similar to each other are (n1 name1, n2 name2):
+ * &lt;ul&gt;
+ * &lt;li&gt;n1 == n2&lt;/li&gt;
+ * &lt;li&gt;n1 is significant substring of n2, e.g: n1=&quot;Main Road&quot;, n2=&quot;Main Road, New York&quot;&lt;/li&gt;
+ * &lt;li&gt;n1 and n2 contain a reasonable longest common substring, e.g.: n1=&quot;Cape Point / Cape of Good Hope&quot;,
+ *     n2=&quot;Cape Point Rd, Cape Peninsula, Cape Town, 8001, Afrique du Sud&quot;&lt;/li&gt;
+ * &lt;/ul&gt;
+ * &lt;p&gt;
+ * The aim is to allow minor typos/differences of the substrings, without having too much false positives.
+ *
+ * @author Robin Boldt
+ * @author Peter Karich
+ */
+public class NameSimilarityEdgeFilter implements EdgeFilter {
+
+<span class="fc" id="L58">    private static final Map&lt;String, String&gt; DEFAULT_REWRITE_MAP = new HashMap&lt;String, String&gt;() {{</span>
+        // Words with 2 characters like &quot;Dr&quot; (Drive) will be ignored, so it is not required to list them here.
+        // Words with 3 and more characters should be listed here to remove or rename them.
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        for (String remove : Arrays.asList(</span>
+                &quot;ally&quot;, &quot;alley&quot;,
+                &quot;arc&quot;, &quot;arcade&quot;,
+                &quot;bvd&quot;, &quot;bvd.&quot;, &quot;boulevard&quot;,
+                &quot;av.&quot;, &quot;avenue&quot;, &quot;avenida&quot;, &quot;ave&quot;,
+                &quot;calle&quot;,
+                &quot;cl.&quot;, &quot;close&quot;,
+                &quot;crescend&quot;, &quot;cres&quot;, &quot;cres.&quot;,
+                &quot;rd.&quot;, &quot;road&quot;,
+                &quot;ln.&quot;, &quot;lane&quot;,
+                &quot;pde.&quot;, &quot;pde&quot;, &quot;parade&quot;,
+                &quot;pl.&quot;, &quot;place&quot;, &quot;plaza&quot;,
+                &quot;rte&quot;, &quot;route&quot;,
+                &quot;str.&quot;, &quot;str&quot;, &quot;straße&quot;, &quot;strasse&quot;, &quot;st.&quot;, &quot;street&quot;, &quot;strada&quot;,
+                &quot;sq.&quot;, &quot;square&quot;,
+                &quot;tr.&quot;, &quot;track&quot;,
+                &quot;via&quot;)) {
+<span class="fc" id="L78">            put(remove, &quot;&quot;);</span>
+<span class="fc" id="L79">        }</span>
+        // expand instead of remove as significant part of the road name
+<span class="fc" id="L81">        put(&quot;n&quot;, &quot;north&quot;);</span>
+<span class="fc" id="L82">        put(&quot;s&quot;, &quot;south&quot;);</span>
+<span class="fc" id="L83">        put(&quot;w&quot;, &quot;west&quot;);</span>
+<span class="fc" id="L84">        put(&quot;e&quot;, &quot;east&quot;);</span>
+<span class="fc" id="L85">        put(&quot;ne&quot;, &quot;northeast&quot;);</span>
+<span class="fc" id="L86">        put(&quot;nw&quot;, &quot;northwest&quot;);</span>
+<span class="fc" id="L87">        put(&quot;se&quot;, &quot;southeast&quot;);</span>
+<span class="fc" id="L88">        put(&quot;sw&quot;, &quot;southwest&quot;);</span>
+    }};
+<span class="fc" id="L90">    private static final Pattern WORD_CHAR = Pattern.compile(&quot;\\p{LD}+&quot;);</span>
+<span class="fc" id="L91">    private static final JaroWinkler jaroWinkler = new JaroWinkler();</span>
+    private static final double JARO_WINKLER_ACCEPT_FACTOR = .9;
+    private final EdgeFilter edgeFilter;
+    private final String pointHint;
+    private final Map&lt;String, String&gt; rewriteMap;
+    private final Circle pointCircle;
+
+    public NameSimilarityEdgeFilter(EdgeFilter edgeFilter, String pointHint, GHPoint point, double radius) {
+<span class="fc" id="L99">        this(edgeFilter, pointHint, point, radius, DEFAULT_REWRITE_MAP);</span>
+<span class="fc" id="L100">    }</span>
+
+    /**
+     * @param radius     the searchable region about the point in meters
+     * @param rewriteMap maps abbreviations to its longer form
+     */
+<span class="fc" id="L106">    public NameSimilarityEdgeFilter(EdgeFilter edgeFilter, String pointHint, GHPoint point, double radius, Map&lt;String, String&gt; rewriteMap) {</span>
+<span class="fc" id="L107">        this.edgeFilter = edgeFilter;</span>
+<span class="fc" id="L108">        this.rewriteMap = rewriteMap;</span>
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        this.pointHint = prepareName(removeRelation(pointHint == null ? &quot;&quot; : pointHint));</span>
+<span class="fc" id="L110">        this.pointCircle = new Circle(point.lat, point.lon, radius);</span>
+<span class="fc" id="L111">    }</span>
+
+    String getNormalizedPointHint() {
+<span class="fc" id="L114">        return pointHint;</span>
+    }
+
+    /**
+     * Removes any characters in the String that we don't care about in the matching procedure
+     * TODO Currently limited to certain 'western' languages
+     */
+    private String prepareName(String name) {
+<span class="fc" id="L122">        StringBuilder sb = new StringBuilder(name.length());</span>
+<span class="fc" id="L123">        Matcher wordCharMatcher = WORD_CHAR.matcher(name);</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">        while (wordCharMatcher.find()) {</span>
+<span class="fc" id="L125">            String normalizedToken = toLowerCase(wordCharMatcher.group());</span>
+<span class="fc" id="L126">            String rewrite = rewriteMap.get(normalizedToken);</span>
+<span class="fc bfc" id="L127" title="All 2 branches covered.">            if (rewrite != null)</span>
+<span class="fc" id="L128">                normalizedToken = rewrite;</span>
+<span class="fc bfc" id="L129" title="All 2 branches covered.">            if (normalizedToken.isEmpty())</span>
+<span class="fc" id="L130">                continue;</span>
+            // Ignore matching short phrases like de, la, ... except it is a number
+<span class="fc bfc" id="L132" title="All 2 branches covered.">            if (normalizedToken.length() &gt; 2) {</span>
+<span class="fc" id="L133">                sb.append(normalizedToken);</span>
+            } else {
+<span class="pc bpc" id="L135" title="1 of 6 branches missed.">                if (Character.isDigit(normalizedToken.charAt(0)) &amp;&amp; (normalizedToken.length() == 1 || Character.isDigit(normalizedToken.charAt(1)))) {</span>
+<span class="fc" id="L136">                    sb.append(normalizedToken);</span>
+                }
+            }
+<span class="fc" id="L139">        }</span>
+<span class="fc" id="L140">        return sb.toString();</span>
+    }
+
+    private String removeRelation(String edgeName) {
+<span class="fc" id="L144">        int index = edgeName.lastIndexOf(&quot;, &quot;);</span>
+<span class="fc bfc" id="L145" title="All 2 branches covered.">        return index &gt;= 0 ? edgeName.substring(0, index) : edgeName;</span>
+    }
+
+    @Override
+    public final boolean accept(EdgeIteratorState iter) {
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (!edgeFilter.accept(iter)) {</span>
+<span class="fc" id="L151">            return false;</span>
+        }
+
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        if (pointHint.isEmpty()) {</span>
+<span class="fc" id="L155">            return true;</span>
+        }
+
+<span class="fc" id="L158">        String name = iter.getName();</span>
+<span class="pc bpc" id="L159" title="1 of 4 branches missed.">        if (name == null || name.isEmpty()) {</span>
+<span class="fc" id="L160">            return false;</span>
+        }
+
+<span class="fc" id="L163">        BBox bbox = createBBox(iter);</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">        if (!pointCircle.intersects(bbox)) {</span>
+<span class="fc" id="L165">            return false;</span>
+        }
+
+<span class="fc" id="L168">        name = removeRelation(name);</span>
+<span class="fc" id="L169">        String edgeName = prepareName(name);</span>
+
+<span class="fc" id="L171">        return isJaroWinklerSimilar(pointHint, edgeName);</span>
+    }
+
+    private static BBox createBBox(EdgeIteratorState edgeState) {
+        // we should include the entire geometry, see #2319
+<span class="fc" id="L176">        PointList geometry = edgeState.fetchWayGeometry(FetchMode.ALL);</span>
+<span class="fc" id="L177">        BBox bbox = new BBox(180, -180, 90, -90);</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">        for (int i = 0; i &lt; geometry.size(); i++)</span>
+<span class="fc" id="L179">            bbox.update(geometry.getLat(i), geometry.getLon(i));</span>
+<span class="fc" id="L180">        return bbox;</span>
+    }
+
+    private boolean isJaroWinklerSimilar(String str1, String str2) {
+<span class="fc" id="L184">        double jwSimilarity = jaroWinkler.similarity(str1, str2);</span>
+        // System.out.println(str1 + &quot; vs. edge:&quot; + str2 + &quot;, &quot; + jwSimilarity);
+<span class="fc bfc" id="L186" title="All 2 branches covered.">        return jwSimilarity &gt; JARO_WINKLER_ACCEPT_FACTOR;</span>
+    }
+
+    private boolean isLevenshteinSimilar(String hint, String name) {
+        // too big length difference
+<span class="nc bnc" id="L191" title="All 2 branches missed.">        if (Math.min(name.length(), hint.length()) * 4 &lt; Math.max(name.length(), hint.length()))</span>
+<span class="nc" id="L192">            return false;</span>
+
+        // The part 'abs(pointHint.length - name.length)' tries to make differences regarding length less important
+        // Ie. 'hauptstraßedresden' vs. 'hauptstr.' should be considered a match, but 'hauptstraßedresden' vs. 'klingestraßedresden' should not match
+<span class="nc" id="L196">        int factor = 1 + Math.abs(hint.length() - name.length());</span>
+<span class="nc" id="L197">        int levDistance = StringUtils.getLevenshteinDistance(hint, name);</span>
+        // System.out.println(hint + &quot; vs. edge:&quot; + name + &quot;, &quot; + levDistance + &quot; &lt;= &quot; + factor);
+<span class="nc bnc" id="L199" title="All 2 branches missed.">        return levDistance &lt;= factor;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

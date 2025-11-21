@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Surface.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">Surface.java</span></div><h1>Surface.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ev;
+
+import com.graphhopper.util.Helper;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * This enum defines the road surface of an edge like unpaved or asphalt. If not tagged the value will be MISSING, which
+ * the default and best surface value (as surface is currently often not tagged). All unknown surface tags will get
+ * OTHER (the worst surface).
+ */
+<span class="fc" id="L30">public enum Surface {</span>
+    // Order is important to make ordinal roughly comparable
+<span class="fc" id="L32">    MISSING,</span>
+<span class="fc" id="L33">    PAVED, ASPHALT, CONCRETE, PAVING_STONES, COBBLESTONE,</span>
+<span class="fc" id="L34">    UNPAVED, COMPACTED, FINE_GRAVEL, GRAVEL, GROUND, DIRT, GRASS, SAND, WOOD,</span>
+<span class="fc" id="L35">    OTHER;</span>
+
+    public static final String KEY = &quot;surface&quot;;
+
+<span class="fc" id="L39">    private static final Map&lt;String, Surface&gt; SURFACE_MAP = new HashMap&lt;&gt;();</span>
+
+    static {
+<span class="fc bfc" id="L42" title="All 2 branches covered.">        for (Surface surface : values()) {</span>
+<span class="fc bfc" id="L43" title="All 4 branches covered.">            if (surface == MISSING || surface == OTHER)</span>
+<span class="fc" id="L44">                continue;</span>
+<span class="fc" id="L45">            SURFACE_MAP.put(surface.toString(), surface);</span>
+        }
+<span class="fc" id="L47">        SURFACE_MAP.put(&quot;metal&quot;, PAVED);</span>
+<span class="fc" id="L48">        SURFACE_MAP.put(&quot;sett&quot;, COBBLESTONE);</span>
+<span class="fc" id="L49">        SURFACE_MAP.put(&quot;unhewn_cobblestone&quot;, COBBLESTONE);</span>
+<span class="fc" id="L50">        SURFACE_MAP.put(&quot;earth&quot;, DIRT);</span>
+<span class="fc" id="L51">        SURFACE_MAP.put(&quot;pebblestone&quot;, GRAVEL);</span>
+<span class="fc" id="L52">        SURFACE_MAP.put(&quot;grass_paver&quot;, GRASS);</span>
+<span class="fc" id="L53">    }</span>
+
+    public static EnumEncodedValue&lt;Surface&gt; create() {
+<span class="fc" id="L56">        return new EnumEncodedValue&lt;&gt;(KEY, Surface.class);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L61">        return Helper.toLowerCase(super.toString());</span>
+    }
+
+    public static Surface find(String name) {
+<span class="fc bfc" id="L65" title="All 2 branches covered.">        if (Helper.isEmpty(name))</span>
+<span class="fc" id="L66">            return MISSING;</span>
+
+<span class="fc" id="L68">        int colonIndex = name.indexOf(&quot;:&quot;);</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        if (colonIndex != -1) {</span>
+<span class="fc" id="L70">            name = name.substring(0, colonIndex);</span>
+        }
+
+<span class="fc" id="L73">        return SURFACE_MAP.getOrDefault(name, OTHER);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

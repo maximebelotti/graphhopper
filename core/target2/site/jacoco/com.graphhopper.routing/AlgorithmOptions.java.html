@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlgorithmOptions.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AlgorithmOptions.java</span></div><h1>AlgorithmOptions.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.util.PMap;
+import com.graphhopper.util.Parameters;
+
+/**
+ * @author Peter Karich
+ */
+public class AlgorithmOptions {
+<span class="pc" id="L28">    private PMap hints = new PMap();</span>
+<span class="pc" id="L29">    private String algorithm = Parameters.Algorithms.DIJKSTRA_BI;</span>
+<span class="pc" id="L30">    private TraversalMode traversalMode = TraversalMode.NODE_BASED;</span>
+<span class="pc" id="L31">    private int maxVisitedNodes = Integer.MAX_VALUE;</span>
+<span class="pc" id="L32">    private long timeoutMillis = Long.MAX_VALUE;</span>
+
+<span class="fc" id="L34">    public AlgorithmOptions() {</span>
+<span class="fc" id="L35">    }</span>
+
+<span class="nc" id="L37">    public AlgorithmOptions(AlgorithmOptions b) {</span>
+<span class="nc" id="L38">        setAlgorithm(b.getAlgorithm());</span>
+<span class="nc" id="L39">        setTraversalMode(b.getTraversalMode());</span>
+<span class="nc" id="L40">        setMaxVisitedNodes(b.getMaxVisitedNodes());</span>
+<span class="nc" id="L41">        setHints(b.getHints());</span>
+<span class="nc" id="L42">    }</span>
+
+    public AlgorithmOptions setAlgorithm(String algorithm) {
+<span class="fc" id="L45">        this.algorithm = algorithm;</span>
+<span class="fc" id="L46">        return this;</span>
+    }
+
+    public AlgorithmOptions setTraversalMode(TraversalMode traversalMode) {
+<span class="fc" id="L50">        this.traversalMode = traversalMode;</span>
+<span class="fc" id="L51">        return this;</span>
+    }
+
+    public AlgorithmOptions setMaxVisitedNodes(int maxVisitedNodes) {
+<span class="fc" id="L55">        this.maxVisitedNodes = maxVisitedNodes;</span>
+<span class="fc" id="L56">        return this;</span>
+    }
+
+    public AlgorithmOptions setTimeoutMillis(long timeoutMillis) {
+<span class="fc" id="L60">        this.timeoutMillis = timeoutMillis;</span>
+<span class="fc" id="L61">        return this;</span>
+    }
+
+    public AlgorithmOptions setHints(PMap pMap) {
+<span class="fc" id="L65">        this.hints = new PMap(pMap);</span>
+<span class="fc" id="L66">        return this;</span>
+    }
+
+    public TraversalMode getTraversalMode() {
+<span class="fc" id="L70">        return traversalMode;</span>
+    }
+
+    public String getAlgorithm() {
+<span class="fc" id="L74">        return algorithm;</span>
+    }
+
+    public int getMaxVisitedNodes() {
+<span class="fc" id="L78">        return maxVisitedNodes;</span>
+    }
+
+    public long getTimeoutMillis() {
+<span class="fc" id="L82">        return timeoutMillis;</span>
+    }
+
+    public PMap getHints() {
+<span class="fc" id="L86">        return hints;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L91">        return algorithm + &quot;, &quot; + traversalMode;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

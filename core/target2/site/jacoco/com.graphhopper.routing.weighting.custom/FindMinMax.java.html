@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FindMinMax.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting.custom</a> &gt; <span class="el_source">FindMinMax.java</span></div><h1>FindMinMax.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.weighting.custom;
+
+import com.graphhopper.json.MinMax;
+import com.graphhopper.json.Statement;
+import com.graphhopper.routing.ev.EncodedValueLookup;
+import com.graphhopper.util.CustomModel;
+
+import java.util.List;
+
+import static com.graphhopper.json.Statement.Keyword.ELSE;
+import static com.graphhopper.json.Statement.Keyword.IF;
+
+<span class="nc" id="L30">public class FindMinMax {</span>
+
+    /**
+     * This method throws an exception when this CustomModel would decrease the edge weight compared to the specified
+     * baseModel as in such a case the optimality of A* with landmarks can no longer be guaranteed (as the preparation
+     * is based on baseModel).
+     */
+    public static void checkLMConstraints(CustomModel baseModel, CustomModel queryModel, EncodedValueLookup lookup) {
+<span class="fc bfc" id="L38" title="All 2 branches covered.">        if (queryModel.getDistanceInfluence() != null) {</span>
+<span class="pc bpc" id="L39" title="1 of 2 branches missed.">            double bmDI = baseModel.getDistanceInfluence() == null ? 0 : baseModel.getDistanceInfluence();</span>
+<span class="pc bpc" id="L40" title="1 of 2 branches missed.">            if (queryModel.getDistanceInfluence() &lt; bmDI)</span>
+<span class="fc" id="L41">                throw new IllegalArgumentException(&quot;CustomModel in query can only use distance_influence bigger or equal to &quot;</span>
+<span class="fc" id="L42">                        + bmDI + &quot;, but was: &quot; + queryModel.getDistanceInfluence());</span>
+        }
+
+<span class="nc" id="L45">        checkMultiplyValue(queryModel.getPriority(), lookup);</span>
+<span class="nc" id="L46">        checkMultiplyValue(queryModel.getSpeed(), lookup);</span>
+<span class="nc" id="L47">    }</span>
+
+    private static void checkMultiplyValue(List&lt;Statement&gt; list, EncodedValueLookup lookup) {
+<span class="pc bpc" id="L50" title="1 of 2 branches missed.">        for (Statement statement : list) {</span>
+<span class="pc bpc" id="L51" title="1 of 2 branches missed.">            if (statement.operation() == Statement.Op.MULTIPLY) {</span>
+<span class="fc" id="L52">                MinMax minMax = ValueExpressionVisitor.findMinMax(statement.value(), lookup);</span>
+<span class="pc bpc" id="L53" title="1 of 2 branches missed.">                if (minMax.max &gt; 1)</span>
+<span class="fc" id="L54">                    throw new IllegalArgumentException(&quot;maximum of value '&quot; + statement.value() + &quot;' cannot be larger than 1, but was: &quot; + minMax.max);</span>
+<span class="nc bnc" id="L55" title="All 2 branches missed.">                else if (minMax.min &lt; 0)</span>
+<span class="nc" id="L56">                    throw new IllegalArgumentException(&quot;minimum of value '&quot; + statement.value() + &quot;' cannot be smaller than 0, but was: &quot; + minMax.min);</span>
+            }
+<span class="nc" id="L58">        }</span>
+<span class="nc" id="L59">    }</span>
+
+    /**
+     * This method returns the smallest value possible in &quot;min&quot; and the smallest value that cannot be
+     * exceeded by any edge in max.
+     */
+    static MinMax findMinMax(MinMax minMax, List&lt;Statement&gt; statements, EncodedValueLookup lookup) {
+<span class="fc" id="L66">        List&lt;List&lt;Statement&gt;&gt; groups = CustomModelParser.splitIntoGroup(statements);</span>
+<span class="fc bfc" id="L67" title="All 2 branches covered.">        for (List&lt;Statement&gt; group : groups) findMinMaxForGroup(minMax, group, lookup);</span>
+<span class="fc" id="L68">        return minMax;</span>
+    }
+
+    private static void findMinMaxForGroup(final MinMax minMax, List&lt;Statement&gt; group, EncodedValueLookup lookup) {
+<span class="pc bpc" id="L72" title="2 of 4 branches missed.">        if (group.isEmpty() || !IF.equals(group.get(0).keyword()))</span>
+<span class="nc" id="L73">            throw new IllegalArgumentException(&quot;Every group must start with an if-statement&quot;);</span>
+
+        MinMax minMaxGroup;
+<span class="fc" id="L76">        Statement first = group.get(0);</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        if (first.condition().trim().equals(&quot;true&quot;)) {</span>
+<span class="pc bpc" id="L78" title="1 of 2 branches missed.">            if(first.isBlock()) {</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">                for (List&lt;Statement&gt; subGroup : CustomModelParser.splitIntoGroup(first.doBlock())) findMinMaxForGroup(minMax, subGroup, lookup);</span>
+<span class="nc" id="L80">                return;</span>
+            } else {
+<span class="fc" id="L82">                minMaxGroup = first.operation().apply(minMax, ValueExpressionVisitor.findMinMax(first.value(), lookup));</span>
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">                if (minMaxGroup.max &lt; 0)</span>
+<span class="nc" id="L84">                    throw new IllegalArgumentException(&quot;statement resulted in negative value: &quot; + first);</span>
+            }
+        } else {
+<span class="fc" id="L87">            minMaxGroup = new MinMax(Double.MAX_VALUE, 0);</span>
+<span class="fc" id="L88">            boolean foundElse = false;</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">            for (Statement s : group) {</span>
+<span class="fc bfc" id="L90" title="All 2 branches covered.">                if (s.keyword() == ELSE) foundElse = true;</span>
+                MinMax tmp;
+<span class="fc bfc" id="L92" title="All 2 branches covered.">                if(s.isBlock()) {</span>
+<span class="fc" id="L93">                    tmp = new MinMax(minMax.min, minMax.max);</span>
+<span class="fc bfc" id="L94" title="All 2 branches covered.">                    for (List&lt;Statement&gt; subGroup : CustomModelParser.splitIntoGroup(s.doBlock())) findMinMaxForGroup(tmp, subGroup, lookup);</span>
+                } else {
+<span class="fc" id="L96">                    tmp = s.operation().apply(minMax, ValueExpressionVisitor.findMinMax(s.value(), lookup));</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">                    if (tmp.max &lt; 0)</span>
+<span class="fc" id="L98">                        throw new IllegalArgumentException(&quot;statement resulted in negative value: &quot; + s);</span>
+                }
+<span class="fc" id="L100">                minMaxGroup.min = Math.min(minMaxGroup.min, tmp.min);</span>
+<span class="fc" id="L101">                minMaxGroup.max = Math.max(minMaxGroup.max, tmp.max);</span>
+<span class="fc" id="L102">            }</span>
+
+            // if there is no 'else' statement it's like there is a 'neutral' branch that leaves the initial value as is
+<span class="fc bfc" id="L105" title="All 2 branches covered.">            if (!foundElse) {</span>
+<span class="fc" id="L106">                minMaxGroup.min = Math.min(minMaxGroup.min, minMax.min);</span>
+<span class="fc" id="L107">                minMaxGroup.max = Math.max(minMaxGroup.max, minMax.max);</span>
+            }
+        }
+
+<span class="fc" id="L111">        minMax.min = minMaxGroup.min;</span>
+<span class="fc" id="L112">        minMax.max = minMaxGroup.max;</span>
+<span class="fc" id="L113">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

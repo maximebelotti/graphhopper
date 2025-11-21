@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InstructionsFromEdges.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">InstructionsFromEdges.java</span></div><h1>InstructionsFromEdges.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.GHPoint;
+
+import static com.graphhopper.util.Parameters.Details.*;
+
+/**
+ * This class calculates instructions from the edges in a Path.
+ *
+ * @author Peter Karich
+ * @author Robin Boldt
+ * @author jan soe
+ */
+<span class="fc" id="L36">public class InstructionsFromEdges implements Path.EdgeVisitor {</span>
+
+    private final Weighting weighting;
+    private final NodeAccess nodeAccess;
+
+    private final InstructionList ways;
+    private final EdgeExplorer outEdgeExplorer;
+    private final EdgeExplorer allExplorer;
+    private final BooleanEncodedValue roundaboutEnc;
+    private final BooleanEncodedValue roadClassLinkEnc;
+    private final EnumEncodedValue&lt;RoadClass&gt; roadClassEnc;
+    private final EnumEncodedValue&lt;RoadEnvironment&gt; roadEnvEnc;
+    private final IntEncodedValue lanesEnc;
+    private final DecimalEncodedValue maxSpeedEnc;
+
+    /*
+     * We need three points to make directions
+     *
+     *        (1)----(2)
+     *        /
+     *       /
+     *    (0)
+     *
+     * 0 is the node visited at t-2, 1 is the node visited
+     * at t-1 and 2 is the node being visited at instant t.
+     * orientation is the angle of the vector(1-&gt;2) expressed
+     * as atan2, while previousOrientation is the angle of the
+     * vector(0-&gt;1)
+     * Intuitively, if orientation is smaller than
+     * previousOrientation, then we have to turn right, while
+     * if it is greater we have to turn left. To make this
+     * algorithm work, we need to make the comparison by
+     * considering orientation belonging to the interval
+     * [ - pi + previousOrientation , + pi + previousOrientation ]
+     */
+    private EdgeIteratorState prevEdge;
+    private double prevLat;
+    private double prevLon;
+    private double doublePrevLat, doublePrevLon; // Lat and Lon of node t-2
+    private int prevNode;
+    private double prevOrientation;
+<span class="fc" id="L77">    private double prevInstructionPrevOrientation = Double.NaN;</span>
+    private Instruction prevInstruction;
+    private boolean prevInRoundabout;
+    private String prevDestinationAndRef;
+    private String prevName;
+    private RoadEnvironment prevRoadEnv;
+    private String prevInstructionName;
+
+    private static final int MAX_U_TURN_DISTANCE = 35;
+
+    public InstructionsFromEdges(Graph graph, Weighting weighting, EncodedValueLookup evLookup,
+<span class="fc" id="L88">                                 InstructionList ways) {</span>
+<span class="fc" id="L89">        this.weighting = weighting;</span>
+<span class="fc" id="L90">        this.roundaboutEnc = evLookup.getBooleanEncodedValue(Roundabout.KEY);</span>
+<span class="fc" id="L91">        this.roadEnvEnc = evLookup.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class);</span>
+<span class="fc" id="L92">        this.roadClassEnc = evLookup.getEnumEncodedValue(RoadClass.KEY, RoadClass.class);</span>
+<span class="fc" id="L93">        this.roadClassLinkEnc = evLookup.getBooleanEncodedValue(RoadClassLink.KEY);</span>
+<span class="fc" id="L94">        this.maxSpeedEnc = evLookup.getDecimalEncodedValue(MaxSpeed.KEY);</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        this.lanesEnc = evLookup.hasEncodedValue(Lanes.KEY) ? evLookup.getIntEncodedValue(Lanes.KEY) : null;</span>
+<span class="fc" id="L96">        this.nodeAccess = graph.getNodeAccess();</span>
+<span class="fc" id="L97">        this.ways = ways;</span>
+<span class="fc" id="L98">        prevNode = -1;</span>
+<span class="fc" id="L99">        prevInRoundabout = false;</span>
+<span class="fc" id="L100">        prevName = null;</span>
+<span class="fc" id="L101">        prevRoadEnv = null;</span>
+
+<span class="fc" id="L103">        BooleanEncodedValue carAccessEnc = evLookup.getBooleanEncodedValue(VehicleAccess.key(&quot;car&quot;));</span>
+<span class="fc" id="L104">        outEdgeExplorer = graph.createEdgeExplorer(edge -&gt; edge.get(carAccessEnc));</span>
+<span class="fc" id="L105">        allExplorer = graph.createEdgeExplorer();</span>
+<span class="fc" id="L106">    }</span>
+
+    /**
+     * @return the list of instructions for this path.
+     */
+    public static InstructionList calcInstructions(Path path, Graph graph, Weighting weighting, EncodedValueLookup evLookup, final Translation tr) {
+<span class="fc" id="L112">        final InstructionList ways = new InstructionList(tr);</span>
+<span class="fc bfc" id="L113" title="All 2 branches covered.">        if (path.isFound()) {</span>
+<span class="fc bfc" id="L114" title="All 2 branches covered.">            if (path.getEdgeCount() == 0) {</span>
+<span class="fc" id="L115">                ways.add(new FinishInstruction(graph.getNodeAccess(), path.getEndNode()));</span>
+            } else {
+<span class="fc" id="L117">                path.forEveryEdge(new InstructionsFromEdges(graph, weighting, evLookup, ways));</span>
+            }
+        }
+<span class="fc" id="L120">        return ways;</span>
+    }
+
+    @Override
+    public void next(EdgeIteratorState edge, int index, int prevEdgeId) {
+        // baseNode is the current node and adjNode is the next
+<span class="fc" id="L126">        int adjNode = edge.getAdjNode();</span>
+<span class="fc" id="L127">        int baseNode = edge.getBaseNode();</span>
+
+<span class="fc bfc" id="L129" title="All 2 branches covered.">        if (prevNode == -1) {</span>
+<span class="fc" id="L130">            prevLat = this.nodeAccess.getLat(baseNode);</span>
+<span class="fc" id="L131">            prevLon = this.nodeAccess.getLon(baseNode);</span>
+        }
+
+<span class="fc" id="L134">        double adjLat = nodeAccess.getLat(adjNode);</span>
+<span class="fc" id="L135">        double adjLon = nodeAccess.getLon(adjNode);</span>
+        double latitude, longitude;
+
+<span class="fc" id="L138">        PointList wayGeo = edge.fetchWayGeometry(FetchMode.ALL);</span>
+<span class="fc" id="L139">        boolean isRoundabout = edge.get(roundaboutEnc);</span>
+
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        if (wayGeo.size() &lt;= 2) {</span>
+<span class="fc" id="L142">            latitude = adjLat;</span>
+<span class="fc" id="L143">            longitude = adjLon;</span>
+        } else {
+<span class="fc" id="L145">            latitude = wayGeo.getLat(1);</span>
+<span class="fc" id="L146">            longitude = wayGeo.getLon(1);</span>
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">            assert Double.compare(prevLat, nodeAccess.getLat(baseNode)) == 0;</span>
+<span class="pc bpc" id="L148" title="1 of 2 branches missed.">            assert Double.compare(prevLon, nodeAccess.getLon(baseNode)) == 0;</span>
+        }
+
+<span class="fc" id="L151">        final String name = (String) edge.getValue(STREET_NAME);</span>
+<span class="fc" id="L152">        final String ref = (String) edge.getValue(STREET_REF);</span>
+<span class="fc" id="L153">        final String destination = (String) edge.getValue(STREET_DESTINATION); // getValue is fast if it does not exist in edge</span>
+<span class="fc" id="L154">        final String destinationRef = (String) edge.getValue(STREET_DESTINATION_REF);</span>
+<span class="fc" id="L155">        final String motorwayJunction = (String) edge.getValue(MOTORWAY_JUNCTION);</span>
+<span class="fc" id="L156">        final RoadEnvironment roadEnv = edge.get(roadEnvEnc);</span>
+
+<span class="fc bfc" id="L158" title="All 4 branches covered.">        if ((prevInstruction == null) &amp;&amp; (!isRoundabout)) // very first instruction (if not in Roundabout)</span>
+        {
+<span class="fc" id="L160">            int sign = Instruction.CONTINUE_ON_STREET;</span>
+<span class="fc" id="L161">            prevInstruction = new Instruction(sign, name, new PointList(10, nodeAccess.is3D()));</span>
+<span class="fc" id="L162">            prevInstruction.setExtraInfo(STREET_REF, ref);</span>
+<span class="fc" id="L163">            prevInstruction.setExtraInfo(STREET_DESTINATION, destination);</span>
+<span class="fc" id="L164">            prevInstruction.setExtraInfo(STREET_DESTINATION_REF, destinationRef);</span>
+<span class="fc" id="L165">            prevInstruction.setExtraInfo(MOTORWAY_JUNCTION, motorwayJunction);</span>
+<span class="fc" id="L166">            prevInstruction.setExtraInfo(&quot;ferry&quot;, InstructionsHelper.createFerryInfo(roadEnv, prevRoadEnv));</span>
+
+<span class="fc" id="L168">            double startLat = nodeAccess.getLat(baseNode);</span>
+<span class="fc" id="L169">            double startLon = nodeAccess.getLon(baseNode);</span>
+<span class="fc" id="L170">            double heading = AngleCalc.ANGLE_CALC.calcAzimuth(startLat, startLon, latitude, longitude);</span>
+<span class="fc" id="L171">            prevInstruction.setExtraInfo(&quot;heading&quot;, Helper.round(heading, 2));</span>
+<span class="fc" id="L172">            ways.add(prevInstruction);</span>
+<span class="fc" id="L173">            prevName = name;</span>
+<span class="fc" id="L174">            prevRoadEnv = roadEnv;</span>
+<span class="fc" id="L175">            prevDestinationAndRef = destination + destinationRef;</span>
+
+<span class="fc bfc" id="L177" title="All 2 branches covered.">        } else if (isRoundabout) {</span>
+            // remark: names and annotations within roundabout are ignored
+<span class="fc bfc" id="L179" title="All 2 branches covered.">            if (!prevInRoundabout) //just entered roundabout</span>
+            {
+<span class="fc" id="L181">                int sign = Instruction.USE_ROUNDABOUT;</span>
+<span class="fc" id="L182">                RoundaboutInstruction roundaboutInstruction = new RoundaboutInstruction(sign, name,</span>
+<span class="fc" id="L183">                        new PointList(10, nodeAccess.is3D()));</span>
+<span class="fc" id="L184">                prevInstructionPrevOrientation = prevOrientation;</span>
+<span class="fc bfc" id="L185" title="All 2 branches covered.">                if (prevInstruction != null) {</span>
+                    // check if there is an exit at the same node the roundabout was entered
+<span class="fc" id="L187">                    EdgeIterator edgeIter = outEdgeExplorer.setBaseNode(baseNode);</span>
+<span class="fc bfc" id="L188" title="All 2 branches covered.">                    while (edgeIter.next()) {</span>
+<span class="fc bfc" id="L189" title="All 4 branches covered.">                        if ((edgeIter.getAdjNode() != prevNode) &amp;&amp; !edgeIter.get(roundaboutEnc)) {</span>
+<span class="fc" id="L190">                            roundaboutInstruction.increaseExitNumber();</span>
+<span class="fc" id="L191">                            break;</span>
+                        }
+                    }
+
+                    // previous orientation is last orientation before entering roundabout
+<span class="fc" id="L196">                    prevOrientation = AngleCalc.ANGLE_CALC.calcOrientation(doublePrevLat, doublePrevLon, prevLat, prevLon);</span>
+
+                    // calculate direction of entrance turn to determine direction of rotation
+                    // right turn == counterclockwise and vice versa
+<span class="fc" id="L200">                    double orientation = AngleCalc.ANGLE_CALC.calcOrientation(prevLat, prevLon, latitude, longitude);</span>
+<span class="fc" id="L201">                    orientation = AngleCalc.ANGLE_CALC.alignOrientation(prevOrientation, orientation);</span>
+<span class="fc" id="L202">                    double delta = (orientation - prevOrientation);</span>
+<span class="fc" id="L203">                    roundaboutInstruction.setDirOfRotation(delta);</span>
+
+<span class="fc" id="L205">                } else // first instructions is roundabout instruction</span>
+                {
+<span class="fc" id="L207">                    prevOrientation = AngleCalc.ANGLE_CALC.calcOrientation(prevLat, prevLon, latitude, longitude);</span>
+<span class="fc" id="L208">                    prevName = name;</span>
+<span class="fc" id="L209">                    prevRoadEnv = roadEnv;</span>
+<span class="fc" id="L210">                    prevDestinationAndRef = destination + destinationRef;</span>
+                }
+<span class="fc" id="L212">                prevInstruction = roundaboutInstruction;</span>
+<span class="fc" id="L213">                ways.add(prevInstruction);</span>
+            }
+
+            // Add passed exits to instruction. A node is counted if there is at least one outgoing edge
+            // out of the roundabout
+<span class="fc" id="L218">            EdgeIterator edgeIter = outEdgeExplorer.setBaseNode(edge.getAdjNode());</span>
+<span class="fc bfc" id="L219" title="All 2 branches covered.">            while (edgeIter.next()) {</span>
+<span class="fc bfc" id="L220" title="All 2 branches covered.">                if (!edgeIter.get(roundaboutEnc)) {</span>
+<span class="fc" id="L221">                    ((RoundaboutInstruction) prevInstruction).increaseExitNumber();</span>
+<span class="fc" id="L222">                    break;</span>
+                }
+            }
+
+<span class="fc bfc" id="L226" title="All 2 branches covered.">        } else if (prevInRoundabout) //previously in roundabout but not anymore</span>
+        {
+<span class="fc" id="L228">            prevInstruction.setName(name);</span>
+<span class="fc" id="L229">            prevInstruction.setExtraInfo(STREET_REF, ref);</span>
+<span class="fc" id="L230">            prevInstruction.setExtraInfo(STREET_DESTINATION, destination);</span>
+<span class="fc" id="L231">            prevInstruction.setExtraInfo(STREET_DESTINATION_REF, destinationRef);</span>
+<span class="fc" id="L232">            prevInstruction.setExtraInfo(MOTORWAY_JUNCTION, motorwayJunction);</span>
+<span class="fc" id="L233">            prevInstruction.setExtraInfo(&quot;ferry&quot;, InstructionsHelper.createFerryInfo(roadEnv, prevRoadEnv));</span>
+
+            // calc angle between roundabout entrance and exit
+<span class="fc" id="L236">            double orientation = AngleCalc.ANGLE_CALC.calcOrientation(prevLat, prevLon, latitude, longitude);</span>
+<span class="fc" id="L237">            orientation = AngleCalc.ANGLE_CALC.alignOrientation(prevOrientation, orientation);</span>
+<span class="fc" id="L238">            double deltaInOut = (orientation - prevOrientation);</span>
+
+            // calculate direction of exit turn to determine direction of rotation
+            // right turn == counterclockwise and vice versa
+<span class="fc" id="L242">            double recentOrientation = AngleCalc.ANGLE_CALC.calcOrientation(doublePrevLat, doublePrevLon, prevLat, prevLon);</span>
+<span class="fc" id="L243">            orientation = AngleCalc.ANGLE_CALC.alignOrientation(recentOrientation, orientation);</span>
+<span class="fc" id="L244">            double deltaOut = (orientation - recentOrientation);</span>
+
+<span class="fc" id="L246">            prevInstruction = ((RoundaboutInstruction) prevInstruction)</span>
+<span class="fc" id="L247">                    .setRadian(deltaInOut)</span>
+<span class="fc" id="L248">                    .setDirOfRotation(deltaOut)</span>
+<span class="fc" id="L249">                    .setExited();</span>
+
+<span class="fc" id="L251">            prevInstructionName = prevName;</span>
+<span class="fc" id="L252">            prevName = name;</span>
+<span class="fc" id="L253">            prevRoadEnv = roadEnv;</span>
+<span class="fc" id="L254">            prevDestinationAndRef = destination + destinationRef;</span>
+
+<span class="fc" id="L256">        } else {</span>
+<span class="fc" id="L257">            int sign = getTurn(edge, baseNode, prevNode, adjNode, name, destination + destinationRef);</span>
+<span class="fc bfc" id="L258" title="All 2 branches covered.">            if (sign != Instruction.IGNORE) {</span>
+                /*
+                    Check if the next instruction is likely to only be a short connector to execute a u-turn
+                    --A-&gt;--
+                           |    &lt;-- This is the short connector
+                    --B-&lt;--
+                    Road A and Road B have to have the same name and roughly the same, but opposite orientation, otherwise we are assuming this is no u-turn.
+
+                    Note: This approach only works if there a turn instruction for A-&gt;Connector and Connector-&gt;B.
+                    Currently we don't create a turn instruction if there is no other possible turn
+                    We only create a u-turn if edge B is a one-way, see #1073 for more details.
+                  */
+
+<span class="fc" id="L271">                boolean isUTurn = false;</span>
+<span class="fc" id="L272">                int uTurnType = Instruction.U_TURN_UNKNOWN;</span>
+<span class="fc bfc" id="L273" title="All 2 branches covered.">                if (!Double.isNaN(prevInstructionPrevOrientation)</span>
+<span class="fc bfc" id="L274" title="All 4 branches covered.">                        &amp;&amp; prevInstruction.getDistance() &lt; MAX_U_TURN_DISTANCE</span>
+<span class="fc bfc" id="L275" title="All 4 branches covered.">                        &amp;&amp; (sign &lt; 0) == (prevInstruction.getSign() &lt; 0)</span>
+<span class="fc bfc" id="L276" title="All 6 branches covered.">                        &amp;&amp; (Math.abs(sign) == Instruction.TURN_SLIGHT_RIGHT || Math.abs(sign) == Instruction.TURN_RIGHT || Math.abs(sign) == Instruction.TURN_SHARP_RIGHT)</span>
+<span class="pc bpc" id="L277" title="1 of 6 branches missed.">                        &amp;&amp; (Math.abs(prevInstruction.getSign()) == Instruction.TURN_SLIGHT_RIGHT || Math.abs(prevInstruction.getSign()) == Instruction.TURN_RIGHT || Math.abs(prevInstruction.getSign()) == Instruction.TURN_SHARP_RIGHT)</span>
+<span class="fc bfc" id="L278" title="All 2 branches covered.">                        &amp;&amp; Double.isFinite(weighting.calcEdgeWeight(edge, false)) != Double.isFinite(weighting.calcEdgeWeight(edge, true))</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">                        &amp;&amp; InstructionsHelper.isSameName(prevInstructionName, name)) {</span>
+                    // Chances are good that this is a u-turn, we only need to check if the orientation matches
+<span class="fc" id="L281">                    GHPoint point = InstructionsHelper.getPointForOrientationCalculation(edge, nodeAccess);</span>
+<span class="fc" id="L282">                    double lat = point.getLat();</span>
+<span class="fc" id="L283">                    double lon = point.getLon();</span>
+<span class="fc" id="L284">                    double currentOrientation = AngleCalc.ANGLE_CALC.calcOrientation(prevLat, prevLon, lat, lon, false);</span>
+
+<span class="fc" id="L286">                    double diff = Math.abs(prevInstructionPrevOrientation - currentOrientation);</span>
+<span class="pc bpc" id="L287" title="2 of 4 branches missed.">                    if (diff &gt; (Math.PI * .9) &amp;&amp; diff &lt; (Math.PI * 1.1)) {</span>
+<span class="fc" id="L288">                        isUTurn = true;</span>
+<span class="fc bfc" id="L289" title="All 2 branches covered.">                        if (sign &lt; 0) {</span>
+<span class="fc" id="L290">                            uTurnType = Instruction.U_TURN_LEFT;</span>
+                        } else {
+<span class="fc" id="L292">                            uTurnType = Instruction.U_TURN_RIGHT;</span>
+                        }
+                    }
+                }
+
+<span class="fc bfc" id="L297" title="All 2 branches covered.">                if (isUTurn) {</span>
+<span class="fc" id="L298">                    prevInstruction.setSign(uTurnType);</span>
+<span class="fc" id="L299">                    prevInstruction.setName(name);</span>
+                } else {
+<span class="fc" id="L301">                    prevInstruction = new Instruction(sign, name, new PointList(10, nodeAccess.is3D()));</span>
+                    // Remember the Orientation and name of the road, before doing this maneuver
+<span class="fc" id="L303">                    prevInstructionPrevOrientation = prevOrientation;</span>
+<span class="fc" id="L304">                    prevInstructionName = prevName;</span>
+<span class="fc" id="L305">                    ways.add(prevInstruction);</span>
+                }
+<span class="fc" id="L307">                prevInstruction.setExtraInfo(STREET_REF, ref);</span>
+<span class="fc" id="L308">                prevInstruction.setExtraInfo(STREET_DESTINATION, destination);</span>
+<span class="fc" id="L309">                prevInstruction.setExtraInfo(STREET_DESTINATION_REF, destinationRef);</span>
+<span class="fc" id="L310">                prevInstruction.setExtraInfo(MOTORWAY_JUNCTION, motorwayJunction);</span>
+<span class="fc" id="L311">                prevInstruction.setExtraInfo(&quot;ferry&quot;, InstructionsHelper.createFerryInfo(roadEnv, prevRoadEnv));</span>
+            }
+            // Update the prevName, since we don't always create an instruction on name changes the previous
+            // name can be an old name. This leads to incorrect turn instructions due to name changes
+<span class="fc" id="L315">            prevName = name;</span>
+<span class="fc" id="L316">            prevRoadEnv = roadEnv;</span>
+<span class="fc" id="L317">            prevDestinationAndRef = destination + destinationRef;</span>
+        }
+
+<span class="fc" id="L320">        updatePointsAndInstruction(edge, wayGeo);</span>
+
+<span class="fc bfc" id="L322" title="All 2 branches covered.">        if (wayGeo.size() &lt;= 2) {</span>
+<span class="fc" id="L323">            doublePrevLat = prevLat;</span>
+<span class="fc" id="L324">            doublePrevLon = prevLon;</span>
+        } else {
+<span class="fc" id="L326">            int beforeLast = wayGeo.size() - 2;</span>
+<span class="fc" id="L327">            doublePrevLat = wayGeo.getLat(beforeLast);</span>
+<span class="fc" id="L328">            doublePrevLon = wayGeo.getLon(beforeLast);</span>
+        }
+
+<span class="fc" id="L331">        prevInRoundabout = isRoundabout;</span>
+<span class="fc" id="L332">        prevNode = baseNode;</span>
+<span class="fc" id="L333">        prevLat = adjLat;</span>
+<span class="fc" id="L334">        prevLon = adjLon;</span>
+<span class="fc" id="L335">        prevEdge = edge;</span>
+<span class="fc" id="L336">    }</span>
+
+    @Override
+    public void finish() {
+<span class="fc bfc" id="L340" title="All 2 branches covered.">        if (prevInRoundabout) {</span>
+            // calc angle between roundabout entrance and finish
+<span class="fc" id="L342">            double orientation = AngleCalc.ANGLE_CALC.calcOrientation(doublePrevLat, doublePrevLon, prevLat, prevLon);</span>
+<span class="fc" id="L343">            orientation = AngleCalc.ANGLE_CALC.alignOrientation(prevOrientation, orientation);</span>
+<span class="fc" id="L344">            double delta = (orientation - prevOrientation);</span>
+<span class="fc" id="L345">            ((RoundaboutInstruction) prevInstruction).setRadian(delta);</span>
+
+        }
+
+<span class="fc" id="L349">        Instruction finishInstruction = new FinishInstruction(nodeAccess, prevEdge.getAdjNode());</span>
+        // This is the heading how the edge ended
+<span class="fc" id="L351">        finishInstruction.setExtraInfo(&quot;last_heading&quot;, AngleCalc.ANGLE_CALC.calcAzimuth(doublePrevLat, doublePrevLon, prevLat, prevLon));</span>
+<span class="fc" id="L352">        ways.add(finishInstruction);</span>
+<span class="fc" id="L353">    }</span>
+
+    private int getTurn(EdgeIteratorState edge, int baseNode, int prevNode, int adjNode, String name, String destinationAndRef) {
+<span class="fc bfc" id="L356" title="All 2 branches covered.">        if (edge.getEdge() == prevEdge.getEdge())</span>
+            // this is the simplest turn to recognize, a plain u-turn.
+<span class="fc" id="L358">            return Instruction.U_TURN_UNKNOWN;</span>
+<span class="fc" id="L359">        GHPoint point = InstructionsHelper.getPointForOrientationCalculation(edge, nodeAccess);</span>
+<span class="fc" id="L360">        double lat = point.getLat();</span>
+<span class="fc" id="L361">        double lon = point.getLon();</span>
+<span class="fc" id="L362">        prevOrientation = AngleCalc.ANGLE_CALC.calcOrientation(doublePrevLat, doublePrevLon, prevLat, prevLon);</span>
+<span class="fc" id="L363">        int sign = InstructionsHelper.calculateSign(prevLat, prevLon, lat, lon, prevOrientation);</span>
+
+<span class="fc" id="L365">        InstructionsOutgoingEdges outgoingEdges = new InstructionsOutgoingEdges(prevEdge, edge, weighting, maxSpeedEnc,</span>
+                roadClassEnc, roadClassLinkEnc, lanesEnc, allExplorer, nodeAccess, prevNode, baseNode, adjNode);
+<span class="fc" id="L367">        int nrOfPossibleTurns = outgoingEdges.getAllowedTurns();</span>
+<span class="fc" id="L368">        RoadEnvironment roadEnv = edge.get(roadEnvEnc);</span>
+
+        // there is no other turn possible
+<span class="fc bfc" id="L371" title="All 2 branches covered.">        if (nrOfPossibleTurns &lt;= 1) {</span>
+<span class="fc bfc" id="L372" title="All 2 branches covered.">            if (InstructionsHelper.isToFerry(roadEnv, prevRoadEnv)) return Instruction.FERRY;</span>
+<span class="pc bpc" id="L373" title="1 of 6 branches missed.">            if (Math.abs(sign) &gt; 1 &amp;&amp; outgoingEdges.getVisibleTurns() &gt; 1 &amp;&amp; !outgoingEdges.mergedOrSplitWay()</span>
+<span class="fc bfc" id="L374" title="All 2 branches covered.">                    || InstructionsHelper.isFromFerry(roadEnv, prevRoadEnv)) {</span>
+                // This is an actual turn because |sign| &gt; 1
+                // There could be some confusion, if we would not create a turn instruction, even though it is the only
+                // possible turn, also see #1048
+                // TODO if we see issue with this approach we could consider checking if the edge is a oneway
+<span class="fc" id="L379">                return sign;</span>
+            }
+<span class="fc" id="L381">            return Instruction.IGNORE;</span>
+        }
+
+        // Very certain, this is a turn
+<span class="fc bfc" id="L385" title="All 2 branches covered.">        if (Math.abs(sign) &gt; 1) {</span>
+<span class="pc bpc" id="L386" title="1 of 2 branches missed.">            if (InstructionsHelper.isToFerry(roadEnv, prevRoadEnv)) return Instruction.FERRY;</span>
+            // Don't show an instruction if the user is following a street, even though the street is
+            // bending. We should only do this, if following the street is the obvious choice.
+<span class="fc bfc" id="L389" title="All 4 branches covered.">            if (InstructionsHelper.isSameName(name, prevName) &amp;&amp; outgoingEdges.outgoingEdgesAreSlowerByFactor(2)</span>
+<span class="pc bpc" id="L390" title="1 of 2 branches missed.">                    || InstructionsHelper.isFromFerry(roadEnv, prevRoadEnv)</span>
+<span class="fc bfc" id="L391" title="All 2 branches covered.">                    || outgoingEdges.mergedOrSplitWay()) {</span>
+<span class="fc" id="L392">                return Instruction.IGNORE;</span>
+            }
+
+<span class="fc" id="L395">            return sign;</span>
+        }
+
+        /*
+        The current state is a bit uncertain. So we are going more or less straight sign &lt; 2
+        So it really depends on the surrounding street if we need a turn instruction or not
+        In most cases this will be a simple follow the current street and we don't necessarily
+        need a turn instruction
+         */
+<span class="pc bpc" id="L404" title="1 of 2 branches missed.">        if (prevEdge == null) {</span>
+            // TODO Should we log this case?
+<span class="nc" id="L406">            return sign;</span>
+        }
+
+<span class="fc" id="L409">        boolean outgoingEdgesAreSlower = outgoingEdges.outgoingEdgesAreSlowerByFactor(1);</span>
+
+        // There is at least one other possibility to turn, and we are almost going straight
+        // Check the other turns if one of them is also going almost straight
+        // If not, we don't need a turn instruction
+<span class="fc" id="L414">        EdgeIteratorState otherContinue = outgoingEdges.getOtherContinue(prevLat, prevLon, prevOrientation);</span>
+
+        // Signs provide too less detail, so we use the delta for a precise comparison
+<span class="fc" id="L417">        double delta = InstructionsHelper.calculateOrientationDelta(prevLat, prevLon, lat, lon, prevOrientation);</span>
+
+<span class="pc bpc" id="L419" title="1 of 2 branches missed.">        if (InstructionsHelper.isToFerry(roadEnv, prevRoadEnv))</span>
+<span class="nc" id="L420">            return Instruction.FERRY;</span>
+<span class="pc bpc" id="L421" title="1 of 2 branches missed.">        else if (InstructionsHelper.isFromFerry(roadEnv, prevRoadEnv))</span>
+<span class="nc" id="L422">            return Instruction.CONTINUE_ON_STREET;</span>
+
+        // This state is bad! Two streets are going more or less straight
+        // Happens a lot for trunk_links
+        // For _links, comparing flags works quite good, as links usually have different speeds =&gt; different flags
+<span class="fc bfc" id="L427" title="All 2 branches covered.">        if (otherContinue != null) {</span>
+            // We are at a fork
+<span class="fc bfc" id="L429" title="All 2 branches covered.">            if (!InstructionsHelper.isSameName(name, prevName)</span>
+<span class="pc bpc" id="L430" title="1 of 2 branches missed.">                    || !InstructionsHelper.isSameName(destinationAndRef, prevDestinationAndRef)</span>
+<span class="fc bfc" id="L431" title="All 4 branches covered.">                    || InstructionsHelper.isSameName(otherContinue.getName(), prevName)</span>
+                    || !outgoingEdgesAreSlower) {
+
+<span class="fc" id="L434">                final RoadClass roadClass = edge.get(roadClassEnc);</span>
+<span class="fc" id="L435">                final RoadClass prevRoadClass = prevEdge.get(roadClassEnc);</span>
+<span class="fc" id="L436">                final RoadClass otherRoadClass = otherContinue.get(roadClassEnc);</span>
+<span class="fc" id="L437">                final boolean link = edge.get(roadClassLinkEnc);</span>
+<span class="fc" id="L438">                final boolean prevLink = prevEdge.get(roadClassLinkEnc);</span>
+<span class="fc" id="L439">                final boolean otherLink = otherContinue.get(roadClassLinkEnc);</span>
+                // We know this is a fork, but we only need an instruction if highways are actually changing,
+                // this approach only works for major roads, for minor roads it can be hard to differentiate easily in real life
+<span class="pc bpc" id="L442" title="1 of 10 branches missed.">                if (roadClass == RoadClass.MOTORWAY || roadClass == RoadClass.TRUNK || roadClass == RoadClass.PRIMARY || roadClass == RoadClass.SECONDARY || roadClass == RoadClass.TERTIARY) {</span>
+<span class="fc bfc" id="L443" title="All 8 branches covered.">                    if ((roadClass == prevRoadClass &amp;&amp; link == prevLink) &amp;&amp; (otherRoadClass != prevRoadClass || otherLink != prevLink)) {</span>
+<span class="fc" id="L444">                        return Instruction.IGNORE;</span>
+                    }
+                }
+
+<span class="fc" id="L448">                GHPoint tmpPoint = InstructionsHelper.getPointForOrientationCalculation(otherContinue, nodeAccess);</span>
+<span class="fc" id="L449">                double otherDelta = InstructionsHelper.calculateOrientationDelta(prevLat, prevLon, tmpPoint.getLat(), tmpPoint.getLon(), prevOrientation);</span>
+
+                // This is required to avoid keep left/right on the motorway at off-ramps/motorway_links
+<span class="fc bfc" id="L452" title="All 6 branches covered.">                if (Math.abs(delta) &lt; .1 &amp;&amp; Math.abs(otherDelta) &gt; .15 &amp;&amp; InstructionsHelper.isSameName(name, prevName)) {</span>
+<span class="fc" id="L453">                    return Instruction.CONTINUE_ON_STREET;</span>
+                }
+
+<span class="fc bfc" id="L456" title="All 2 branches covered.">                if (otherDelta &lt; delta) {</span>
+<span class="fc" id="L457">                    return Instruction.KEEP_LEFT;</span>
+                } else {
+<span class="fc" id="L459">                    return Instruction.KEEP_RIGHT;</span>
+                }
+            }
+        }
+
+<span class="fc bfc" id="L464" title="All 2 branches covered.">        if (!outgoingEdgesAreSlower</span>
+<span class="pc bpc" id="L465" title="1 of 2 branches missed.">                &amp;&amp; !outgoingEdges.mergedOrSplitWay()</span>
+<span class="fc bfc" id="L466" title="All 4 branches covered.">                &amp;&amp; (Math.abs(delta) &gt; .6 || outgoingEdges.isLeavingCurrentStreet(prevName, name))) {</span>
+            // Leave the current road -&gt; create instruction
+<span class="fc" id="L468">            return sign;</span>
+        }
+
+<span class="fc" id="L471">        return Instruction.IGNORE;</span>
+    }
+
+    private void updatePointsAndInstruction(EdgeIteratorState edge, PointList pl) {
+        // skip adjNode
+<span class="fc" id="L476">        int len = pl.size() - 1;</span>
+<span class="fc bfc" id="L477" title="All 2 branches covered.">        for (int i = 0; i &lt; len; i++) {</span>
+<span class="fc" id="L478">            prevInstruction.getPoints().add(pl, i);</span>
+        }
+<span class="fc" id="L480">        double newDist = edge.getDistance();</span>
+<span class="fc" id="L481">        prevInstruction.setDistance(newDist + prevInstruction.getDistance());</span>
+<span class="fc bfc" id="L482" title="All 2 branches covered.">        if (prevEdge != null)</span>
+<span class="fc" id="L483">            prevInstruction.setTime(GHUtility.calcMillisWithTurnMillis(weighting, edge, false, prevEdge.getEdge()) + prevInstruction.getTime());</span>
+        else
+<span class="fc" id="L485">            prevInstruction.setTime(weighting.calcEdgeMillis(edge, false) + prevInstruction.getTime());</span>
+<span class="fc" id="L486">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

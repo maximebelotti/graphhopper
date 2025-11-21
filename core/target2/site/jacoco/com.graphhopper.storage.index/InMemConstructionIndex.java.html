@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InMemConstructionIndex.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage.index</a> &gt; <span class="el_source">InMemConstructionIndex.java</span></div><h1>InMemConstructionIndex.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.storage.index;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.graphhopper.geohash.SpatialKeyAlgo;
+import org.locationtech.jts.geom.Coordinate;
+
+import static com.graphhopper.util.DistancePlaneProjection.DIST_PLANE;
+
+public class InMemConstructionIndex {
+
+    interface InMemEntry {
+        boolean isLeaf();
+    }
+
+    static class InMemLeafEntry extends IntArrayList implements InMemEntry {
+
+        public InMemLeafEntry(int count) {
+<span class="fc" id="L36">            super(count);</span>
+<span class="fc" id="L37">        }</span>
+
+        @Override
+        public final boolean isLeaf() {
+<span class="fc" id="L41">            return true;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L46">            return &quot;LEAF &quot; + /*key +*/ &quot; &quot; + super.toString();</span>
+        }
+
+        IntArrayList getResults() {
+<span class="fc" id="L50">            return this;</span>
+        }
+    }
+
+    static class InMemTreeEntry implements InMemEntry {
+        InMemEntry[] subEntries;
+
+<span class="fc" id="L57">        public InMemTreeEntry(int subEntryNo) {</span>
+<span class="fc" id="L58">            subEntries = new InMemEntry[subEntryNo];</span>
+<span class="fc" id="L59">        }</span>
+
+        public InMemEntry getSubEntry(int index) {
+<span class="fc" id="L62">            return subEntries[index];</span>
+        }
+
+        public void setSubEntry(int index, InMemEntry subEntry) {
+<span class="fc" id="L66">            this.subEntries[index] = subEntry;</span>
+<span class="fc" id="L67">        }</span>
+
+        @Override
+        public final boolean isLeaf() {
+<span class="fc" id="L71">            return false;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L76">            return &quot;TREE&quot;;</span>
+        }
+    }
+
+    final PixelGridTraversal pixelGridTraversal;
+    final SpatialKeyAlgo keyAlgo;
+    final int[] entries;
+    final byte[] shifts;
+    final InMemTreeEntry root;
+
+<span class="fc" id="L86">    public InMemConstructionIndex(IndexStructureInfo indexStructureInfo) {</span>
+<span class="fc" id="L87">        this.root = new InMemTreeEntry(indexStructureInfo.getEntries()[0]);</span>
+<span class="fc" id="L88">        this.entries = indexStructureInfo.getEntries();</span>
+<span class="fc" id="L89">        this.shifts = indexStructureInfo.getShifts();</span>
+<span class="fc" id="L90">        this.pixelGridTraversal = indexStructureInfo.getPixelGridTraversal();</span>
+<span class="fc" id="L91">        this.keyAlgo = indexStructureInfo.getKeyAlgo();</span>
+<span class="fc" id="L92">    }</span>
+
+    public void addToAllTilesOnLine(final int value, final double lat1, final double lon1, final double lat2, final double lon2) {
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        if (!DIST_PLANE.isCrossBoundary(lon1, lon2)) {</span>
+            // Find all the tiles on the line from (y1, x1) to (y2, y2) in tile coordinates (y, x)
+<span class="fc" id="L97">            pixelGridTraversal.traverse(new Coordinate(lon1, lat1), new Coordinate(lon2, lat2), p -&gt; {</span>
+<span class="fc" id="L98">                long key = keyAlgo.encode((int) p.x, (int) p.y);</span>
+<span class="fc" id="L99">                put(key, value);</span>
+<span class="fc" id="L100">            });</span>
+        }
+<span class="fc" id="L102">    }</span>
+
+    void put(long key, int value) {
+<span class="fc" id="L105">        put(key &lt;&lt; (64 - keyAlgo.getBits()), root, 0, value);</span>
+<span class="fc" id="L106">    }</span>
+
+    private void put(long keyPart, InMemEntry entry, int depth, int value) {
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        if (entry.isLeaf()) {</span>
+<span class="fc" id="L110">            InMemLeafEntry leafEntry = (InMemLeafEntry) entry;</span>
+            // Avoid adding the same edge id multiple times.
+            // Since each edge id is handled only once, this can only happen when
+            // this method is called several times in a row with the same edge id,
+            // so it is enough to check the last entry.
+            // (It happens when one edge has several segments. Every segment is traversed
+            // on its own, without de-duplicating the tiles that are touched.)
+<span class="fc bfc" id="L117" title="All 4 branches covered.">            if (leafEntry.isEmpty() || leafEntry.get(leafEntry.size() - 1) != value) {</span>
+<span class="fc" id="L118">                leafEntry.add(value);</span>
+            }
+<span class="fc" id="L120">        } else {</span>
+<span class="fc" id="L121">            int index = (int) (keyPart &gt;&gt;&gt; (64 - shifts[depth]));</span>
+<span class="fc" id="L122">            keyPart = keyPart &lt;&lt; shifts[depth];</span>
+<span class="fc" id="L123">            InMemTreeEntry treeEntry = ((InMemTreeEntry) entry);</span>
+<span class="fc" id="L124">            InMemEntry subentry = treeEntry.getSubEntry(index);</span>
+<span class="fc" id="L125">            depth++;</span>
+<span class="fc bfc" id="L126" title="All 2 branches covered.">            if (subentry == null) {</span>
+<span class="fc bfc" id="L127" title="All 2 branches covered.">                if (depth == entries.length) {</span>
+<span class="fc" id="L128">                    subentry = new InMemLeafEntry(4);</span>
+                } else {
+<span class="fc" id="L130">                    subentry = new InMemTreeEntry(entries[depth]);</span>
+                }
+<span class="fc" id="L132">                treeEntry.setSubEntry(index, subentry);</span>
+            }
+<span class="fc" id="L134">            put(keyPart, subentry, depth, value);</span>
+        }
+<span class="fc" id="L136">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

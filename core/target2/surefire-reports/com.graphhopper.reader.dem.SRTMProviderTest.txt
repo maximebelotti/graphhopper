@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.graphhopper.reader.dem.SRTMProviderTest
+-------------------------------------------------------------------------------
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 4, Time elapsed: 1.242 s - in com.graphhopper.reader.dem.SRTMProviderTest

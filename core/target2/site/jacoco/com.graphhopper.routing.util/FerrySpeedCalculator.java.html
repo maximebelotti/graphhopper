@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FerrySpeedCalculator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util</a> &gt; <span class="el_source">FerrySpeedCalculator.java</span></div><h1>FerrySpeedCalculator.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.routing.util.parsers.TagParser;
+import com.graphhopper.storage.IntsRef;
+
+public class FerrySpeedCalculator implements TagParser {
+    private final DecimalEncodedValue ferrySpeedEnc;
+
+<span class="fc" id="L12">    public FerrySpeedCalculator(DecimalEncodedValue ferrySpeedEnc) {</span>
+<span class="fc" id="L13">        this.ferrySpeedEnc = ferrySpeedEnc;</span>
+<span class="fc" id="L14">    }</span>
+
+    public static boolean isFerry(ReaderWay way) {
+<span class="pc bpc" id="L17" title="1 of 4 branches missed.">        return way.hasTag(&quot;route&quot;, &quot;ferry&quot;) &amp;&amp; !way.hasTag(&quot;ferry&quot;, &quot;no&quot;) ||</span>
+                // TODO shuttle_train is sometimes also used in relations, e.g. https://www.openstreetmap.org/relation/1932780
+<span class="pc bpc" id="L19" title="1 of 4 branches missed.">                way.hasTag(&quot;route&quot;, &quot;shuttle_train&quot;) &amp;&amp; !way.hasTag(&quot;shuttle_train&quot;, &quot;no&quot;);</span>
+    }
+
+    static double getSpeed(ReaderWay way) {
+        // todo: We currently face two problems related to ferry speeds:
+        //       1) We cannot account for waiting times for short ferries (when we do the ferry speed is slower than the slowest we can store)
+        //       2) When the ferry speed is larger than the maximum speed of the encoder (like 15km/h for foot) the
+        //          ferry speed will be faster than what we can store.
+
+        // OSMReader adds the artificial 'speed_from_duration' and 'way_distance' tags that we can
+        // use to set the ferry speed. Otherwise we need to use fallback values.
+<span class="fc" id="L30">        double speedInKmPerHour = way.getTag(&quot;speed_from_duration&quot;, Double.NaN);</span>
+<span class="fc bfc" id="L31" title="All 2 branches covered.">        if (!Double.isNaN(speedInKmPerHour)) {</span>
+            // we reduce the speed to account for waiting time (we increase the duration by 40%)
+<span class="fc" id="L33">            return Math.round(speedInKmPerHour / 1.4);</span>
+        } else {
+            // we have no speed value to work with because there was no valid duration tag.
+            // we have to take a guess based on the distance.
+<span class="fc" id="L37">            double wayDistance = way.getTag(&quot;edge_distance&quot;, Double.NaN);</span>
+<span class="fc bfc" id="L38" title="All 2 branches covered.">            if (Double.isNaN(wayDistance))</span>
+<span class="fc" id="L39">                throw new IllegalStateException(&quot;No 'edge_distance' set for edge created for way: &quot; + way.getId());</span>
+<span class="fc bfc" id="L40" title="All 2 branches covered.">            else if (wayDistance &lt; 500)</span>
+                // Use the slowest possible speed for very short ferries. Note that sometimes these aren't really ferries
+                // that take you from one harbour to another, but rather ways that only represent the beginning of a
+                // longer ferry connection and that are used by multiple different connections, like here: https://www.openstreetmap.org/way/107913687
+                // It should not matter much which speed we use in this case, so we have no special handling for these.
+<span class="fc" id="L45">                return 1;</span>
+            else {
+                // todo: distinguish speed based on the distance of the ferry, see #2532
+<span class="fc" id="L48">                return 6;</span>
+            }
+        }
+    }
+
+    public static double minmax(double speed, DecimalEncodedValue avgSpeedEnc) {
+<span class="fc" id="L54">        return Math.max(avgSpeedEnc.getSmallestNonZeroValue(), Math.min(speed, avgSpeedEnc.getMaxStorableDecimal()));</span>
+    }
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
+<span class="fc bfc" id="L59" title="All 2 branches covered.">        if (isFerry(way)) {</span>
+<span class="fc" id="L60">            double ferrySpeed = minmax(getSpeed(way), ferrySpeedEnc);</span>
+<span class="fc" id="L61">            ferrySpeedEnc.setDecimal(false, edgeId, edgeIntAccess, ferrySpeed);</span>
+        }
+<span class="fc" id="L63">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

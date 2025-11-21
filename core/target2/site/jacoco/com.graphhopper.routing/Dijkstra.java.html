@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Dijkstra.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">Dijkstra.java</span></div><h1>Dijkstra.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.IntObjectMap;
+import com.graphhopper.coll.GHIntObjectHashMap;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.Parameters;
+
+import java.util.PriorityQueue;
+
+/**
+ * Implements a single source shortest path algorithm
+ * http://en.wikipedia.org/wiki/Dijkstra's_algorithm
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class Dijkstra extends AbstractRoutingAlgorithm {
+    protected IntObjectMap&lt;SPTEntry&gt; fromMap;
+    protected PriorityQueue&lt;SPTEntry&gt; fromHeap;
+    protected SPTEntry currEdge;
+    private int visitedNodes;
+<span class="fc" id="L44">    private int to = -1;</span>
+
+    public Dijkstra(Graph graph, Weighting weighting, TraversalMode tMode) {
+<span class="fc" id="L47">        super(graph, weighting, tMode);</span>
+<span class="fc" id="L48">        int size = Math.min(Math.max(200, graph.getNodes() / 10), 2000);</span>
+<span class="fc" id="L49">        initCollections(size);</span>
+<span class="fc" id="L50">    }</span>
+
+    protected void initCollections(int size) {
+<span class="fc" id="L53">        fromHeap = new PriorityQueue&lt;&gt;(size);</span>
+<span class="fc" id="L54">        fromMap = new GHIntObjectHashMap&lt;&gt;(size);</span>
+<span class="fc" id="L55">    }</span>
+
+    @Override
+    public Path calcPath(int from, int to) {
+<span class="fc" id="L59">        checkAlreadyRun();</span>
+<span class="fc" id="L60">        setupFinishTime();</span>
+<span class="fc" id="L61">        this.to = to;</span>
+<span class="fc" id="L62">        SPTEntry startEntry = new SPTEntry(from, 0);</span>
+<span class="fc" id="L63">        fromHeap.add(startEntry);</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        if (!traversalMode.isEdgeBased())</span>
+<span class="fc" id="L65">            fromMap.put(from, currEdge);</span>
+<span class="fc" id="L66">        runAlgo();</span>
+<span class="fc" id="L67">        return extractPath();</span>
+    }
+
+    protected void runAlgo() {
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        while (!fromHeap.isEmpty()) {</span>
+<span class="fc" id="L72">            currEdge = fromHeap.poll();</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">            if (currEdge.isDeleted())</span>
+<span class="fc" id="L74">                continue;</span>
+<span class="fc" id="L75">            visitedNodes++;</span>
+<span class="fc bfc" id="L76" title="All 6 branches covered.">            if (isMaxVisitedNodesExceeded() || finished() || isTimeoutExceeded())</span>
+<span class="fc" id="L77">                break;</span>
+
+<span class="fc" id="L79">            int currNode = currEdge.adjNode;</span>
+<span class="fc" id="L80">            EdgeIterator iter = edgeExplorer.setBaseNode(currNode);</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">            while (iter.next()) {</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">                if (!accept(iter, currEdge.edge))</span>
+<span class="fc" id="L83">                    continue;</span>
+
+<span class="fc" id="L85">                double tmpWeight = GHUtility.calcWeightWithTurnWeight(weighting, iter, false, currEdge.edge) + currEdge.weight;</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">                if (Double.isInfinite(tmpWeight)) {</span>
+<span class="fc" id="L87">                    continue;</span>
+                }
+<span class="fc" id="L89">                int traversalId = traversalMode.createTraversalId(iter, false);</span>
+
+<span class="fc" id="L91">                SPTEntry nEdge = fromMap.get(traversalId);</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">                if (nEdge == null) {</span>
+<span class="fc" id="L93">                    nEdge = new SPTEntry(iter.getEdge(), iter.getAdjNode(), tmpWeight, currEdge);</span>
+<span class="fc" id="L94">                    fromMap.put(traversalId, nEdge);</span>
+<span class="fc" id="L95">                    fromHeap.add(nEdge);</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">                } else if (nEdge.weight &gt; tmpWeight) {</span>
+<span class="fc" id="L97">                    nEdge.setDeleted();</span>
+<span class="fc" id="L98">                    nEdge = new SPTEntry(iter.getEdge(), iter.getAdjNode(), tmpWeight, currEdge);</span>
+<span class="fc" id="L99">                    fromMap.put(traversalId, nEdge);</span>
+<span class="fc" id="L100">                    fromHeap.add(nEdge);</span>
+                } else
+                    continue;
+
+<span class="fc" id="L104">                updateBestPath(iter, nEdge, traversalId);</span>
+<span class="fc" id="L105">            }</span>
+<span class="fc" id="L106">        }</span>
+<span class="fc" id="L107">    }</span>
+
+    protected boolean finished() {
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        return currEdge.adjNode == to;</span>
+    }
+
+    private Path extractPath() {
+<span class="pc bpc" id="L114" title="1 of 4 branches missed.">        if (currEdge == null || !finished())</span>
+<span class="fc" id="L115">            return createEmptyPath();</span>
+
+<span class="fc" id="L117">        return PathExtractor.extractPath(graph, weighting, currEdge);</span>
+    }
+
+    @Override
+    public int getVisitedNodes() {
+<span class="fc" id="L122">        return visitedNodes;</span>
+    }
+
+    protected void updateBestPath(EdgeIteratorState edgeState, SPTEntry bestSPTEntry, int traversalId) {
+<span class="fc" id="L126">    }</span>
+
+    @Override
+    public String getName() {
+<span class="fc" id="L130">        return Parameters.Algorithms.DIJKSTRA;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

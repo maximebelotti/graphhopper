@@ -1,0 +1,456 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlternativeRoute.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AlternativeRoute.java</span></div><h1>AlternativeRoute.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.IntSet;
+import com.carrotsearch.hppc.predicates.IntObjectPredicate;
+import com.graphhopper.coll.GHIntHashSet;
+import com.graphhopper.coll.GHIntObjectHashMap;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.*;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static com.graphhopper.util.Parameters.Algorithms.AltRoute.*;
+
+/**
+ * This class implements the alternative paths search using the &quot;plateau&quot; and partially the
+ * &quot;penalty&quot; method described in the following papers.
+ * &lt;p&gt;
+ * &lt;ul&gt;
+ * &lt;li&gt;Choice Routing Explanation - Camvit 2009:
+ * http://www.camvit.com/camvit-technical-english/Camvit-Choice-Routing-Explanation-english.pdf&lt;/li&gt;
+ * &lt;li&gt;and refined in: Alternative Routes in Road Networks 2010:
+ * http://www.cs.princeton.edu/~rwerneck/papers/ADGW10-alternatives-sea.pdf&lt;/li&gt;
+ * &lt;li&gt;other ideas 'Improved Alternative Route Planning', 2013:
+ * https://hal.inria.fr/hal-00871739/document&lt;/li&gt;
+ * &lt;li&gt;via point 'storage' idea 'Candidate Sets for Alternative Routes in Road Networks', 2013:
+ * https://algo2.iti.kit.edu/download/s-csarrn-12.pdf&lt;/li&gt;
+ * &lt;li&gt;Alternative route graph construction 2011:
+ * http://algo2.iti.kit.edu/download/altgraph_tapas_extended.pdf
+ * &lt;/li&gt;
+ * &lt;/ul&gt;
+ * &lt;p&gt;
+ * Note: This algorithm can be slow for longer routes and alternatives are only really practical in combination with CH, see #2566
+ *
+ * @author Peter Karich
+ */
+public class AlternativeRoute extends AStarBidirection implements RoutingAlgorithm {
+<span class="fc" id="L62">    private static final Comparator&lt;AlternativeInfo&gt; ALT_COMPARATOR = Comparator.comparingDouble(o -&gt; o.sortBy);</span>
+
+    private final int maxPaths;
+    /**
+     * This variable influences the graph exploration for alternative paths. Specify a higher value than the default to
+     * potentially get more alternatives and a lower value to improve query time but reduces chance to find alternatives.
+     */
+    private final double explorationFactor;
+    /**
+     * Decreasing this factor filters found alternatives and increases quality. E.g. if the factor is 2 than
+     * all alternatives with a weight 2 times longer than the optimal weight are return.
+     */
+    private final double maxWeightFactor;
+    /**
+     * Decreasing this factor filters found alternatives and might increase quality. This parameter is used to avoid
+     * alternatives too similar to the best path. Specify 0.2 to ensure maximum 20% of the best path are on the same roads.
+     * The unit is also the 'weight'.
+     */
+    private final double maxShareFactor;
+    /**
+     * Increasing this factor filters found alternatives and might increase quality. This specifies the minimum plateau
+     * portion of every alternative path that is required. Keep in mind that a plateau is often not complete especially
+     * when the explorationFactor is low (and for performance reasons the explorationFactor should be as low as possible).
+     * This is the reason we cannot require a too big plateau portion here as default.
+     */
+    private final double minPlateauFactor;
+
+    public AlternativeRoute(Graph graph, Weighting weighting, TraversalMode traversalMode, PMap hints) {
+<span class="fc" id="L90">        super(graph, weighting, traversalMode);</span>
+<span class="pc bpc" id="L91" title="1 of 4 branches missed.">        if (weighting.hasTurnCosts() &amp;&amp; !traversalMode.isEdgeBased())</span>
+<span class="nc" id="L92">            throw new IllegalStateException(&quot;Weightings supporting turn costs cannot be used with node-based traversal mode&quot;);</span>
+
+<span class="fc" id="L94">        this.maxPaths = hints.getInt(MAX_PATHS, 2);</span>
+<span class="pc bpc" id="L95" title="1 of 2 branches missed.">        if (this.maxPaths &lt; 2)</span>
+<span class="nc" id="L96">            throw new IllegalArgumentException(&quot;Use normal algorithm with less overhead instead if no alternatives are required&quot;);</span>
+
+<span class="fc" id="L98">        this.explorationFactor = hints.getDouble(&quot;alternative_route.max_exploration_factor&quot;, 1.12);</span>
+<span class="fc" id="L99">        this.maxWeightFactor = hints.getDouble(MAX_WEIGHT, 1.25);</span>
+<span class="fc" id="L100">        this.maxShareFactor = hints.getDouble(MAX_SHARE, 0.6);</span>
+<span class="fc" id="L101">        this.minPlateauFactor = hints.getDouble(&quot;alternative_route.min_plateau_factor&quot;, 0.1);</span>
+<span class="fc" id="L102">    }</span>
+
+    static List&lt;String&gt; getAltNames(Graph graph, SPTEntry ee) {
+<span class="pc bpc" id="L105" title="2 of 4 branches missed.">        if (ee == null || !EdgeIterator.Edge.isValid(ee.edge))</span>
+<span class="nc" id="L106">            return Collections.emptyList();</span>
+
+<span class="fc" id="L108">        EdgeIteratorState iter = graph.getEdgeIteratorState(ee.edge, Integer.MIN_VALUE);</span>
+<span class="pc bpc" id="L109" title="1 of 2 branches missed.">        if (iter == null)</span>
+<span class="nc" id="L110">            return Collections.emptyList();</span>
+
+<span class="fc" id="L112">        String str = iter.getName();</span>
+<span class="fc bfc" id="L113" title="All 2 branches covered.">        if (str.isEmpty())</span>
+<span class="fc" id="L114">            return Collections.emptyList();</span>
+
+<span class="fc" id="L116">        return Collections.singletonList(str);</span>
+    }
+
+    static double calcSortBy(double weightInfluence, double weight,
+                             double shareInfluence, double shareWeight,
+                             double plateauInfluence, double plateauWeight) {
+<span class="fc" id="L122">        return weightInfluence * weight + shareInfluence * shareWeight + plateauInfluence * plateauWeight;</span>
+    }
+
+    public List&lt;AlternativeInfo&gt; calcAlternatives(int from, int to) {
+<span class="fc" id="L126">        Path bestPath = searchBest(from, to);</span>
+<span class="fc" id="L127">        return calcAlternatives(bestPath, maxPaths,</span>
+                maxWeightFactor, 7,
+                maxShareFactor, 0.8,
+                minPlateauFactor, -0.2);
+    }
+
+    @Override
+    public List&lt;Path&gt; calcPaths(int from, int to) {
+<span class="fc" id="L135">        checkAlreadyRun();</span>
+<span class="fc" id="L136">        setupFinishTime();</span>
+<span class="fc" id="L137">        List&lt;AlternativeInfo&gt; alternatives = calcAlternatives(from, to);</span>
+<span class="fc" id="L138">        List&lt;Path&gt; paths = new ArrayList&lt;&gt;(alternatives.size());</span>
+<span class="fc bfc" id="L139" title="All 2 branches covered.">        for (AlternativeInfo a : alternatives) {</span>
+<span class="fc" id="L140">            paths.add(a.getPath());</span>
+<span class="fc" id="L141">        }</span>
+<span class="fc" id="L142">        return paths;</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="fc" id="L147">        return Parameters.Algorithms.ALT_ROUTE;</span>
+    }
+
+    public static class AlternativeInfo {
+        private final double sortBy;
+        private final Path path;
+        private final SPTEntry shareStart;
+        private final SPTEntry shareEnd;
+        private final double shareWeight;
+        private final List&lt;String&gt; names;
+
+        public AlternativeInfo(double sortBy, Path path, SPTEntry shareStart, SPTEntry shareEnd,
+<span class="fc" id="L159">                               double shareWeight, List&lt;String&gt; altNames) {</span>
+<span class="fc" id="L160">            this.names = altNames;</span>
+<span class="fc" id="L161">            this.sortBy = sortBy;</span>
+<span class="fc" id="L162">            this.path = path;</span>
+<span class="fc" id="L163">            this.path.setDescription(names);</span>
+<span class="fc" id="L164">            this.shareStart = shareStart;</span>
+<span class="fc" id="L165">            this.shareEnd = shareEnd;</span>
+<span class="fc" id="L166">            this.shareWeight = shareWeight;</span>
+<span class="fc" id="L167">        }</span>
+
+        public Path getPath() {
+<span class="fc" id="L170">            return path;</span>
+        }
+
+        public SPTEntry getShareStart() {
+<span class="nc" id="L174">            return shareStart;</span>
+        }
+
+        public SPTEntry getShareEnd() {
+<span class="nc" id="L178">            return shareEnd;</span>
+        }
+
+        public double getShareWeight() {
+<span class="fc" id="L182">            return shareWeight;</span>
+        }
+
+        public double getSortBy() {
+<span class="nc" id="L186">            return sortBy;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L191">            return names + &quot;, sortBy:&quot; + sortBy + &quot;, shareWeight:&quot; + shareWeight + &quot;, &quot; + path;</span>
+        }
+    }
+
+    @Override
+    public boolean finished() {
+        // we need to finish BOTH searches identical to CH
+<span class="pc bpc" id="L198" title="3 of 4 branches missed.">        if (finishedFrom &amp;&amp; finishedTo)</span>
+<span class="nc" id="L199">            return true;</span>
+
+<span class="pc bpc" id="L201" title="2 of 4 branches missed.">        if (isMaxVisitedNodesExceeded() || isTimeoutExceeded())</span>
+<span class="nc" id="L202">            return true;</span>
+
+        // The following condition is necessary to avoid traversing the full graph if areas are disconnected
+        // but it is only valid for non-CH e.g. for CH it can happen that finishedTo is true but the from-SPT could still reach 'to'
+<span class="pc bpc" id="L206" title="1 of 4 branches missed.">        if (finishedFrom || finishedTo)</span>
+<span class="fc" id="L207">            return true;</span>
+
+        // increase overlap of both searches:
+<span class="fc bfc" id="L210" title="All 2 branches covered.">        return currFrom.weight + currTo.weight &gt; explorationFactor * (bestWeight + stoppingCriterionOffset);</span>
+        // This is more precise but takes roughly 20% longer: return currFrom.weight &gt; bestWeight &amp;&amp; currTo.weight &gt; bestWeight;
+        // For bidir A* and AStarEdge.getWeightOfVisitedPath see comment in AStarBidirection.finished
+    }
+
+    public Path searchBest(int from, int to) {
+<span class="fc" id="L216">        init(from, 0, to, 0);</span>
+        // init collections and bestPath.getWeight properly
+<span class="fc" id="L218">        runAlgo();</span>
+<span class="fc" id="L219">        return extractPath();</span>
+    }
+
+    /**
+     * @return the information necessary to handle alternative paths. Note that the paths are
+     * not yet extracted.
+     */
+    public List&lt;AlternativeInfo&gt; calcAlternatives(final Path bestPath, final int maxPaths,
+                                                  double maxWeightFactor, final double weightInfluence,
+                                                  final double maxShareFactor, final double shareInfluence,
+                                                  final double minPlateauFactor, final double plateauInfluence) {
+<span class="fc" id="L230">        final double maxWeight = maxWeightFactor * bestWeight;</span>
+<span class="fc" id="L231">        final GHIntObjectHashMap&lt;IntSet&gt; traversalIdMap = new GHIntObjectHashMap&lt;&gt;();</span>
+<span class="fc" id="L232">        final AtomicInteger startTID = addToMap(traversalIdMap, bestPath);</span>
+
+        // find all 'good' alternatives from forward-SPT matching the backward-SPT and optimize by
+        // small total weight (1), small share and big plateau (3a+b) and do these expensive calculations
+        // only for plateau start candidates (2)
+<span class="fc" id="L237">        final List&lt;AlternativeInfo&gt; alternatives = new ArrayList&lt;&gt;(maxPaths);</span>
+
+<span class="fc" id="L239">        double bestPlateau = bestWeight;</span>
+<span class="fc" id="L240">        double bestShare = 0;</span>
+<span class="fc" id="L241">        double sortBy = calcSortBy(weightInfluence, bestWeight,</span>
+                shareInfluence, bestShare,
+                plateauInfluence, bestPlateau);
+
+<span class="fc" id="L245">        final AlternativeInfo bestAlt = new AlternativeInfo(sortBy, bestPath,</span>
+<span class="fc" id="L246">                bestFwdEntry, bestBwdEntry, bestShare, getAltNames(graph, bestFwdEntry));</span>
+<span class="fc" id="L247">        alternatives.add(bestAlt);</span>
+<span class="fc" id="L248">        AtomicReference&lt;SPTEntry&gt; bestEntry = new AtomicReference&lt;&gt;();</span>
+
+<span class="fc" id="L250">        bestWeightMapFrom.forEach(new IntObjectPredicate&lt;SPTEntry&gt;() {</span>
+            @Override
+            public boolean apply(final int traversalId, final SPTEntry fromSPTEntry) {
+<span class="fc" id="L253">                SPTEntry toSPTEntry = bestWeightMapTo.get(traversalId);</span>
+<span class="fc bfc" id="L254" title="All 2 branches covered.">                if (toSPTEntry == null)</span>
+<span class="fc" id="L255">                    return true;</span>
+
+                // Using the parent is required to avoid duplicate edge in Path.
+                // TODO we miss the turn cost weight (but at least we not duplicate the current edge weight)
+<span class="pc bpc" id="L259" title="1 of 4 branches missed.">                if (traversalMode.isEdgeBased() &amp;&amp; toSPTEntry.parent != null)</span>
+<span class="fc" id="L260">                    toSPTEntry = toSPTEntry.parent;</span>
+
+                // The alternative path is suboptimal if U-turn (after fromSPTEntry)
+<span class="fc bfc" id="L263" title="All 2 branches covered.">                if (fromSPTEntry.edge == toSPTEntry.edge)</span>
+<span class="fc" id="L264">                    return true;</span>
+
+                // (1) skip too long paths
+<span class="fc" id="L267">                final double weight = fromSPTEntry.getWeightOfVisitedPath() + toSPTEntry.getWeightOfVisitedPath()</span>
+<span class="fc" id="L268">                        + weighting.calcTurnWeight(fromSPTEntry.edge, fromSPTEntry.adjNode, toSPTEntry.edge);</span>
+<span class="fc bfc" id="L269" title="All 2 branches covered.">                if (weight &gt; maxWeight)</span>
+<span class="fc" id="L270">                    return true;</span>
+
+<span class="fc bfc" id="L272" title="All 2 branches covered.">                if (isBestPath(fromSPTEntry))</span>
+<span class="fc" id="L273">                    return true;</span>
+
+                // For edge based traversal we need the next entry to find out the plateau start
+<span class="fc bfc" id="L276" title="All 2 branches covered.">                SPTEntry tmpFromEntry = traversalMode.isEdgeBased() ? fromSPTEntry.parent : fromSPTEntry;</span>
+<span class="pc bpc" id="L277" title="1 of 4 branches missed.">                if (tmpFromEntry == null || tmpFromEntry.parent == null) {</span>
+                    // we can be here only if edge based and only if entry is not part of the best path
+                    // e.g. when starting point has two edges and one is part of the best path the other edge is path of an alternative
+<span class="pc bpc" id="L280" title="1 of 2 branches missed.">                    assert traversalMode.isEdgeBased();</span>
+                } else {
+<span class="fc" id="L282">                    int nextToTraversalId = traversalMode.createTraversalId(graph.getEdgeIteratorState(tmpFromEntry.edge, tmpFromEntry.parent.adjNode), true);</span>
+<span class="fc" id="L283">                    SPTEntry correspondingToEntry = bestWeightMapTo.get(nextToTraversalId);</span>
+<span class="fc bfc" id="L284" title="All 2 branches covered.">                    if (correspondingToEntry != null) {</span>
+<span class="fc bfc" id="L285" title="All 2 branches covered.">                        if (traversalMode.isEdgeBased())</span>
+<span class="fc" id="L286">                            correspondingToEntry = correspondingToEntry.parent;</span>
+<span class="fc bfc" id="L287" title="All 2 branches covered.">                        if (correspondingToEntry.edge == fromSPTEntry.edge)</span>
+<span class="fc" id="L288">                            return true;</span>
+                    }
+                }
+
+                // (3a) calculate plateau, we know we are at the beginning of the 'from'-side of
+                // the plateau A-B-C and go further to B
+                // where B is the next-'from' of A and B is also the previous-'to' of A.
+                //
+                //      *&lt;-A-B-C-&gt;*
+                //        /    \
+                //    start    end
+                //
+                // extend plateau in only one direction necessary (A to B to ...) as we know
+                // that the from-SPTEntry is the start of the plateau or there is no plateau at all
+                //
+<span class="fc" id="L303">                double plateauWeight = 0;</span>
+<span class="fc" id="L304">                SPTEntry prevToSPTEntry = toSPTEntry, prevFrom = fromSPTEntry;</span>
+<span class="fc bfc" id="L305" title="All 2 branches covered.">                while (prevToSPTEntry.parent != null) {</span>
+<span class="fc" id="L306">                    int nextFromTraversalId = traversalMode.createTraversalId(graph.getEdgeIteratorState(prevToSPTEntry.edge, prevToSPTEntry.parent.adjNode), false);</span>
+<span class="fc" id="L307">                    SPTEntry otherFromEntry = bestWeightMapFrom.get(nextFromTraversalId);</span>
+                    // end of a plateau
+<span class="pc bpc" id="L309" title="1 of 6 branches missed.">                    if (otherFromEntry == null ||</span>
+                            otherFromEntry.parent != prevFrom ||
+                            otherFromEntry.edge != prevToSPTEntry.edge)
+<span class="nc" id="L312">                        break;</span>
+
+<span class="fc" id="L314">                    prevFrom = otherFromEntry;</span>
+<span class="fc" id="L315">                    plateauWeight += (prevToSPTEntry.getWeightOfVisitedPath() - prevToSPTEntry.parent.getWeightOfVisitedPath());</span>
+<span class="fc" id="L316">                    prevToSPTEntry = prevToSPTEntry.parent;</span>
+<span class="fc" id="L317">                }</span>
+
+<span class="fc bfc" id="L319" title="All 4 branches covered.">                if (plateauWeight &lt;= 0 || plateauWeight / weight &lt; minPlateauFactor)</span>
+<span class="fc" id="L320">                    return true;</span>
+
+<span class="pc bpc" id="L322" title="1 of 2 branches missed.">                if (fromSPTEntry.parent == null)</span>
+<span class="nc" id="L323">                    throw new IllegalStateException(&quot;not implemented yet. in case of an edge based traversal the parent of fromSPTEntry could be null&quot;);</span>
+
+                // (3b) calculate share
+<span class="fc" id="L326">                SPTEntry fromEE = getFirstShareEE(fromSPTEntry.parent, true);</span>
+<span class="fc" id="L327">                SPTEntry toEE = getFirstShareEE(toSPTEntry.parent, false);</span>
+<span class="fc" id="L328">                double shareWeight = fromEE.getWeightOfVisitedPath() + toEE.getWeightOfVisitedPath();</span>
+<span class="fc bfc" id="L329" title="All 2 branches covered.">                boolean smallShare = shareWeight / bestWeight &lt; maxShareFactor;</span>
+<span class="fc bfc" id="L330" title="All 2 branches covered.">                if (smallShare) {</span>
+<span class="fc" id="L331">                    List&lt;String&gt; altNames = getAltNames(graph, fromSPTEntry);</span>
+
+<span class="fc" id="L333">                    double sortBy = calcSortBy(weightInfluence, weight, shareInfluence, shareWeight, plateauInfluence, plateauWeight);</span>
+<span class="fc" id="L334">                    double worstSortBy = getWorstSortBy();</span>
+
+                    // plateaus.add(new PlateauInfo(altName, plateauEdges));
+<span class="fc bfc" id="L337" title="All 4 branches covered.">                    if (sortBy &lt; worstSortBy || alternatives.size() &lt; maxPaths) {</span>
+<span class="fc" id="L338">                        Path path = DefaultBidirPathExtractor.extractPath(graph, weighting, fromSPTEntry, toSPTEntry, weight);</span>
+
+                        // for now do not add alternatives to set, if we do we need to remove then on alternatives.clear too (see below)
+                        // AtomicInteger tid = addToMap(traversalIDMap, path);
+                        // int tid = traversalMode.createTraversalId(path.calcEdges().get(0), false);
+<span class="fc" id="L343">                        alternatives.add(new AlternativeInfo(sortBy, path, fromEE, toEE, shareWeight, altNames));</span>
+
+<span class="fc" id="L345">                        Collections.sort(alternatives, ALT_COMPARATOR);</span>
+<span class="pc bpc" id="L346" title="1 of 2 branches missed.">                        if (alternatives.get(0) != bestAlt)</span>
+<span class="nc" id="L347">                            throw new IllegalStateException(&quot;best path should be always first entry &quot; + bestAlt.path.getWeight() + &quot; vs &quot; + alternatives.get(0).path.getWeight());</span>
+
+<span class="fc bfc" id="L349" title="All 2 branches covered.">                        if (alternatives.size() &gt; maxPaths)</span>
+<span class="fc" id="L350">                            alternatives.subList(maxPaths, alternatives.size()).clear();</span>
+                    }
+                }
+
+<span class="fc" id="L354">                return true;</span>
+            }
+
+            /**
+             * Extract path until we stumble over an existing traversal id
+             */
+            SPTEntry getFirstShareEE(SPTEntry startEE, boolean reverse) {
+<span class="fc bfc" id="L361" title="All 2 branches covered.">                while (startEE.parent != null) {</span>
+                    // TODO we could make use of traversal ID directly if stored in SPTEntry
+<span class="fc" id="L363">                    int tid = traversalMode.createTraversalId(graph.getEdgeIteratorState(startEE.edge, startEE.parent.adjNode), reverse);</span>
+<span class="fc bfc" id="L364" title="All 2 branches covered.">                    if (isAlreadyExisting(tid))</span>
+<span class="fc" id="L365">                        return startEE;</span>
+
+<span class="fc" id="L367">                    startEE = startEE.parent;</span>
+<span class="fc" id="L368">                }</span>
+
+<span class="fc" id="L370">                return startEE;</span>
+            }
+
+            /**
+             * This method returns true if the specified tid is already existent in the
+             * traversalIDMap
+             */
+            boolean isAlreadyExisting(final int tid) {
+<span class="fc" id="L378">                final AtomicBoolean exists = new AtomicBoolean(false);</span>
+<span class="fc" id="L379">                traversalIdMap.forEach(new IntObjectPredicate&lt;IntSet&gt;() {</span>
+                    @Override
+                    public boolean apply(int key, IntSet set) {
+<span class="fc bfc" id="L382" title="All 2 branches covered.">                        if (set.contains(tid)) {</span>
+<span class="fc" id="L383">                            exists.set(true);</span>
+<span class="fc" id="L384">                            return false;</span>
+                        }
+<span class="fc" id="L386">                        return true;</span>
+                    }
+                });
+
+<span class="fc" id="L390">                return exists.get();</span>
+            }
+
+            /**
+             * Return the current worst weight for all alternatives
+             */
+            double getWorstSortBy() {
+<span class="pc bpc" id="L397" title="1 of 2 branches missed.">                if (alternatives.isEmpty())</span>
+<span class="nc" id="L398">                    throw new IllegalStateException(&quot;Empty alternative list cannot happen&quot;);</span>
+<span class="fc" id="L399">                return alternatives.get(alternatives.size() - 1).sortBy;</span>
+            }
+
+            // returns true if fromSPTEntry is identical to the specified best path
+            boolean isBestPath(SPTEntry fromSPTEntry) {
+<span class="fc bfc" id="L404" title="All 2 branches covered.">                if (traversalMode.isEdgeBased()) {</span>
+<span class="fc bfc" id="L405" title="All 2 branches covered.">                    if (GHUtility.getEdgeFromEdgeKey(startTID.get()) == fromSPTEntry.edge) {</span>
+<span class="pc bpc" id="L406" title="1 of 2 branches missed.">                        if (fromSPTEntry.parent == null)</span>
+<span class="nc" id="L407">                            throw new IllegalStateException(&quot;best path must have no parent but was non-null: &quot; + fromSPTEntry);</span>
+<span class="pc bpc" id="L408" title="3 of 4 branches missed.">                        if (bestEntry.get() != null &amp;&amp; bestEntry.get().edge != fromSPTEntry.edge)</span>
+<span class="nc" id="L409">                            throw new IllegalStateException(&quot;there can be only one best entry but was &quot; + fromSPTEntry + &quot; vs old: &quot; + bestEntry.get()</span>
+<span class="nc" id="L410">                                    + &quot; &quot; + graph.getEdgeIteratorState(fromSPTEntry.edge, fromSPTEntry.adjNode).fetchWayGeometry(FetchMode.ALL));</span>
+<span class="fc" id="L411">                        bestEntry.set(fromSPTEntry);</span>
+<span class="fc" id="L412">                        return true;</span>
+                    }
+
+<span class="fc bfc" id="L415" title="All 2 branches covered.">                } else if (fromSPTEntry.parent == null) {</span>
+<span class="pc bpc" id="L416" title="1 of 2 branches missed.">                    if (startTID.get() != fromSPTEntry.adjNode)</span>
+<span class="nc" id="L417">                        throw new IllegalStateException(&quot;Start traversal ID has to be identical to root edge entry &quot;</span>
+                                + &quot;which is the plateau start of the best path but was: &quot; + startTID + &quot; vs. adjNode: &quot; + fromSPTEntry.adjNode);
+<span class="pc bpc" id="L419" title="1 of 2 branches missed.">                    if (bestEntry.get() != null)</span>
+<span class="nc" id="L420">                        throw new IllegalStateException(&quot;there can be only one best entry but was &quot; + fromSPTEntry + &quot; vs old: &quot; + bestEntry.get()</span>
+<span class="nc" id="L421">                                + &quot; &quot; + graph.getEdgeIteratorState(fromSPTEntry.edge, fromSPTEntry.adjNode).fetchWayGeometry(FetchMode.ALL));</span>
+<span class="fc" id="L422">                    bestEntry.set(fromSPTEntry);</span>
+<span class="fc" id="L423">                    return true;</span>
+                }
+
+<span class="fc" id="L426">                return false;</span>
+            }
+        });
+
+<span class="fc" id="L430">        return alternatives;</span>
+    }
+
+    /**
+     * This method adds the traversal IDs of the specified path as set to the specified map.
+     */
+    AtomicInteger addToMap(GHIntObjectHashMap&lt;IntSet&gt; map, Path path) {
+<span class="fc" id="L437">        IntSet set = new GHIntHashSet();</span>
+<span class="fc" id="L438">        final AtomicInteger startTID = new AtomicInteger(-1);</span>
+<span class="fc bfc" id="L439" title="All 2 branches covered.">        for (EdgeIteratorState iterState : path.calcEdges()) {</span>
+<span class="fc" id="L440">            int tid = traversalMode.createTraversalId(iterState, false);</span>
+<span class="fc" id="L441">            set.add(tid);</span>
+<span class="fc bfc" id="L442" title="All 2 branches covered.">            if (startTID.get() &lt; 0) {</span>
+                // for node based traversal we need to explicitly add base node as starting node and to list
+<span class="fc bfc" id="L444" title="All 2 branches covered.">                if (!traversalMode.isEdgeBased()) {</span>
+<span class="fc" id="L445">                    tid = iterState.getBaseNode();</span>
+<span class="fc" id="L446">                    set.add(tid);</span>
+                }
+
+<span class="fc" id="L449">                startTID.set(tid);</span>
+            }
+<span class="fc" id="L451">        }</span>
+<span class="fc" id="L452">        map.put(startTID.get(), set);</span>
+<span class="fc" id="L453">        return startTID;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

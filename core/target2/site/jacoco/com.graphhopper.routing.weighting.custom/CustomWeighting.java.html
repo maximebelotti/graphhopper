@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CustomWeighting.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting.custom</a> &gt; <span class="el_source">CustomWeighting.java</span></div><h1>CustomWeighting.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.weighting.custom;
+
+import com.graphhopper.routing.weighting.TurnCostProvider;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.util.CustomModel;
+import com.graphhopper.util.EdgeIteratorState;
+
+import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PROVIDER;
+
+/**
+ * The CustomWeighting allows adjusting the edge weights relative to those we'd obtain for a given base flag encoder.
+ * For example a car flag encoder already provides speeds and access flags for every edge depending on certain edge
+ * properties. By default the CustomWeighting simply makes use of these values, but it is possible to adjust them by
+ * setting up rules that apply changes depending on the edges' encoded values.
+ * &lt;p&gt;
+ * The formula for the edge weights is as follows:
+ * &lt;p&gt;
+ * weight = distance/speed + distance_costs + stress_costs
+ * &lt;p&gt;
+ * The first term simply corresponds to the time it takes to travel along the edge.
+ * The second term adds a fixed per-distance cost that is proportional to the distance but *independent* of the edge
+ * properties, i.e. it reads
+ * &lt;p&gt;
+ * distance_costs = distance * distance_influence
+ * &lt;p&gt;
+ * The third term is also proportional to the distance but compared to the second it describes additional costs that *do*
+ * depend on the edge properties. It can represent any kind of costs that depend on the edge (like inconvenience or
+ * dangers encountered on 'high-stress' roads for bikes, toll roads (because they cost money), stairs (because they are
+ * awkward when going by bike) etc.). This 'stress' term reads
+ * &lt;p&gt;
+ * stress_costs = distance * stress_per_meter
+ * &lt;p&gt;
+ * and just like the distance term it describes costs measured in seconds. When modelling it, one always has to 'convert'
+ * the costs into some time equivalent (e.g. for toll roads one has to think about how much money can be spent to save
+ * a certain amount of time). Note that the distance_costs described by the second term in general cannot be properly
+ * described by the stress costs, because the distance term allows increasing the per-distance costs per-se (regardless
+ * of the type of the road). Also note that both the second and third term are different to the first in that they can
+ * increase the edge costs but do *not* modify the travel *time*.
+ * &lt;p&gt;
+ * Instead of letting you set the speed directly, `CustomWeighting` allows changing the speed relative to the speed we
+ * get from the base flag encoder. The stress costs can be specified by using a factor between 0 and 1 that is called
+ * 'priority'.
+ * &lt;p&gt;
+ * Therefore the full edge weight formula reads:
+ * &lt;pre&gt;
+ * weight = distance / (base_speed * speed_factor * priority)
+ *        + distance * distance_influence
+ * &lt;/pre&gt;
+ * &lt;p&gt;
+ * The open parameters that we can adjust are therefore: speed_factor, priority and distance_influence and they are
+ * specified via the `{@link CustomModel}`. The speed can also be restricted to a maximum value, in which case the value
+ * calculated via the speed_factor is simply overwritten. Edges that are not accessible according to the access flags of
+ * the base vehicle always get assigned an infinite weight and this cannot be changed (yet) using this weighting.
+ */
+public final class CustomWeighting implements Weighting {
+    public static final String NAME = &quot;custom&quot;;
+
+    /**
+     * Converting to seconds is not necessary but makes adding other penalties easier (e.g. turn
+     * costs or traffic light costs etc)
+     */
+    private final static double SPEED_CONV = 3.6;
+    private final double distanceInfluence;
+    private final double headingPenaltySeconds;
+    private final EdgeToDoubleMapping edgeToSpeedMapping;
+    private final EdgeToDoubleMapping edgeToPriorityMapping;
+    private final TurnCostProvider turnCostProvider;
+    private final MaxCalc maxPrioCalc;
+    private final MaxCalc maxSpeedCalc;
+
+<span class="fc" id="L88">    public CustomWeighting(TurnCostProvider turnCostProvider, Parameters parameters) {</span>
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">        if (!Weighting.isValidName(getName()))</span>
+<span class="nc" id="L90">            throw new IllegalStateException(&quot;Not a valid name for a Weighting: &quot; + getName());</span>
+<span class="fc" id="L91">        this.turnCostProvider = turnCostProvider;</span>
+
+<span class="fc" id="L93">        this.edgeToSpeedMapping = parameters.getEdgeToSpeedMapping();</span>
+<span class="fc" id="L94">        this.maxSpeedCalc = parameters.getMaxSpeedCalc();</span>
+
+<span class="fc" id="L96">        this.edgeToPriorityMapping = parameters.getEdgeToPriorityMapping();</span>
+<span class="fc" id="L97">        this.maxPrioCalc = parameters.getMaxPrioCalc();</span>
+
+<span class="fc" id="L99">        this.headingPenaltySeconds = parameters.getHeadingPenaltySeconds();</span>
+
+        // given unit is s/km -&gt; convert to s/m
+<span class="fc" id="L102">        this.distanceInfluence = parameters.getDistanceInfluence() / 1000.0;</span>
+<span class="pc bpc" id="L103" title="1 of 2 branches missed.">        if (this.distanceInfluence &lt; 0)</span>
+<span class="nc" id="L104">            throw new IllegalArgumentException(&quot;distance_influence cannot be negative &quot; + this.distanceInfluence);</span>
+<span class="fc" id="L105">    }</span>
+
+    @Override
+    public double calcMinWeightPerDistance() {
+<span class="fc" id="L109">        return 1d / (maxSpeedCalc.calcMax() / SPEED_CONV) / maxPrioCalc.calcMax() + distanceInfluence;</span>
+    }
+
+    @Override
+    public double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse) {
+<span class="fc" id="L114">        double priority = edgeToPriorityMapping.get(edgeState, reverse);</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">        if (priority == 0) return Double.POSITIVE_INFINITY;</span>
+
+<span class="fc" id="L117">        final double distance = edgeState.getDistance();</span>
+<span class="fc" id="L118">        double seconds = calcSeconds(distance, edgeState, reverse);</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        if (Double.isInfinite(seconds)) return Double.POSITIVE_INFINITY;</span>
+        // add penalty at start/stop/via points
+<span class="fc bfc" id="L121" title="All 2 branches covered.">        if (edgeState.get(EdgeIteratorState.UNFAVORED_EDGE)) seconds += headingPenaltySeconds;</span>
+<span class="fc" id="L122">        double distanceCosts = distance * distanceInfluence;</span>
+<span class="pc bpc" id="L123" title="1 of 2 branches missed.">        if (Double.isInfinite(distanceCosts)) return Double.POSITIVE_INFINITY;</span>
+<span class="fc" id="L124">        return seconds / priority + distanceCosts;</span>
+    }
+
+    double calcSeconds(double distance, EdgeIteratorState edgeState, boolean reverse) {
+<span class="fc" id="L128">        double speed = edgeToSpeedMapping.get(edgeState, reverse);</span>
+<span class="fc bfc" id="L129" title="All 2 branches covered.">        if (speed == 0)</span>
+<span class="fc" id="L130">            return Double.POSITIVE_INFINITY;</span>
+<span class="pc bpc" id="L131" title="1 of 2 branches missed.">        if (speed &lt; 0)</span>
+<span class="nc" id="L132">            throw new IllegalArgumentException(&quot;Speed cannot be negative&quot;);</span>
+
+<span class="fc" id="L134">        return distance / speed * SPEED_CONV;</span>
+    }
+
+    @Override
+    public long calcEdgeMillis(EdgeIteratorState edgeState, boolean reverse) {
+<span class="fc" id="L139">        return Math.round(calcSeconds(edgeState.getDistance(), edgeState, reverse) * 1000);</span>
+    }
+
+    @Override
+    public double calcTurnWeight(int inEdge, int viaNode, int outEdge) {
+<span class="fc" id="L144">        return turnCostProvider.calcTurnWeight(inEdge, viaNode, outEdge);</span>
+    }
+
+    @Override
+    public long calcTurnMillis(int inEdge, int viaNode, int outEdge) {
+<span class="fc" id="L149">        return turnCostProvider.calcTurnMillis(inEdge, viaNode, outEdge);</span>
+    }
+
+    @Override
+    public boolean hasTurnCosts() {
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        return turnCostProvider != NO_TURN_COST_PROVIDER;</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="fc" id="L159">        return NAME;</span>
+    }
+
+    @FunctionalInterface
+    public interface EdgeToDoubleMapping {
+        double get(EdgeIteratorState edge, boolean reverse);
+    }
+
+    @FunctionalInterface
+    public interface MaxCalc {
+        double calcMax();
+    }
+
+    public static class Parameters {
+        private final EdgeToDoubleMapping edgeToSpeedMapping;
+        private final EdgeToDoubleMapping edgeToPriorityMapping;
+        private final MaxCalc maxSpeedCalc;
+        private final MaxCalc maxPrioCalc;
+        private final double distanceInfluence;
+        private final double headingPenaltySeconds;
+
+        public Parameters(EdgeToDoubleMapping edgeToSpeedMapping, MaxCalc maxSpeedCalc,
+                          EdgeToDoubleMapping edgeToPriorityMapping, MaxCalc maxPrioCalc,
+<span class="fc" id="L182">                          double distanceInfluence, double headingPenaltySeconds) {</span>
+<span class="fc" id="L183">            this.edgeToSpeedMapping = edgeToSpeedMapping;</span>
+<span class="fc" id="L184">            this.maxSpeedCalc = maxSpeedCalc;</span>
+<span class="fc" id="L185">            this.edgeToPriorityMapping = edgeToPriorityMapping;</span>
+<span class="fc" id="L186">            this.maxPrioCalc = maxPrioCalc;</span>
+<span class="fc" id="L187">            this.distanceInfluence = distanceInfluence;</span>
+<span class="fc" id="L188">            this.headingPenaltySeconds = headingPenaltySeconds;</span>
+<span class="fc" id="L189">        }</span>
+
+        public EdgeToDoubleMapping getEdgeToSpeedMapping() {
+<span class="fc" id="L192">            return edgeToSpeedMapping;</span>
+        }
+
+        public EdgeToDoubleMapping getEdgeToPriorityMapping() {
+<span class="fc" id="L196">            return edgeToPriorityMapping;</span>
+        }
+
+        public MaxCalc getMaxSpeedCalc() {
+<span class="fc" id="L200">            return maxSpeedCalc;</span>
+        }
+
+        public MaxCalc getMaxPrioCalc() {
+<span class="fc" id="L204">            return maxPrioCalc;</span>
+        }
+
+        public double getDistanceInfluence() {
+<span class="fc" id="L208">            return distanceInfluence;</span>
+        }
+
+        public double getHeadingPenaltySeconds() {
+<span class="fc" id="L212">            return headingPenaltySeconds;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AStarBidirection.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AStarBidirection.java</span></div><h1>AStarBidirection.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.AStar.AStarEntry;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.BalancedWeightApproximator;
+import com.graphhopper.routing.weighting.BeelineWeightApproximator;
+import com.graphhopper.routing.weighting.WeightApproximator;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.DistancePlaneProjection;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.Parameters;
+
+/**
+ * This class implements a bidirectional A* algorithm. It is interesting to note that a
+ * bidirectional dijkstra is far more efficient than a single direction one. The same does not hold
+ * for a bidirectional A* as the heuristic can not be as tight.
+ * &lt;p&gt;
+ * See http://research.microsoft.com/apps/pubs/default.aspx?id=64511
+ * http://i11www.iti.uni-karlsruhe.de/_media/teaching/sommer2012/routenplanung/vorlesung4.pdf
+ * http://research.microsoft.com/pubs/64504/goldberg-sofsem07.pdf
+ * http://www.cs.princeton.edu/courses/archive/spr06/cos423/Handouts/EPP%20shortest%20path%20algorithms.pdf
+ * &lt;p&gt;
+ * and
+ * &lt;p&gt;
+ * 1. Ikeda, T., Hsu, M.-Y., Imai, H., Nishimura, S., Shimoura, H., Hashimoto, T., Tenmoku, K., and
+ * Mitoh, K. (1994). A fast algorithm for finding better routes by ai search techniques. In VNIS,
+ * pages 291–296.
+ * &lt;p&gt;
+ * 2. Whangbo, T. K. (2007). Efficient modified bidirectional a* algorithm for optimal route-
+ * finding. In IEA/AIE, volume 4570, pages 344–353. Springer.
+ * &lt;p&gt;
+ * or could we even use this three phase approach?
+ * www.lix.polytechnique.fr/~giacomon/papers/bidirtimedep.pdf
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ * @author jansoe
+ */
+public class AStarBidirection extends AbstractNonCHBidirAlgo {
+    private BalancedWeightApproximator weightApprox;
+    double stoppingCriterionOffset;
+
+    public AStarBidirection(Graph graph, Weighting weighting, TraversalMode tMode) {
+<span class="fc" id="L63">        super(graph, weighting, tMode);</span>
+<span class="fc" id="L64">        BeelineWeightApproximator defaultApprox = new BeelineWeightApproximator(nodeAccess, weighting);</span>
+<span class="fc" id="L65">        defaultApprox.setDistanceCalc(DistancePlaneProjection.DIST_PLANE);</span>
+<span class="fc" id="L66">        setApproximation(defaultApprox);</span>
+<span class="fc" id="L67">    }</span>
+
+    @Override
+    void init(int from, double fromWeight, int to, double toWeight) {
+<span class="fc" id="L71">        weightApprox.setFromTo(from, to);</span>
+<span class="fc" id="L72">        stoppingCriterionOffset = weightApprox.approximate(to, true) + weightApprox.getSlack();</span>
+<span class="fc" id="L73">        super.init(from, fromWeight, to, toWeight);</span>
+<span class="fc" id="L74">    }</span>
+
+    @Override
+    protected boolean finished() {
+<span class="fc bfc" id="L78" title="All 4 branches covered.">        if (finishedFrom || finishedTo)</span>
+<span class="fc" id="L79">            return true;</span>
+
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        return currFrom.weight + currTo.weight &gt;= bestWeight + stoppingCriterionOffset;</span>
+    }
+
+    @Override
+    protected SPTEntry createStartEntry(int node, double weight, boolean reverse) {
+<span class="fc" id="L86">        double heapWeight = weight + weightApprox.approximate(node, reverse);</span>
+<span class="fc" id="L87">        return new AStarEntry(EdgeIterator.NO_EDGE, node, heapWeight, weight);</span>
+    }
+
+    @Override
+    protected SPTEntry createEntry(EdgeIteratorState edge, double weight, SPTEntry parent, boolean reverse) {
+<span class="fc" id="L92">        int neighborNode = edge.getAdjNode();</span>
+<span class="fc" id="L93">        double heapWeight = weight + weightApprox.approximate(neighborNode, reverse);</span>
+<span class="fc" id="L94">        return new AStarEntry(edge.getEdge(), neighborNode, heapWeight, weight, parent);</span>
+    }
+
+    @Override
+    protected double calcWeight(EdgeIteratorState iter, SPTEntry currEdge, boolean reverse) {
+        // TODO performance: check if the node is already existent in the opposite direction
+        // then we could avoid the approximation as we already know the exact complete path!
+<span class="fc" id="L101">        return super.calcWeight(iter, currEdge, reverse);</span>
+    }
+
+    public WeightApproximator getApproximation() {
+<span class="nc" id="L105">        return weightApprox.getApproximation();</span>
+    }
+
+    public AStarBidirection setApproximation(WeightApproximator approx) {
+<span class="fc" id="L109">        weightApprox = new BalancedWeightApproximator(approx);</span>
+<span class="fc" id="L110">        return this;</span>
+    }
+
+    @Override
+    void setToDataStructures(AbstractBidirAlgo other) {
+<span class="nc" id="L115">        throw new UnsupportedOperationException();</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="fc" id="L120">        return Parameters.Algorithms.ASTAR_BI + &quot;|&quot; + weightApprox;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MaxWeightExceptParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">MaxWeightExceptParser.java</span></div><h1>MaxWeightExceptParser.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.routing.ev.EnumEncodedValue;
+import com.graphhopper.routing.ev.MaxWeightExcept;
+import com.graphhopper.routing.util.TransportationMode;
+import com.graphhopper.routing.util.parsers.helpers.OSMValueExtractor;
+import com.graphhopper.storage.IntsRef;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+import static com.graphhopper.routing.util.parsers.helpers.OSMValueExtractor.stringToTons;
+
+public class MaxWeightExceptParser implements TagParser {
+    private final EnumEncodedValue&lt;MaxWeightExcept&gt; mweEnc;
+<span class="fc" id="L18">    private static final List&lt;String&gt; HGV_RESTRICTIONS = OSMRoadAccessParser.toOSMRestrictions(TransportationMode.HGV).stream()</span>
+<span class="fc" id="L19">            .map(e -&gt; e + &quot;:conditional&quot;).collect(Collectors.toList());</span>
+
+<span class="fc" id="L21">    public MaxWeightExceptParser(EnumEncodedValue&lt;MaxWeightExcept&gt; mweEnc) {</span>
+<span class="fc" id="L22">        this.mweEnc = mweEnc;</span>
+<span class="fc" id="L23">    }</span>
+
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
+        // tagging like maxweight:conditional=no/none @ destination/delivery/forestry/service
+<span class="fc" id="L27">        String condValue = way.getTag(&quot;maxweight:conditional&quot;, &quot;&quot;);</span>
+<span class="fc bfc" id="L28" title="All 2 branches covered.">        if (!condValue.isEmpty()) {</span>
+<span class="fc" id="L29">            String[] values = condValue.split(&quot;@&quot;);</span>
+<span class="pc bpc" id="L30" title="1 of 2 branches missed.">            if (values.length == 2) {</span>
+<span class="fc" id="L31">                String key = values[0].trim();</span>
+<span class="fc" id="L32">                String value = values[1].trim();</span>
+<span class="pc bpc" id="L33" title="1 of 4 branches missed.">                if (&quot;no&quot;.equals(key) || &quot;none&quot;.equals(key)) {</span>
+<span class="pc bpc" id="L34" title="1 of 4 branches missed.">                    if (value.startsWith(&quot;(&quot;) &amp;&amp; value.endsWith(&quot;)&quot;)) value = value.substring(1, value.length() - 1);</span>
+<span class="fc" id="L35">                    mweEnc.setEnum(false, edgeId, edgeIntAccess, MaxWeightExcept.find(value));</span>
+<span class="fc" id="L36">                    return;</span>
+                }
+            }
+        }
+
+        // For tagging like vehicle:conditional=destination @ (weight&gt;3.5) AND maxweight=3.5
+        // For vehicle:conditional=no @ (weight&gt;3.5) =&gt; NONE is used, which is consistent with max_weight being set to 3.5 in this case
+<span class="fc bfc" id="L43" title="All 2 branches covered.">        for (String restriction : HGV_RESTRICTIONS) {</span>
+<span class="fc" id="L44">            String value = way.getTag(restriction, &quot;&quot;);</span>
+<span class="fc" id="L45">            int atIndex = value.indexOf(&quot;@&quot;);</span>
+<span class="fc bfc" id="L46" title="All 2 branches covered.">            if (atIndex &gt; 0) {</span>
+<span class="fc" id="L47">                double dec = OSMValueExtractor.conditionalWeightToTons(value);</span>
+                // set it only if the weight value is the same as in max_weight
+<span class="pc bpc" id="L49" title="1 of 2 branches missed.">                if (!Double.isNaN(dec)</span>
+<span class="fc bfc" id="L50" title="All 2 branches covered.">                        &amp;&amp; (stringToTons(way.getTag(&quot;maxweight&quot;, &quot;&quot;)) == dec</span>
+<span class="pc bpc" id="L51" title="1 of 2 branches missed.">                        || stringToTons(way.getTag(&quot;maxweightrating:hgv&quot;, &quot;&quot;)) == dec</span>
+<span class="pc bpc" id="L52" title="1 of 2 branches missed.">                        || stringToTons(way.getTag(&quot;maxgcweight&quot;, &quot;&quot;)) == dec)) {</span>
+<span class="fc" id="L53">                    mweEnc.setEnum(false, edgeId, edgeIntAccess, MaxWeightExcept.find(value.substring(0, atIndex).trim()));</span>
+<span class="fc" id="L54">                    break;</span>
+                }
+            }
+<span class="fc" id="L57">        }</span>
+<span class="fc" id="L58">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

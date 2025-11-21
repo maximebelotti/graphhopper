@@ -1,0 +1,559 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>KVStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.search</a> &gt; <span class="el_source">KVStorage.java</span></div><h1>KVStorage.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.search;
+
+import com.graphhopper.storage.DataAccess;
+import com.graphhopper.storage.Directory;
+import com.graphhopper.util.BitUtil;
+import com.graphhopper.util.Constants;
+import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.Helper;
+
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * This class stores key-value pairs in an append-only manner.
+ *
+ * @author Peter Karich
+ */
+<span class="fc" id="L35">public class KVStorage {</span>
+
+    private static final long EMPTY_POINTER = 0, START_POINTER = 1;
+    // Store the key index in 2 bytes. Use first 2 bits for marking fwd+bwd existence.
+    static final int MAX_UNIQUE_KEYS = (1 &lt;&lt; 14);
+    // Store string value as byte array and store the length into 1 byte
+    private static final int MAX_LENGTH = (1 &lt;&lt; 8) - 1;
+
+    private final Directory dir;
+    // It stores the mapping of &quot;key to index&quot; in the keys DataAccess. E.g. if your first key is &quot;some&quot; then we will
+    // store the mapping &quot;1-&gt;some&quot; there (the 0th index is skipped on purpose). As this map is 'small' the keys
+    // DataAccess is only used for long term storage, i.e. only in loadExisting and flush. For add and getAll we use
+    // keyToIndex, indexToClass and indexToClass.
+    private final DataAccess keys;
+
+    // The storage layout in the vals DataAccess for one Map of key-value pairs. For example the map:
+    // map = new HashMap(); map.put(&quot;some&quot;, &quot;value&quot;); map.put(&quot;some2&quot;, &quot;value2&quot;); is added via the method add, then we store:
+    // 2 (the size of the Map, 1 byte)
+    // --- now the first key-value pair:
+    // 1 (the keys index for &quot;some&quot;, 2 byte)
+    // 4 (the length of the bytes from &quot;some&quot;)
+    // &quot;some&quot; (the bytes from &quot;some&quot;)
+    // --- second key-value pair:
+    // 2 (the keys index for &quot;some2&quot;)
+    // 5 (the length of the bytes from &quot;some2&quot;)
+    // &quot;some2&quot; (the bytes from &quot;some2&quot;)
+
+    // So more generic: the values could be of dynamic length, fixed length like int or be duplicates:
+    // vals count      (1 byte)
+    // --- 1. key-value pair (store String or byte[] with dynamic length)
+    // key_idx_0       (2 byte, of which the first 2bits are to know if this is valid for fwd and/or bwd direction)
+    // val_length_0    (1 byte)
+    // val_0 (x bytes)
+    // --- 2. key-value pair (store int with fixed length)
+    // key_idx_1       (2 byte)
+    // int             (4 byte)
+    //
+    // Notes:
+    // 1. The key strings are limited MAX_UNIQUE_KEYS. A dynamic value has a maximum byte length of 255.
+    // 2. Every key can store values only of the same type
+    // 3. We need to loop through X entries to get the start val_x.
+    // 4. The key index (14 bits) is stored along with the availability (2 bits), i.e. whether they KeyValue is available in forward and/or backward directions
+    private final DataAccess vals;
+<span class="fc" id="L78">    private final Map&lt;String, Integer&gt; keyToIndex = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L79">    private final List&lt;Class&lt;?&gt;&gt; indexToClass = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L80">    private final List&lt;String&gt; indexToKey = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L81">    private final BitUtil bitUtil = BitUtil.LITTLE;</span>
+<span class="fc" id="L82">    private long bytePointer = START_POINTER;</span>
+<span class="fc" id="L83">    private long lastEntryPointer = -1;</span>
+    private Map&lt;String, KValue&gt; lastEntries;
+
+    /**
+     * Specify a larger cacheSize to reduce disk usage. Note that this increases the memory usage of this object.
+     */
+<span class="fc" id="L89">    public KVStorage(Directory dir, boolean edge) {</span>
+<span class="fc" id="L90">        this.dir = dir;</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        if (edge) {</span>
+<span class="fc" id="L92">            this.keys = dir.create(&quot;edgekv_keys&quot;, 10 * 1024);</span>
+<span class="fc" id="L93">            this.vals = dir.create(&quot;edgekv_vals&quot;);</span>
+        } else {
+<span class="fc" id="L95">            this.keys = dir.create(&quot;nodekv_keys&quot;, 10 * 1024);</span>
+<span class="fc" id="L96">            this.vals = dir.create(&quot;nodekv_vals&quot;);</span>
+        }
+<span class="fc" id="L98">    }</span>
+
+    public KVStorage create(long initBytes) {
+<span class="fc" id="L101">        keys.create(initBytes);</span>
+<span class="fc" id="L102">        vals.create(initBytes);</span>
+        // add special empty case to have a reliable duplicate detection via negative keyIndex
+<span class="fc" id="L104">        keyToIndex.put(&quot;&quot;, 0);</span>
+<span class="fc" id="L105">        indexToKey.add(&quot;&quot;);</span>
+<span class="fc" id="L106">        indexToClass.add(String.class);</span>
+<span class="fc" id="L107">        return this;</span>
+    }
+
+    public boolean loadExisting() {
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">        if (vals.loadExisting()) {</span>
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">            if (!keys.loadExisting())</span>
+<span class="nc" id="L113">                throw new IllegalStateException(&quot;Loaded values but cannot load keys&quot;);</span>
+<span class="fc" id="L114">            bytePointer = bitUtil.toLong(vals.getHeader(0), vals.getHeader(4));</span>
+<span class="fc" id="L115">            GHUtility.checkDAVersion(vals.getName(), Constants.VERSION_KV_STORAGE, vals.getHeader(8));</span>
+<span class="fc" id="L116">            GHUtility.checkDAVersion(keys.getName(), Constants.VERSION_KV_STORAGE, keys.getHeader(0));</span>
+
+            // load keys into memory
+<span class="fc" id="L119">            int count = keys.getShort(0);</span>
+<span class="fc" id="L120">            long keyBytePointer = 2;</span>
+<span class="fc bfc" id="L121" title="All 2 branches covered.">            for (int i = 0; i &lt; count; i++) {</span>
+<span class="fc" id="L122">                int keyLength = keys.getShort(keyBytePointer);</span>
+<span class="fc" id="L123">                keyBytePointer += 2;</span>
+<span class="fc" id="L124">                byte[] keyBytes = new byte[keyLength];</span>
+<span class="fc" id="L125">                keys.getBytes(keyBytePointer, keyBytes, keyLength);</span>
+<span class="fc" id="L126">                String valueStr = new String(keyBytes, Helper.UTF_CS);</span>
+<span class="fc" id="L127">                keyBytePointer += keyLength;</span>
+
+<span class="fc" id="L129">                keyToIndex.put(valueStr, keyToIndex.size());</span>
+<span class="fc" id="L130">                indexToKey.add(valueStr);</span>
+
+<span class="fc" id="L132">                int shortClassNameLength = 1;</span>
+<span class="fc" id="L133">                byte[] classBytes = new byte[shortClassNameLength];</span>
+<span class="fc" id="L134">                keys.getBytes(keyBytePointer, classBytes, shortClassNameLength);</span>
+<span class="fc" id="L135">                keyBytePointer += shortClassNameLength;</span>
+<span class="fc" id="L136">                indexToClass.add(shortNameToClass(new String(classBytes, Helper.UTF_CS)));</span>
+            }
+<span class="fc" id="L138">            return true;</span>
+        }
+
+<span class="nc" id="L141">        return false;</span>
+    }
+
+    Collection&lt;String&gt; getKeys() {
+<span class="fc" id="L145">        return indexToKey;</span>
+    }
+
+    private long setKVList(long currentPointer, final Map&lt;String, KValue&gt; entries) {
+<span class="pc bpc" id="L149" title="1 of 2 branches missed.">        if (currentPointer == EMPTY_POINTER) return currentPointer;</span>
+<span class="fc" id="L150">        currentPointer += 1; // skip stored count</span>
+<span class="fc bfc" id="L151" title="All 2 branches covered.">        for (Map.Entry&lt;String, KValue&gt; entry : entries.entrySet()) {</span>
+<span class="fc bfc" id="L152" title="All 2 branches covered.">            if (entry.getValue().fwdBwdEqual) {</span>
+<span class="fc" id="L153">                currentPointer = add(currentPointer, entry.getKey(), entry.getValue().fwdValue, true, true);</span>
+            } else {
+                // potentially add two internal values
+<span class="fc bfc" id="L156" title="All 2 branches covered.">                if (entry.getValue().fwdValue != null)</span>
+<span class="fc" id="L157">                    currentPointer = add(currentPointer, entry.getKey(), entry.getValue().fwdValue, true, false);</span>
+<span class="fc bfc" id="L158" title="All 2 branches covered.">                if (entry.getValue().bwdValue != null)</span>
+<span class="fc" id="L159">                    currentPointer = add(currentPointer, entry.getKey(), entry.getValue().bwdValue, false, true);</span>
+            }
+
+<span class="fc" id="L162">        }</span>
+<span class="fc" id="L163">        return currentPointer;</span>
+    }
+
+    long add(long currentPointer, String key, Object value, boolean fwd, boolean bwd) {
+<span class="pc bpc" id="L167" title="1 of 2 branches missed.">        if (key == null) throw new IllegalArgumentException(&quot;key cannot be null&quot;);</span>
+<span class="pc bpc" id="L168" title="1 of 2 branches missed.">        if (value == null)</span>
+<span class="nc" id="L169">            throw new IllegalArgumentException(&quot;value for key &quot; + key + &quot; cannot be null&quot;);</span>
+
+<span class="fc" id="L171">        Integer keyIndex = keyToIndex.get(key);</span>
+        Class&lt;?&gt; clazz;
+<span class="fc bfc" id="L173" title="All 2 branches covered.">        if (keyIndex == null) {</span>
+<span class="fc" id="L174">            keyIndex = keyToIndex.size();</span>
+<span class="fc bfc" id="L175" title="All 2 branches covered.">            if (keyIndex &gt;= MAX_UNIQUE_KEYS)</span>
+<span class="fc" id="L176">                throw new IllegalArgumentException(&quot;Cannot store more than &quot; + MAX_UNIQUE_KEYS + &quot; unique keys&quot;);</span>
+<span class="fc" id="L177">            keyToIndex.put(key, keyIndex);</span>
+<span class="fc" id="L178">            indexToKey.add(key);</span>
+<span class="fc" id="L179">            indexToClass.add(clazz = value.getClass());</span>
+        } else {
+<span class="fc" id="L181">            clazz = indexToClass.get(keyIndex);</span>
+<span class="pc bpc" id="L182" title="1 of 2 branches missed.">            if (clazz != value.getClass())</span>
+<span class="nc" id="L183">                throw new IllegalArgumentException(&quot;Class of value for key &quot; + key + &quot; must be &quot; + clazz.getSimpleName() + &quot; but was &quot; + value.getClass().getSimpleName());</span>
+        }
+
+<span class="fc" id="L186">        boolean hasDynLength = hasDynLength(clazz);</span>
+<span class="fc bfc" id="L187" title="All 2 branches covered.">        if (hasDynLength) {</span>
+            // optimization for empty string or empty byte array
+<span class="fc bfc" id="L189" title="All 4 branches covered.">            if (clazz.equals(String.class) &amp;&amp; ((String) value).isEmpty()</span>
+<span class="pc bpc" id="L190" title="1 of 4 branches missed.">                    || clazz.equals(byte[].class) &amp;&amp; ((byte[]) value).length == 0) {</span>
+<span class="fc" id="L191">                vals.ensureCapacity(currentPointer + 3);</span>
+<span class="fc" id="L192">                vals.setShort(currentPointer, keyIndex.shortValue());</span>
+                // ensure that also in case of MMap value is set to 0
+<span class="fc" id="L194">                vals.setByte(currentPointer + 2, (byte) 0);</span>
+<span class="fc" id="L195">                return currentPointer + 3;</span>
+            }
+        }
+
+<span class="fc" id="L199">        final byte[] valueBytes = getBytesForValue(clazz, value);</span>
+<span class="fc" id="L200">        vals.ensureCapacity(currentPointer + 2 + 1 + valueBytes.length);</span>
+<span class="fc bfc" id="L201" title="All 4 branches covered.">        vals.setShort(currentPointer, (short) (keyIndex &lt;&lt; 2 | (fwd ? 2 : 0) | (bwd ? 1 : 0)));</span>
+<span class="fc" id="L202">        currentPointer += 2;</span>
+<span class="fc bfc" id="L203" title="All 2 branches covered.">        if (hasDynLength) {</span>
+<span class="fc" id="L204">            vals.setByte(currentPointer, (byte) valueBytes.length);</span>
+<span class="fc" id="L205">            currentPointer++;</span>
+        }
+<span class="fc" id="L207">        vals.setBytes(currentPointer, valueBytes, valueBytes.length);</span>
+<span class="fc" id="L208">        return currentPointer + valueBytes.length;</span>
+    }
+
+    /**
+     * This method writes the specified entryMap (key-value pairs) into the storage. Please note that null keys or null
+     * values are rejected. The Class of a value can be only: byte[], String, int, long, float or double
+     * (or more precisely, their wrapper equivalent). For all other types an exception is thrown. The first call of add
+     * assigns a Class to every key in the Map and future calls of add will throw an exception if this Class differs.
+     *
+     * @return entryPointer with which you can later fetch the entryMap via the get or getAll method
+     */
+    public long add(final Map&lt;String, KValue&gt; entries) {
+<span class="pc bpc" id="L220" title="1 of 2 branches missed.">        if (entries == null) throw new IllegalArgumentException(&quot;specified List must not be null&quot;);</span>
+<span class="fc bfc" id="L221" title="All 2 branches covered.">        if (entries.isEmpty()) return EMPTY_POINTER;</span>
+<span class="pc bpc" id="L222" title="1 of 2 branches missed.">        else if (entries.size() &gt; 200)</span>
+<span class="nc" id="L223">            throw new IllegalArgumentException(&quot;Cannot store more than 200 entries per entry&quot;);</span>
+
+        // This is a very important &quot;compression&quot; mechanism because one OSM way is split into multiple edges and so we
+        // can often re-use the serialized key-value pairs of the previous edge.
+<span class="fc bfc" id="L227" title="All 2 branches covered.">        if (entries.equals(lastEntries)) return lastEntryPointer;</span>
+
+<span class="fc" id="L229">        int entryCount = 0;</span>
+<span class="fc bfc" id="L230" title="All 2 branches covered.">        for (Map.Entry&lt;String, KValue&gt; kv : entries.entrySet()) {</span>
+
+<span class="fc bfc" id="L232" title="All 2 branches covered.">            if (kv.getValue().fwdBwdEqual) {</span>
+<span class="fc" id="L233">                entryCount++;</span>
+            } else {
+                // note, if fwd and bwd are different we create two internal entries!
+<span class="fc bfc" id="L236" title="All 2 branches covered.">                if (kv.getValue().getFwd() != null) entryCount++;</span>
+<span class="fc bfc" id="L237" title="All 2 branches covered.">                if (kv.getValue().getBwd() != null) entryCount++;</span>
+            }
+
+            // If the Class of a value is unknown it should already fail here, before we modify internal data. (see #2597#discussion_r896469840)
+<span class="fc bfc" id="L241" title="All 2 branches covered.">            if (keyToIndex.get(kv.getKey()) != null) {</span>
+<span class="fc bfc" id="L242" title="All 2 branches covered.">                if (kv.getValue().fwdValue != null)</span>
+<span class="fc" id="L243">                    getBytesForValue(indexToClass.get(keyToIndex.get(kv.getKey())), kv.getValue().fwdValue);</span>
+<span class="fc bfc" id="L244" title="All 2 branches covered.">                if (kv.getValue().bwdValue != null)</span>
+<span class="fc" id="L245">                    getBytesForValue(indexToClass.get(keyToIndex.get(kv.getKey())), kv.getValue().bwdValue);</span>
+            }
+<span class="fc" id="L247">        }</span>
+
+<span class="fc" id="L249">        lastEntries = entries;</span>
+<span class="fc" id="L250">        lastEntryPointer = bytePointer;</span>
+<span class="fc" id="L251">        vals.ensureCapacity(bytePointer + 1);</span>
+<span class="fc" id="L252">        vals.setByte(bytePointer, (byte) entryCount);</span>
+<span class="fc" id="L253">        bytePointer = setKVList(bytePointer, entries);</span>
+<span class="pc bpc" id="L254" title="1 of 2 branches missed.">        if (bytePointer &lt; 0)</span>
+<span class="nc" id="L255">            throw new IllegalStateException(&quot;Negative bytePointer in KVStorage&quot;);</span>
+<span class="fc" id="L256">        return lastEntryPointer;</span>
+    }
+
+    public Map&lt;String, KValue&gt; getAll(final long entryPointer) {
+<span class="pc bpc" id="L260" title="1 of 2 branches missed.">        if (entryPointer &lt; 0)</span>
+<span class="nc" id="L261">            throw new IllegalStateException(&quot;Pointer to access KVStorage cannot be negative:&quot; + entryPointer);</span>
+
+<span class="fc bfc" id="L263" title="All 2 branches covered.">        if (entryPointer == EMPTY_POINTER) return Collections.emptyMap();</span>
+
+<span class="fc" id="L265">        int keyCount = vals.getByte(entryPointer) &amp; 0xFF;</span>
+<span class="pc bpc" id="L266" title="1 of 2 branches missed.">        if (keyCount == 0) return Collections.emptyMap();</span>
+
+<span class="fc" id="L268">        Map&lt;String, KValue&gt; map = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L269">        long tmpPointer = entryPointer + 1;</span>
+<span class="fc" id="L270">        AtomicInteger sizeOfObject = new AtomicInteger();</span>
+<span class="fc bfc" id="L271" title="All 2 branches covered.">        for (int i = 0; i &lt; keyCount; i++) {</span>
+<span class="fc" id="L272">            int currentKeyIndexRaw = vals.getShort(tmpPointer);</span>
+<span class="fc bfc" id="L273" title="All 2 branches covered.">            boolean bwd = (currentKeyIndexRaw &amp; 1) == 1;</span>
+<span class="fc bfc" id="L274" title="All 2 branches covered.">            boolean fwd = (currentKeyIndexRaw &amp; 2) == 2;</span>
+<span class="fc" id="L275">            int currentKeyIndex = currentKeyIndexRaw &gt;&gt;&gt; 2;</span>
+<span class="fc" id="L276">            tmpPointer += 2;</span>
+
+<span class="fc" id="L278">            Object object = deserializeObj(sizeOfObject, tmpPointer, indexToClass.get(currentKeyIndex));</span>
+<span class="fc" id="L279">            tmpPointer += sizeOfObject.get();</span>
+<span class="fc" id="L280">            String key = indexToKey.get(currentKeyIndex);</span>
+<span class="fc" id="L281">            KValue oldValue = map.get(key);</span>
+<span class="fc bfc" id="L282" title="All 2 branches covered.">            if (oldValue != null)</span>
+<span class="pc bpc" id="L283" title="2 of 4 branches missed.">                map.put(key, new KValue(fwd ? object : oldValue.fwdValue, bwd ? object : oldValue.bwdValue));</span>
+<span class="fc bfc" id="L284" title="All 4 branches covered.">            else if (fwd &amp;&amp; bwd)</span>
+<span class="fc" id="L285">                map.put(key, new KValue(object));</span>
+            else
+<span class="fc bfc" id="L287" title="All 4 branches covered.">                map.put(key, new KValue(fwd ? object : null, bwd ? object : null));</span>
+        }
+
+<span class="fc" id="L290">        return map;</span>
+    }
+
+    /**
+     * Please note that this method ignores potentially different tags for forward and backward direction. To avoid this
+     * use {@link #getAll(long)} instead.
+     */
+    public Map&lt;String, Object&gt; getMap(final long entryPointer) {
+<span class="pc bpc" id="L298" title="1 of 2 branches missed.">        if (entryPointer &lt; 0)</span>
+<span class="nc" id="L299">            throw new IllegalStateException(&quot;Pointer to access KVStorage cannot be negative:&quot; + entryPointer);</span>
+
+<span class="pc bpc" id="L301" title="1 of 2 branches missed.">        if (entryPointer == EMPTY_POINTER) return Collections.emptyMap();</span>
+
+<span class="fc" id="L303">        int keyCount = vals.getByte(entryPointer) &amp; 0xFF;</span>
+<span class="pc bpc" id="L304" title="1 of 2 branches missed.">        if (keyCount == 0) return Collections.emptyMap();</span>
+
+<span class="fc" id="L306">        HashMap&lt;String, Object&gt; map = new HashMap&lt;&gt;(keyCount);</span>
+<span class="fc" id="L307">        long tmpPointer = entryPointer + 1;</span>
+<span class="fc" id="L308">        AtomicInteger sizeOfObject = new AtomicInteger();</span>
+<span class="fc bfc" id="L309" title="All 2 branches covered.">        for (int i = 0; i &lt; keyCount; i++) {</span>
+<span class="fc" id="L310">            int currentKeyIndexRaw = vals.getShort(tmpPointer);</span>
+<span class="fc" id="L311">            int currentKeyIndex = currentKeyIndexRaw &gt;&gt;&gt; 2;</span>
+<span class="fc" id="L312">            tmpPointer += 2;</span>
+
+<span class="fc" id="L314">            Object object = deserializeObj(sizeOfObject, tmpPointer, indexToClass.get(currentKeyIndex));</span>
+<span class="fc" id="L315">            tmpPointer += sizeOfObject.get();</span>
+<span class="fc" id="L316">            String key = indexToKey.get(currentKeyIndex);</span>
+<span class="fc" id="L317">            map.put(key, object);</span>
+        }
+
+<span class="fc" id="L320">        return map;</span>
+    }
+
+    private boolean hasDynLength(Class&lt;?&gt; clazz) {
+<span class="fc bfc" id="L324" title="All 4 branches covered.">        return clazz.equals(String.class) || clazz.equals(byte[].class);</span>
+    }
+
+    private int getFixLength(Class&lt;?&gt; clazz) {
+<span class="fc bfc" id="L328" title="All 4 branches covered.">        if (clazz.equals(Integer.class) || clazz.equals(Float.class)) return 4;</span>
+<span class="pc bpc" id="L329" title="1 of 4 branches missed.">        else if (clazz.equals(Long.class) || clazz.equals(Double.class)) return 8;</span>
+<span class="nc" id="L330">        else throw new IllegalArgumentException(&quot;unknown class &quot; + clazz);</span>
+    }
+
+    private byte[] getBytesForValue(Class&lt;?&gt; clazz, Object value) {
+        byte[] bytes;
+<span class="fc bfc" id="L335" title="All 2 branches covered.">        if (clazz.equals(String.class)) {</span>
+<span class="fc" id="L336">            bytes = ((String) value).getBytes(Helper.UTF_CS);</span>
+<span class="fc bfc" id="L337" title="All 2 branches covered.">            if (bytes.length &gt; MAX_LENGTH)</span>
+<span class="fc" id="L338">                throw new IllegalArgumentException(&quot;bytes.length cannot be &gt; &quot; + MAX_LENGTH + &quot; but was &quot; + bytes.length + &quot;. String:&quot; + value);</span>
+<span class="fc bfc" id="L339" title="All 2 branches covered.">        } else if (clazz.equals(byte[].class)) {</span>
+<span class="fc" id="L340">            bytes = (byte[]) value;</span>
+<span class="fc bfc" id="L341" title="All 2 branches covered.">            if (bytes.length &gt; MAX_LENGTH)</span>
+<span class="fc" id="L342">                throw new IllegalArgumentException(&quot;bytes.length cannot be &gt; &quot; + MAX_LENGTH + &quot; but was &quot; + bytes.length);</span>
+<span class="fc bfc" id="L343" title="All 2 branches covered.">        } else if (clazz.equals(Integer.class)) {</span>
+<span class="fc" id="L344">            return bitUtil.fromInt((int) value);</span>
+<span class="fc bfc" id="L345" title="All 2 branches covered.">        } else if (clazz.equals(Long.class)) {</span>
+<span class="fc" id="L346">            return bitUtil.fromLong((long) value);</span>
+<span class="fc bfc" id="L347" title="All 2 branches covered.">        } else if (clazz.equals(Float.class)) {</span>
+<span class="fc" id="L348">            return bitUtil.fromFloat((float) value);</span>
+<span class="fc bfc" id="L349" title="All 2 branches covered.">        } else if (clazz.equals(Double.class)) {</span>
+<span class="fc" id="L350">            return bitUtil.fromDouble((double) value);</span>
+        } else
+<span class="fc" id="L352">            throw new IllegalArgumentException(&quot;The Class of a value was &quot; + clazz.getSimpleName() + &quot;, currently supported: byte[], String, int, long, float and double&quot;);</span>
+<span class="fc" id="L353">        return bytes;</span>
+    }
+
+    private String classToShortName(Class&lt;?&gt; clazz) {
+<span class="fc bfc" id="L357" title="All 2 branches covered.">        if (clazz.equals(String.class)) return &quot;S&quot;;</span>
+<span class="pc bpc" id="L358" title="1 of 2 branches missed.">        else if (clazz.equals(Integer.class)) return &quot;i&quot;;</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">        else if (clazz.equals(Long.class)) return &quot;l&quot;;</span>
+<span class="nc bnc" id="L360" title="All 2 branches missed.">        else if (clazz.equals(Float.class)) return &quot;f&quot;;</span>
+<span class="nc bnc" id="L361" title="All 2 branches missed.">        else if (clazz.equals(Double.class)) return &quot;d&quot;;</span>
+<span class="nc bnc" id="L362" title="All 2 branches missed.">        else if (clazz.equals(byte[].class)) return &quot;[&quot;;</span>
+<span class="nc" id="L363">        else throw new IllegalArgumentException(&quot;Cannot find short name. Unknown class &quot; + clazz);</span>
+    }
+
+    private Class&lt;?&gt; shortNameToClass(String name) {
+<span class="fc bfc" id="L367" title="All 2 branches covered.">        if (name.equals(&quot;S&quot;)) return String.class;</span>
+<span class="pc bpc" id="L368" title="1 of 2 branches missed.">        else if (name.equals(&quot;i&quot;)) return Integer.class;</span>
+<span class="nc bnc" id="L369" title="All 2 branches missed.">        else if (name.equals(&quot;l&quot;)) return Long.class;</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">        else if (name.equals(&quot;f&quot;)) return Float.class;</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">        else if (name.equals(&quot;d&quot;)) return Double.class;</span>
+<span class="nc bnc" id="L372" title="All 2 branches missed.">        else if (name.equals(&quot;[&quot;)) return byte[].class;</span>
+<span class="nc" id="L373">        else throw new IllegalArgumentException(&quot;Cannot find class. Unknown short name &quot; + name);</span>
+    }
+
+    /**
+     * This method creates an Object (type Class) which is located at the specified pointer
+     */
+    private Object deserializeObj(AtomicInteger sizeOfObject, long pointer, Class&lt;?&gt; clazz) {
+<span class="fc bfc" id="L380" title="All 2 branches covered.">        if (hasDynLength(clazz)) {</span>
+<span class="fc" id="L381">            int valueLength = vals.getByte(pointer) &amp; 0xFF;</span>
+<span class="fc" id="L382">            pointer++;</span>
+<span class="fc" id="L383">            byte[] valueBytes = new byte[valueLength];</span>
+<span class="fc" id="L384">            vals.getBytes(pointer, valueBytes, valueBytes.length);</span>
+<span class="fc bfc" id="L385" title="All 2 branches covered.">            if (sizeOfObject != null)</span>
+<span class="fc" id="L386">                sizeOfObject.set(1 + valueLength); // For String and byte[] we store the length and the value</span>
+<span class="fc bfc" id="L387" title="All 2 branches covered.">            if (clazz.equals(String.class)) return new String(valueBytes, Helper.UTF_CS);</span>
+<span class="pc bpc" id="L388" title="1 of 2 branches missed.">            else if (clazz.equals(byte[].class)) return valueBytes;</span>
+<span class="nc" id="L389">            throw new IllegalArgumentException();</span>
+        } else {
+<span class="fc" id="L391">            byte[] valueBytes = new byte[getFixLength(clazz)];</span>
+<span class="fc" id="L392">            vals.getBytes(pointer, valueBytes, valueBytes.length);</span>
+<span class="fc bfc" id="L393" title="All 2 branches covered.">            if (clazz.equals(Integer.class)) {</span>
+<span class="fc bfc" id="L394" title="All 2 branches covered.">                if (sizeOfObject != null) sizeOfObject.set(4);</span>
+<span class="fc" id="L395">                return bitUtil.toInt(valueBytes, 0);</span>
+<span class="fc bfc" id="L396" title="All 2 branches covered.">            } else if (clazz.equals(Long.class)) {</span>
+<span class="fc bfc" id="L397" title="All 2 branches covered.">                if (sizeOfObject != null) sizeOfObject.set(8);</span>
+<span class="fc" id="L398">                return bitUtil.toLong(valueBytes, 0);</span>
+<span class="fc bfc" id="L399" title="All 2 branches covered.">            } else if (clazz.equals(Float.class)) {</span>
+<span class="fc bfc" id="L400" title="All 2 branches covered.">                if (sizeOfObject != null) sizeOfObject.set(4);</span>
+<span class="fc" id="L401">                return bitUtil.toFloat(valueBytes, 0);</span>
+<span class="pc bpc" id="L402" title="1 of 2 branches missed.">            } else if (clazz.equals(Double.class)) {</span>
+<span class="fc bfc" id="L403" title="All 2 branches covered.">                if (sizeOfObject != null) sizeOfObject.set(8);</span>
+<span class="fc" id="L404">                return bitUtil.toDouble(valueBytes, 0);</span>
+            } else {
+<span class="nc" id="L406">                throw new IllegalArgumentException(&quot;unknown class &quot; + clazz);</span>
+            }
+        }
+    }
+
+    public Object get(final long entryPointer, String key, boolean reverse) {
+<span class="pc bpc" id="L412" title="1 of 2 branches missed.">        if (entryPointer &lt; 0)</span>
+<span class="nc" id="L413">            throw new IllegalStateException(&quot;Pointer to access KVStorage cannot be negative:&quot; + entryPointer);</span>
+
+<span class="fc bfc" id="L415" title="All 2 branches covered.">        if (entryPointer == EMPTY_POINTER) return null;</span>
+
+<span class="fc" id="L417">        Integer keyIndex = keyToIndex.get(key);</span>
+<span class="fc bfc" id="L418" title="All 2 branches covered.">        if (keyIndex == null) return null; // key wasn't stored before</span>
+
+<span class="fc" id="L420">        int keyCount = vals.getByte(entryPointer) &amp; 0xFF;</span>
+<span class="pc bpc" id="L421" title="1 of 2 branches missed.">        if (keyCount == 0) return null; // no entries</span>
+
+<span class="fc" id="L423">        long tmpPointer = entryPointer + 1;</span>
+<span class="fc bfc" id="L424" title="All 2 branches covered.">        for (int i = 0; i &lt; keyCount; i++) {</span>
+<span class="fc" id="L425">            int currentKeyIndexRaw = vals.getShort(tmpPointer);</span>
+<span class="fc bfc" id="L426" title="All 2 branches covered.">            boolean bwd = (currentKeyIndexRaw &amp; 1) == 1;</span>
+<span class="fc bfc" id="L427" title="All 2 branches covered.">            boolean fwd = (currentKeyIndexRaw &amp; 2) == 2;</span>
+<span class="fc" id="L428">            int currentKeyIndex = currentKeyIndexRaw &gt;&gt;&gt; 2;</span>
+
+<span class="pc bpc" id="L430" title="1 of 2 branches missed.">            assert currentKeyIndex &lt; indexToKey.size() : &quot;invalid key index &quot; + currentKeyIndex + &quot;&gt;=&quot; + indexToKey.size() + &quot;, entryPointer=&quot; + entryPointer + &quot;, max=&quot; + bytePointer;</span>
+<span class="fc" id="L431">            tmpPointer += 2;</span>
+<span class="fc bfc" id="L432" title="All 10 branches covered.">            if ((!reverse &amp;&amp; fwd || reverse &amp;&amp; bwd) &amp;&amp; currentKeyIndex == keyIndex) {</span>
+<span class="fc" id="L433">                return deserializeObj(null, tmpPointer, indexToClass.get(keyIndex));</span>
+            }
+
+            // skip to next entry of same edge via skipping the real value
+<span class="fc" id="L437">            Class&lt;?&gt; clazz = indexToClass.get(currentKeyIndex);</span>
+<span class="fc bfc" id="L438" title="All 2 branches covered.">            int valueLength = hasDynLength(clazz) ? 1 + vals.getByte(tmpPointer) &amp; 0xFF : getFixLength(clazz);</span>
+<span class="fc" id="L439">            tmpPointer += valueLength;</span>
+        }
+
+        // value for specified key does not exist for the specified pointer
+<span class="fc" id="L443">        return null;</span>
+    }
+
+    public void flush() {
+<span class="fc" id="L447">        keys.ensureCapacity(2);</span>
+<span class="fc" id="L448">        keys.setShort(0, (short) keyToIndex.size());</span>
+<span class="fc" id="L449">        long keyBytePointer = 2;</span>
+<span class="fc bfc" id="L450" title="All 2 branches covered.">        for (int i = 0; i &lt; indexToKey.size(); i++) {</span>
+<span class="fc" id="L451">            String key = indexToKey.get(i);</span>
+<span class="fc" id="L452">            byte[] keyBytes = getBytesForValue(String.class, key);</span>
+<span class="fc" id="L453">            keys.ensureCapacity(keyBytePointer + 2 + keyBytes.length);</span>
+<span class="fc" id="L454">            keys.setShort(keyBytePointer, (short) keyBytes.length);</span>
+<span class="fc" id="L455">            keyBytePointer += 2;</span>
+
+<span class="fc" id="L457">            keys.setBytes(keyBytePointer, keyBytes, keyBytes.length);</span>
+<span class="fc" id="L458">            keyBytePointer += keyBytes.length;</span>
+
+<span class="fc" id="L460">            Class&lt;?&gt; clazz = indexToClass.get(i);</span>
+<span class="fc" id="L461">            byte[] clazzBytes = getBytesForValue(String.class, classToShortName(clazz));</span>
+<span class="pc bpc" id="L462" title="1 of 2 branches missed.">            if (clazzBytes.length != 1)</span>
+<span class="nc" id="L463">                throw new IllegalArgumentException(&quot;class name byte length must be 1 but was &quot; + clazzBytes.length);</span>
+<span class="fc" id="L464">            keys.ensureCapacity(keyBytePointer + 1);</span>
+<span class="fc" id="L465">            keys.setBytes(keyBytePointer, clazzBytes, 1);</span>
+<span class="fc" id="L466">            keyBytePointer += 1;</span>
+        }
+<span class="fc" id="L468">        keys.setHeader(0, Constants.VERSION_KV_STORAGE);</span>
+<span class="fc" id="L469">        keys.flush();</span>
+
+<span class="fc" id="L471">        vals.setHeader(0, bitUtil.getIntLow(bytePointer));</span>
+<span class="fc" id="L472">        vals.setHeader(4, bitUtil.getIntHigh(bytePointer));</span>
+<span class="fc" id="L473">        vals.setHeader(8, Constants.VERSION_KV_STORAGE);</span>
+<span class="fc" id="L474">        vals.flush();</span>
+<span class="fc" id="L475">    }</span>
+
+    public void clear() {
+<span class="fc" id="L478">        dir.remove(keys.getName());</span>
+<span class="fc" id="L479">        dir.remove(vals.getName());</span>
+<span class="fc" id="L480">    }</span>
+
+    public void close() {
+<span class="fc" id="L483">        keys.close();</span>
+<span class="fc" id="L484">        vals.close();</span>
+<span class="fc" id="L485">    }</span>
+
+    public boolean isClosed() {
+<span class="pc bpc" id="L488" title="3 of 4 branches missed.">        return vals.isClosed() &amp;&amp; keys.isClosed();</span>
+    }
+
+    public long getCapacity() {
+<span class="fc" id="L492">        return vals.getCapacity() + keys.getCapacity();</span>
+    }
+
+    public static class KValue {
+        private final Object fwdValue;
+        private final Object bwdValue;
+        final boolean fwdBwdEqual;
+
+<span class="fc" id="L500">        public KValue(Object obj) {</span>
+<span class="fc bfc" id="L501" title="All 2 branches covered.">            if (obj == null)</span>
+<span class="fc" id="L502">                throw new IllegalArgumentException(&quot;Object cannot be null if forward and backward is both true&quot;);</span>
+<span class="fc" id="L503">            fwdValue = bwdValue = obj;</span>
+<span class="fc" id="L504">            fwdBwdEqual = true;</span>
+<span class="fc" id="L505">        }</span>
+
+<span class="fc" id="L507">        public KValue(Object fwd, Object bwd) {</span>
+<span class="fc" id="L508">            fwdValue = fwd;</span>
+<span class="fc" id="L509">            bwdValue = bwd;</span>
+<span class="pc bpc" id="L510" title="1 of 6 branches missed.">            if (fwdValue != null &amp;&amp; bwdValue != null &amp;&amp; fwd.getClass() != bwd.getClass())</span>
+<span class="nc" id="L511">                throw new IllegalArgumentException(&quot;If both values are not null they have to be they same class but was: &quot;</span>
+<span class="nc" id="L512">                        + fwdValue.getClass() + &quot; vs &quot; + bwdValue.getClass());</span>
+<span class="pc bpc" id="L513" title="1 of 4 branches missed.">            if (fwdValue == null &amp;&amp; bwdValue == null)</span>
+<span class="nc" id="L514">                throw new IllegalArgumentException(&quot;If both values are null just do not store them&quot;);</span>
+<span class="fc" id="L515">            fwdBwdEqual = false;</span>
+<span class="fc" id="L516">        }</span>
+
+        public Object getFwd() {
+<span class="fc" id="L519">            return fwdValue;</span>
+        }
+
+        public Object getBwd() {
+<span class="fc" id="L523">            return bwdValue;</span>
+        }
+
+        @Override
+        public boolean equals(Object o) {
+<span class="pc bpc" id="L528" title="1 of 2 branches missed.">            if (this == o) return true;</span>
+<span class="pc bpc" id="L529" title="1 of 4 branches missed.">            if (o == null || getClass() != o.getClass()) return false;</span>
+<span class="fc" id="L530">            KValue value = (KValue) o;</span>
+            // due to check in constructor we can assume that fwdValue and bwdValue are of same type.
+            // I.e. if one is a byte array the other is too.
+<span class="pc bpc" id="L533" title="1 of 4 branches missed.">            if (fwdValue instanceof byte[] || bwdValue instanceof byte[])</span>
+<span class="pc bpc" id="L534" title="4 of 6 branches missed.">                return fwdBwdEqual == value.fwdBwdEqual &amp;&amp; (Arrays.equals((byte[]) fwdValue, (byte[]) value.fwdValue) || Arrays.equals((byte[]) bwdValue, (byte[]) value.bwdValue));</span>
+
+<span class="pc bpc" id="L536" title="1 of 6 branches missed.">            return fwdBwdEqual == value.fwdBwdEqual &amp;&amp; Objects.equals(fwdValue, value.fwdValue) &amp;&amp; Objects.equals(bwdValue, value.bwdValue);</span>
+        }
+
+        @Override
+        public int hashCode() {
+<span class="nc" id="L541">            return Objects.hash(fwdValue, bwdValue, fwdBwdEqual);</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="fc bfc" id="L546" title="All 2 branches covered.">            return fwdBwdEqual ? fwdValue.toString() : fwdValue + &quot; | &quot; + bwdValue;</span>
+        }
+    }
+
+    /**
+     * This method limits the specified String value to the length currently accepted for values in the KVStorage.
+     */
+    public static String cutString(String value) {
+<span class="fc" id="L554">        byte[] bytes = value.getBytes(Helper.UTF_CS);</span>
+        // See #2609 and test why we use a value &lt; 255
+<span class="fc bfc" id="L556" title="All 2 branches covered.">        return bytes.length &gt; 250 ? new String(bytes, 0, 250, Helper.UTF_CS) : value;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

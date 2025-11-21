@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AngleCalc.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">AngleCalc.java</span></div><h1>AngleCalc.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import static java.lang.Math.cos;
+import static java.lang.Math.toRadians;
+
+/**
+ * Calculates the angle of a turn, defined by three points. The fast atan2 method is from Jim Shima,
+ * 1999, http://www.dspguru.com/dsp/tricks/fixed-point-atan2-with-self-normalization
+ * and stands under public domain.
+ *
+ * @author Johannes Pelzer
+ * @author Peter Karich
+ */
+<span class="fc" id="L31">public class AngleCalc {</span>
+<span class="fc" id="L32">    public static final AngleCalc ANGLE_CALC = new AngleCalc();</span>
+    private final static double PI_4 = Math.PI / 4.0;
+    private final static double PI_2 = Math.PI / 2.0;
+    private final static double PI3_4 = 3.0 * Math.PI / 4.0;
+
+    static double atan2(double y, double x) {
+        // kludge to prevent 0/0 condition
+<span class="fc" id="L39">        double absY = Math.abs(y) + 1e-10;</span>
+        double r, angle;
+<span class="fc bfc" id="L41" title="All 2 branches covered.">        if (x &lt; 0.0) {</span>
+<span class="fc" id="L42">            r = (x + absY) / (absY - x);</span>
+<span class="fc" id="L43">            angle = PI3_4;</span>
+        } else {
+<span class="fc" id="L45">            r = (x - absY) / (x + absY);</span>
+<span class="fc" id="L46">            angle = PI_4;</span>
+        }
+
+<span class="fc" id="L49">        angle += (0.1963 * r * r - 0.9817) * r;</span>
+<span class="fc bfc" id="L50" title="All 2 branches covered.">        if (y &lt; 0.0)</span>
+            // negate if in quad III or IV
+<span class="fc" id="L52">            return -angle;</span>
+<span class="fc" id="L53">        return angle;</span>
+    }
+
+    public double calcOrientation(double lat1, double lon1, double lat2, double lon2) {
+<span class="fc" id="L57">        return calcOrientation(lat1, lon1, lat2, lon2, true);</span>
+    }
+
+    /**
+     * Return orientation of line relative to east.
+     *
+     * @param exact If false the atan gets calculated faster, but it might contain small errors
+     * @return Orientation in interval -pi to +pi where 0 is east and the &quot;bottom&quot; arc is negative
+     */
+    public double calcOrientation(double lat1, double lon1, double lat2, double lon2, boolean exact) {
+<span class="fc" id="L67">        double shrinkFactor = cos(toRadians((lat1 + lat2) / 2));</span>
+<span class="fc bfc" id="L68" title="All 2 branches covered.">        if (exact)</span>
+<span class="fc" id="L69">            return Math.atan2(lat2 - lat1, shrinkFactor * (lon2 - lon1));</span>
+        else
+<span class="fc" id="L71">            return atan2(lat2 - lat1, shrinkFactor * (lon2 - lon1));</span>
+    }
+
+    /**
+     * convert north based clockwise azimuth (0, 360) into x-axis/east based angle (-Pi, Pi)
+     */
+    public double convertAzimuth2xaxisAngle(double azimuth) {
+<span class="pc bpc" id="L78" title="2 of 4 branches missed.">        if (Double.compare(azimuth, 360) &gt; 0 || Double.compare(azimuth, 0) &lt; 0) {</span>
+<span class="nc" id="L79">            throw new IllegalArgumentException(&quot;Azimuth &quot; + azimuth + &quot; must be in (0, 360)&quot;);</span>
+        }
+<span class="fc" id="L81">        double angleXY = PI_2 - azimuth / 180. * Math.PI;</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">        if (angleXY &lt; -Math.PI)</span>
+<span class="fc" id="L83">            angleXY += 2 * Math.PI;</span>
+<span class="pc bpc" id="L84" title="1 of 2 branches missed.">        if (angleXY &gt; Math.PI)</span>
+<span class="nc" id="L85">            angleXY -= 2 * Math.PI;</span>
+<span class="fc" id="L86">        return angleXY;</span>
+    }
+
+    /**
+     * Change the representation of an orientation, so the difference to the given baseOrientation
+     * will be smaller or equal to PI (180 degree). This is achieved by adding or subtracting a
+     * 2*PI, so the direction of the orientation will not be changed
+     */
+    public double alignOrientation(double baseOrientation, double orientation) {
+        double resultOrientation;
+<span class="fc bfc" id="L96" title="All 2 branches covered.">        if (baseOrientation &gt;= 0) {</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">            if (orientation &lt; -Math.PI + baseOrientation)</span>
+<span class="fc" id="L98">                resultOrientation = orientation + 2 * Math.PI;</span>
+            else
+<span class="fc" id="L100">                resultOrientation = orientation;</span>
+
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        } else if (orientation &gt; +Math.PI + baseOrientation)</span>
+<span class="fc" id="L103">            resultOrientation = orientation - 2 * Math.PI;</span>
+        else
+<span class="fc" id="L105">            resultOrientation = orientation;</span>
+<span class="fc" id="L106">        return resultOrientation;</span>
+    }
+
+    /**
+     * Calculate the azimuth in degree for a line given by two coordinates. Direction in 'degree'
+     * where 0 is north, 90 is east, 180 is south and 270 is west.
+     */
+    public double calcAzimuth(double lat1, double lon1, double lat2, double lon2) {
+<span class="fc" id="L114">        double orientation = Math.PI / 2 - calcOrientation(lat1, lon1, lat2, lon2);</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">        if (orientation &lt; 0)</span>
+<span class="fc" id="L116">            orientation += 2 * Math.PI;</span>
+
+<span class="fc" id="L118">        return Math.toDegrees(Helper.round4(orientation)) % 360;</span>
+    }
+
+    public String azimuth2compassPoint(double azimuth) {
+
+        String cp;
+<span class="fc" id="L124">        double slice = 360.0 / 16;</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">        if (azimuth &lt; slice) {</span>
+<span class="nc" id="L126">            cp = &quot;N&quot;;</span>
+<span class="pc bpc" id="L127" title="1 of 2 branches missed.">        } else if (azimuth &lt; slice * 3) {</span>
+<span class="nc" id="L128">            cp = &quot;NE&quot;;</span>
+<span class="pc bpc" id="L129" title="1 of 2 branches missed.">        } else if (azimuth &lt; slice * 5) {</span>
+<span class="nc" id="L130">            cp = &quot;E&quot;;</span>
+<span class="pc bpc" id="L131" title="1 of 2 branches missed.">        } else if (azimuth &lt; slice * 7) {</span>
+<span class="nc" id="L132">            cp = &quot;SE&quot;;</span>
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">        } else if (azimuth &lt; slice * 9) {</span>
+<span class="fc" id="L134">            cp = &quot;S&quot;;</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        } else if (azimuth &lt; slice * 11) {</span>
+<span class="nc" id="L136">            cp = &quot;SW&quot;;</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">        } else if (azimuth &lt; slice * 13) {</span>
+<span class="nc" id="L138">            cp = &quot;W&quot;;</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">        } else if (azimuth &lt; slice * 15) {</span>
+<span class="nc" id="L140">            cp = &quot;NW&quot;;</span>
+        } else {
+<span class="nc" id="L142">            cp = &quot;N&quot;;</span>
+        }
+<span class="fc" id="L144">        return cp;</span>
+    }
+
+    /**
+     * @return true if the given vectors follow a clockwise order abc, bca or cab,
+     * false if the order is counter-clockwise cba, acb or bac, e.g. this returns true:
+     * a   b
+     * | /
+     * 0 - c
+     */
+    public boolean isClockwise(double aX, double aY, double bX, double bY, double cX, double cY) {
+        // simply compare angles between a,b and b,c
+<span class="fc" id="L156">        final double angleDiff = (cX - aX) * (bY - aY) - (cY - aY) * (bX - aX);</span>
+<span class="fc bfc" id="L157" title="All 2 branches covered.">        return angleDiff &lt; 0;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

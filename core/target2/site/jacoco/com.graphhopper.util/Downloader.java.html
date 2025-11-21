@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Downloader.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">Downloader.java</span></div><h1>Downloader.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.function.LongConsumer;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.Inflater;
+import java.util.zip.InflaterInputStream;
+
+/**
+ * @author Peter Karich
+ */
+public class Downloader {
+    private static final int BUFFER_SIZE = 8 * 1024;
+    private final String userAgent;
+<span class="fc" id="L34">    private String referrer = &quot;http://graphhopper.com&quot;;</span>
+<span class="fc" id="L35">    private String acceptEncoding = &quot;gzip, deflate&quot;;</span>
+<span class="fc" id="L36">    private int timeout = 4000;</span>
+
+<span class="fc" id="L38">    public Downloader(String userAgent) {</span>
+<span class="fc" id="L39">        this.userAgent = userAgent;</span>
+<span class="fc" id="L40">    }</span>
+
+    public static void main(String[] args) throws IOException {
+<span class="nc" id="L43">        new Downloader(&quot;GraphHopper Downloader&quot;).downloadAndUnzip(&quot;http://graphhopper.com/public/maps/0.1/europe_germany_berlin.ghz&quot;, &quot;somefolder&quot;,</span>
+<span class="nc" id="L44">                val -&gt; System.out.println(&quot;progress:&quot; + val));</span>
+<span class="nc" id="L45">    }</span>
+
+    public Downloader setTimeout(int timeout) {
+<span class="fc" id="L48">        this.timeout = timeout;</span>
+<span class="fc" id="L49">        return this;</span>
+    }
+
+    public Downloader setReferrer(String referrer) {
+<span class="nc" id="L53">        this.referrer = referrer;</span>
+<span class="nc" id="L54">        return this;</span>
+    }
+
+    /**
+     * This method initiates a connect call of the provided connection and returns the response
+     * stream. It only returns the error stream if it is available and readErrorStreamNoException is
+     * true otherwise it throws an IOException if an error happens. Furthermore it wraps the stream
+     * to decompress it if the connection content encoding is specified.
+     */
+    public InputStream fetch(HttpURLConnection connection, boolean readErrorStreamNoException) throws IOException {
+        // create connection but before reading get the correct inputstream based on the compression and if error
+<span class="nc" id="L65">        connection.connect();</span>
+
+        InputStream is;
+<span class="nc bnc" id="L68" title="All 6 branches missed.">        if (readErrorStreamNoException &amp;&amp; connection.getResponseCode() &gt;= 400 &amp;&amp; connection.getErrorStream() != null)</span>
+<span class="nc" id="L69">            is = connection.getErrorStream();</span>
+        else
+<span class="nc" id="L71">            is = connection.getInputStream();</span>
+
+<span class="nc bnc" id="L73" title="All 2 branches missed.">        if (is == null)</span>
+<span class="nc" id="L74">            throw new IOException(&quot;Stream is null. Message:&quot; + connection.getResponseMessage());</span>
+
+        // wrap
+        try {
+<span class="nc" id="L78">            String encoding = connection.getContentEncoding();</span>
+<span class="nc bnc" id="L79" title="All 4 branches missed.">            if (encoding != null &amp;&amp; encoding.equalsIgnoreCase(&quot;gzip&quot;))</span>
+<span class="nc" id="L80">                is = new GZIPInputStream(is, BUFFER_SIZE);</span>
+<span class="nc bnc" id="L81" title="All 4 branches missed.">            else if (encoding != null &amp;&amp; encoding.equalsIgnoreCase(&quot;deflate&quot;))</span>
+<span class="nc" id="L82">                is = new InflaterInputStream(is, new Inflater(true), BUFFER_SIZE);</span>
+<span class="nc" id="L83">        } catch (IOException ex) {</span>
+<span class="nc" id="L84">        }</span>
+
+<span class="nc" id="L86">        return is;</span>
+    }
+
+    public InputStream fetch(String url) throws IOException {
+<span class="nc" id="L90">        return fetch(createConnection(url), false);</span>
+    }
+
+    public HttpURLConnection createConnection(String urlStr) throws IOException {
+<span class="nc" id="L94">        URL url = new URL(urlStr);</span>
+<span class="nc" id="L95">        HttpURLConnection conn = (HttpURLConnection) url.openConnection();</span>
+        // Will yield in a POST request: conn.setDoOutput(true);
+<span class="nc" id="L97">        conn.setDoInput(true);</span>
+<span class="nc" id="L98">        conn.setUseCaches(true);</span>
+<span class="nc" id="L99">        conn.setRequestProperty(&quot;Referrer&quot;, referrer);</span>
+<span class="nc" id="L100">        conn.setRequestProperty(&quot;User-Agent&quot;, userAgent);</span>
+        // suggest respond to be gzipped or deflated (which is just another compression)
+        // http://stackoverflow.com/q/3932117
+<span class="nc" id="L103">        conn.setRequestProperty(&quot;Accept-Encoding&quot;, acceptEncoding);</span>
+<span class="nc" id="L104">        conn.setReadTimeout(timeout);</span>
+<span class="nc" id="L105">        conn.setConnectTimeout(timeout);</span>
+<span class="nc" id="L106">        return conn;</span>
+    }
+
+    public void downloadFile(String url, String toFile) throws IOException {
+<span class="nc" id="L110">        HttpURLConnection conn = createConnection(url);</span>
+<span class="nc" id="L111">        InputStream iStream = fetch(conn, false);</span>
+<span class="nc" id="L112">        BufferedOutputStream writer = new BufferedOutputStream(new FileOutputStream(toFile), BUFFER_SIZE);</span>
+<span class="nc" id="L113">        InputStream in = new BufferedInputStream(iStream, BUFFER_SIZE);</span>
+        try {
+<span class="nc" id="L115">            in.transferTo(writer);</span>
+        } finally {
+<span class="nc" id="L117">            Helper.close(iStream);</span>
+<span class="nc" id="L118">            Helper.close(writer);</span>
+<span class="nc" id="L119">            Helper.close(in);</span>
+        }
+<span class="nc" id="L121">    }</span>
+
+    public void downloadAndUnzip(String url, String toFolder, final LongConsumer progressListener) throws IOException {
+<span class="nc" id="L124">        HttpURLConnection conn = createConnection(url);</span>
+<span class="nc" id="L125">        final int length = conn.getContentLength();</span>
+<span class="nc" id="L126">        InputStream iStream = fetch(conn, false);</span>
+
+<span class="nc" id="L128">        new Unzipper().unzip(iStream, new File(toFolder), sumBytes -&gt; progressListener.accept((int) (100 * sumBytes / length)));</span>
+<span class="nc" id="L129">    }</span>
+
+    public String downloadAsString(String url, boolean readErrorStreamNoException) throws IOException {
+<span class="nc" id="L132">        return Helper.isToString(fetch(createConnection(url), readErrorStreamNoException));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

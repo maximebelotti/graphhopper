@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EncodingManager.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util</a> &gt; <span class="el_source">EncodingManager.java</span></div><h1>EncodingManager.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.util;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.graphhopper.jackson.Jackson;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.storage.IntsRef;
+import com.graphhopper.storage.StorableProperties;
+import com.graphhopper.util.Constants;
+
+import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Manager class to register encoder, assign their flag values and check objects with all encoders
+ * during parsing. Create one via:
+ * &lt;p&gt;
+ * EncodingManager.start(4).add(new CarFlagEncoder()).build();
+ *
+ * @author Peter Karich
+ * @author Nop
+ */
+public class EncodingManager implements EncodedValueLookup {
+    private final LinkedHashMap&lt;String, EncodedValue&gt; encodedValueMap;
+    private final LinkedHashMap&lt;String, EncodedValue&gt; turnEncodedValueMap;
+    private int bytesForFlags;
+    private int intsForTurnCostFlags;
+
+    public static void putEncodingManagerIntoProperties(EncodingManager encodingManager, StorableProperties properties) {
+<span class="fc" id="L51">        properties.put(&quot;graph.em.version&quot;, Constants.VERSION_EM);</span>
+<span class="fc" id="L52">        properties.put(&quot;graph.em.bytes_for_flags&quot;, encodingManager.bytesForFlags);</span>
+<span class="fc" id="L53">        properties.put(&quot;graph.em.ints_for_turn_cost_flags&quot;, encodingManager.intsForTurnCostFlags);</span>
+<span class="fc" id="L54">        properties.put(&quot;graph.encoded_values&quot;, encodingManager.toEncodedValuesAsString());</span>
+<span class="fc" id="L55">        properties.put(&quot;graph.turn_encoded_values&quot;, encodingManager.toTurnEncodedValuesAsString());</span>
+<span class="fc" id="L56">    }</span>
+
+    public static EncodingManager fromProperties(StorableProperties properties) {
+<span class="pc bpc" id="L59" title="1 of 2 branches missed.">        if (properties.containsVersion())</span>
+<span class="nc" id="L60">            throw new IllegalStateException(&quot;The GraphHopper file format is not compatible with the data you are &quot; +</span>
+                    &quot;trying to load. You either need to use an older version of GraphHopper or run a new import&quot;);
+
+<span class="fc" id="L63">        String versionStr = properties.get(&quot;graph.em.version&quot;);</span>
+<span class="pc bpc" id="L64" title="2 of 4 branches missed.">        if (versionStr.isEmpty() || !String.valueOf(Constants.VERSION_EM).equals(versionStr))</span>
+<span class="nc" id="L65">            throw new IllegalStateException(&quot;Incompatible encoding version. You need to use the same GraphHopper version you used to import the graph&quot; +</span>
+<span class="nc" id="L66">                    &quot; in '&quot; + properties.getDirectory().getLocation() + &quot;', delete the folder, or run a new import with another location. &quot;</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">                    + &quot; Stored encoding version: &quot; + (versionStr.isEmpty() ? &quot;missing&quot; : versionStr) + &quot;, used encoding version: &quot; + Constants.VERSION_EM);</span>
+<span class="fc" id="L68">        String encodedValueStr = properties.get(&quot;graph.encoded_values&quot;);</span>
+<span class="fc" id="L69">        ArrayNode evList = deserializeEncodedValueList(encodedValueStr);</span>
+<span class="fc" id="L70">        LinkedHashMap&lt;String, EncodedValue&gt; encodedValues = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L71">        evList.forEach(serializedEV -&gt; {</span>
+<span class="fc" id="L72">            EncodedValue encodedValue = EncodedValueSerializer.deserializeEncodedValue(serializedEV.textValue());</span>
+<span class="pc bpc" id="L73" title="1 of 2 branches missed.">            if (encodedValues.put(encodedValue.getName(), encodedValue) != null)</span>
+<span class="nc" id="L74">                throw new IllegalStateException(&quot;Duplicate encoded value name: &quot; + encodedValue.getName() + &quot; in: graph.encoded_values=&quot; + encodedValueStr);</span>
+<span class="fc" id="L75">        });</span>
+
+<span class="fc" id="L77">        String turnEncodedValueStr = properties.get(&quot;graph.turn_encoded_values&quot;);</span>
+<span class="fc" id="L78">        ArrayNode tevList = deserializeEncodedValueList(turnEncodedValueStr);</span>
+<span class="fc" id="L79">        LinkedHashMap&lt;String, EncodedValue&gt; turnEncodedValues = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L80">        tevList.forEach(serializedEV -&gt; {</span>
+<span class="nc" id="L81">            EncodedValue encodedValue = EncodedValueSerializer.deserializeEncodedValue(serializedEV.textValue());</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">            if (turnEncodedValues.put(encodedValue.getName(), encodedValue) != null)</span>
+<span class="nc" id="L83">                throw new IllegalStateException(&quot;Duplicate turn encoded value name: &quot; + encodedValue.getName() + &quot; in: graph.turn_encoded_values=&quot; + turnEncodedValueStr);</span>
+<span class="nc" id="L84">        });</span>
+
+<span class="fc" id="L86">        return new EncodingManager(getIntegerProperty(properties, &quot;graph.em.bytes_for_flags&quot;), getIntegerProperty(properties, &quot;graph.em.ints_for_turn_cost_flags&quot;), encodedValues,</span>
+                turnEncodedValues
+        );
+    }
+
+    private static int getIntegerProperty(StorableProperties properties, String key) {
+<span class="fc" id="L92">        String str = properties.get(key);</span>
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">        if (str.isEmpty())</span>
+<span class="nc" id="L94">            throw new IllegalStateException(&quot;Missing EncodingManager property: '&quot; + key + &quot;'&quot;);</span>
+<span class="fc" id="L95">        return Integer.parseInt(str);</span>
+    }
+
+    private static ArrayNode deserializeEncodedValueList(String encodedValueStr) {
+        try {
+<span class="fc" id="L100">            return Jackson.newObjectMapper().readValue(encodedValueStr, ArrayNode.class);</span>
+<span class="nc" id="L101">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L102">            throw new UncheckedIOException(e);</span>
+        }
+    }
+
+    /**
+     * Starts the build process of an EncodingManager
+     */
+    public static Builder start() {
+<span class="fc" id="L110">        return new Builder();</span>
+    }
+
+    public EncodingManager(int bytesForFlags, int intsForTurnCostFlags,
+                           LinkedHashMap&lt;String, EncodedValue&gt; encodedValueMap,
+<span class="fc" id="L115">                           LinkedHashMap&lt;String, EncodedValue&gt; turnEncodedValueMap) {</span>
+<span class="fc" id="L116">        this.encodedValueMap = encodedValueMap;</span>
+<span class="fc" id="L117">        this.turnEncodedValueMap = turnEncodedValueMap;</span>
+<span class="fc" id="L118">        this.bytesForFlags = bytesForFlags;</span>
+<span class="fc" id="L119">        this.intsForTurnCostFlags = intsForTurnCostFlags;</span>
+<span class="fc" id="L120">    }</span>
+
+    private EncodingManager() {
+<span class="fc" id="L123">        this(0, 0, new LinkedHashMap&lt;&gt;(), new LinkedHashMap&lt;&gt;());</span>
+<span class="fc" id="L124">    }</span>
+
+<span class="fc" id="L126">    public static class Builder {</span>
+<span class="fc" id="L127">        private final EncodedValue.InitializerConfig edgeConfig = new EncodedValue.InitializerConfig();</span>
+<span class="fc" id="L128">        private final EncodedValue.InitializerConfig turnCostConfig = new EncodedValue.InitializerConfig();</span>
+<span class="fc" id="L129">        private EncodingManager em = new EncodingManager();</span>
+
+        public Builder add(EncodedValue encodedValue) {
+<span class="fc" id="L132">            checkNotBuiltAlready();</span>
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">            if (em.hasEncodedValue(encodedValue.getName()))</span>
+<span class="nc" id="L134">                throw new IllegalArgumentException(&quot;EncodedValue already exists: &quot; + encodedValue.getName());</span>
+<span class="pc bpc" id="L135" title="1 of 2 branches missed.">            if (em.hasTurnEncodedValue(encodedValue.getName()))</span>
+<span class="nc" id="L136">                throw new IllegalArgumentException(&quot;Already defined as 'turn'-EncodedValue: &quot; + encodedValue.getName());</span>
+<span class="fc" id="L137">            encodedValue.init(edgeConfig);</span>
+<span class="fc" id="L138">            em.encodedValueMap.put(encodedValue.getName(), encodedValue);</span>
+<span class="fc" id="L139">            return this;</span>
+        }
+
+        public Builder addTurnCostEncodedValue(EncodedValue turnCostEnc) {
+<span class="fc" id="L143">            checkNotBuiltAlready();</span>
+<span class="pc bpc" id="L144" title="1 of 2 branches missed.">            if (em.hasTurnEncodedValue(turnCostEnc.getName()))</span>
+<span class="nc" id="L145">                throw new IllegalArgumentException(&quot;Already defined: &quot; + turnCostEnc.getName());</span>
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">            if (em.hasEncodedValue(turnCostEnc.getName()))</span>
+<span class="nc" id="L147">                throw new IllegalArgumentException(&quot;Already defined as EncodedValue: &quot; + turnCostEnc.getName());</span>
+<span class="fc" id="L148">            turnCostEnc.init(turnCostConfig);</span>
+<span class="fc" id="L149">            em.turnEncodedValueMap.put(turnCostEnc.getName(), turnCostEnc);</span>
+<span class="fc" id="L150">            return this;</span>
+        }
+
+        private void checkNotBuiltAlready() {
+<span class="pc bpc" id="L154" title="1 of 2 branches missed.">            if (em == null)</span>
+<span class="nc" id="L155">                throw new IllegalStateException(&quot;Cannot call method after Builder.build() was called&quot;);</span>
+<span class="fc" id="L156">        }</span>
+
+        public EncodingManager build() {
+<span class="fc" id="L159">            checkNotBuiltAlready();</span>
+<span class="fc" id="L160">            em.bytesForFlags = edgeConfig.getRequiredBytes();</span>
+<span class="fc" id="L161">            em.intsForTurnCostFlags = turnCostConfig.getRequiredInts();</span>
+<span class="fc" id="L162">            EncodingManager result = em;</span>
+<span class="fc" id="L163">            em = null;</span>
+<span class="fc" id="L164">            return result;</span>
+        }
+    }
+
+    public int getBytesForFlags() {
+<span class="fc" id="L169">        return bytesForFlags;</span>
+    }
+
+    public boolean hasEncodedValue(String key) {
+<span class="fc bfc" id="L173" title="All 2 branches covered.">        return encodedValueMap.get(key) != null;</span>
+    }
+
+    public boolean hasTurnEncodedValue(String key) {
+<span class="pc bpc" id="L177" title="1 of 2 branches missed.">        return turnEncodedValueMap.get(key) != null;</span>
+    }
+
+    /**
+     * @return list of all prefixes of xy_access and xy_average_speed encoded values.
+     */
+    public List&lt;String&gt; getVehicles() {
+<span class="fc" id="L184">        return getEncodedValues().stream()</span>
+<span class="fc" id="L185">                .filter(ev -&gt; ev.getName().endsWith(&quot;_access&quot;))</span>
+<span class="fc" id="L186">                .map(ev -&gt; ev.getName().replaceAll(&quot;_access&quot;, &quot;&quot;))</span>
+<span class="fc" id="L187">                .filter(v -&gt; getEncodedValues().stream().anyMatch(ev -&gt; ev.getName().contains(VehicleSpeed.key(v))))</span>
+<span class="fc" id="L188">                .collect(Collectors.toList());</span>
+    }
+
+    public String toEncodedValuesAsString() {
+<span class="fc" id="L192">        List&lt;String&gt; serializedEVsList = encodedValueMap.values().stream().map(EncodedValueSerializer::serializeEncodedValue).collect(Collectors.toList());</span>
+        try {
+<span class="fc" id="L194">            return Jackson.newObjectMapper().writeValueAsString(serializedEVsList);</span>
+<span class="nc" id="L195">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L196">            throw new UncheckedIOException(e);</span>
+        }
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L202">        return String.join(&quot;,&quot;, getVehicles());</span>
+    }
+
+    // TODO hide IntsRef even more in a later version: https://gist.github.com/karussell/f4c2b2b1191be978d7ee9ec8dd2cd48f
+    public IntsRef createEdgeFlags() {
+<span class="fc" id="L207">        return new IntsRef((int) Math.ceil((double) getBytesForFlags() / 4));</span>
+    }
+
+    public IntsRef createRelationFlags() {
+        // for backward compatibility use 2 ints
+<span class="fc" id="L212">        return new IntsRef(2);</span>
+    }
+
+    public boolean needsTurnCostsSupport() {
+<span class="fc bfc" id="L216" title="All 2 branches covered.">        return intsForTurnCostFlags &gt; 0;</span>
+    }
+
+    @Override
+    public List&lt;EncodedValue&gt; getEncodedValues() {
+<span class="fc" id="L221">        return Collections.unmodifiableList(new ArrayList&lt;&gt;(encodedValueMap.values()));</span>
+    }
+
+    @Override
+    public BooleanEncodedValue getBooleanEncodedValue(String key) {
+<span class="fc" id="L226">        return getEncodedValue(key, BooleanEncodedValue.class);</span>
+    }
+
+    @Override
+    public IntEncodedValue getIntEncodedValue(String key) {
+<span class="fc" id="L231">        return getEncodedValue(key, IntEncodedValue.class);</span>
+    }
+
+    @Override
+    public DecimalEncodedValue getDecimalEncodedValue(String key) {
+<span class="fc" id="L236">        return getEncodedValue(key, DecimalEncodedValue.class);</span>
+    }
+
+    @SuppressWarnings(&quot;unchecked&quot;)
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; EnumEncodedValue&lt;T&gt; getEnumEncodedValue(String key, Class&lt;T&gt; type) {
+<span class="fc" id="L242">        return getEncodedValue(key, EnumEncodedValue.class);</span>
+    }
+
+    @Override
+    public StringEncodedValue getStringEncodedValue(String key) {
+<span class="nc" id="L247">        return getEncodedValue(key, StringEncodedValue.class);</span>
+    }
+
+    @Override
+    public &lt;T extends EncodedValue&gt; T getEncodedValue(String key, Class&lt;T&gt; encodedValueType) {
+<span class="fc" id="L252">        EncodedValue ev = encodedValueMap.get(key);</span>
+        // todo: why do we not just return null when EV is missing? just like java.util.Map? -&gt; https://github.com/graphhopper/graphhopper/pull/2561#discussion_r859770067
+<span class="pc bpc" id="L254" title="1 of 2 branches missed.">        if (ev == null)</span>
+<span class="nc" id="L255">            throw new IllegalArgumentException(&quot;Cannot find EncodedValue '&quot; + key + &quot;' in collection: &quot; + encodedValueMap.keySet());</span>
+<span class="fc" id="L256">        return (T) ev;</span>
+    }
+
+    public List&lt;EncodedValue&gt; getTurnEncodedValues() {
+<span class="nc" id="L260">        return Collections.unmodifiableList(new ArrayList&lt;&gt;(turnEncodedValueMap.values()));</span>
+    }
+
+    public DecimalEncodedValue getTurnDecimalEncodedValue(String key) {
+<span class="fc" id="L264">        return getTurnEncodedValue(key, DecimalEncodedValue.class);</span>
+    }
+
+    public BooleanEncodedValue getTurnBooleanEncodedValue(String key) {
+<span class="fc" id="L268">        return getTurnEncodedValue(key, BooleanEncodedValue.class);</span>
+    }
+
+    public &lt;T extends EncodedValue&gt; T getTurnEncodedValue(String key, Class&lt;T&gt; encodedValueType) {
+<span class="fc" id="L272">        EncodedValue ev = turnEncodedValueMap.get(key);</span>
+        // todo: why do we not just return null when EV is missing? just like java.util.Map? -&gt; https://github.com/graphhopper/graphhopper/pull/2561#discussion_r859770067
+<span class="pc bpc" id="L274" title="1 of 2 branches missed.">        if (ev == null)</span>
+<span class="nc" id="L275">            throw new IllegalArgumentException(&quot;Cannot find Turn-EncodedValue &quot; + key + &quot; in collection: &quot; + encodedValueMap.keySet());</span>
+<span class="fc" id="L276">        return (T) ev;</span>
+    }
+
+    private String toTurnEncodedValuesAsString() {
+<span class="fc" id="L280">        List&lt;String&gt; serializedEVsList = turnEncodedValueMap.values().stream().map(EncodedValueSerializer::serializeEncodedValue).collect(Collectors.toList());</span>
+        try {
+<span class="fc" id="L282">            return Jackson.newObjectMapper().writeValueAsString(serializedEVsList);</span>
+<span class="nc" id="L283">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L284">            throw new UncheckedIOException(e);</span>
+        }
+    }
+
+    public static String getKey(String prefix, String str) {
+<span class="fc" id="L289">        return prefix + &quot;_&quot; + str;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

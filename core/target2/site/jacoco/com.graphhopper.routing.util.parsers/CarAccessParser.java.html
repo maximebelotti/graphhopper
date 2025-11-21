@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CarAccessParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">CarAccessParser.java</span></div><h1>CarAccessParser.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.util.FerrySpeedCalculator;
+import com.graphhopper.routing.util.TransportationMode;
+import com.graphhopper.routing.util.WayAccess;
+import com.graphhopper.util.PMap;
+
+import java.util.*;
+
+import static com.graphhopper.routing.util.parsers.OSMTemporalAccessParser.hasPermissiveTemporalRestriction;
+
+public class CarAccessParser extends AbstractAccessParser implements TagParser {
+
+<span class="fc" id="L33">    protected final Set&lt;String&gt; trackTypeValues = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L34">    protected final Set&lt;String&gt; highwayValues = new HashSet&lt;&gt;();</span>
+    protected final BooleanEncodedValue roundaboutEnc;
+
+    public CarAccessParser(EncodedValueLookup lookup, PMap properties) {
+<span class="fc" id="L38">        this(</span>
+<span class="fc" id="L39">                lookup.getBooleanEncodedValue(VehicleAccess.key(&quot;car&quot;)),</span>
+<span class="fc" id="L40">                lookup.getBooleanEncodedValue(Roundabout.KEY),</span>
+                properties,
+<span class="fc" id="L42">                OSMRoadAccessParser.toOSMRestrictions(TransportationMode.CAR)</span>
+        );
+<span class="fc" id="L44">    }</span>
+
+    public CarAccessParser(BooleanEncodedValue accessEnc,
+                           BooleanEncodedValue roundaboutEnc, PMap properties,
+                           List&lt;String&gt; restrictionsKeys) {
+<span class="fc" id="L49">        super(accessEnc, restrictionsKeys);</span>
+<span class="fc" id="L50">        this.roundaboutEnc = roundaboutEnc;</span>
+<span class="fc" id="L51">        restrictedValues.add(&quot;agricultural&quot;);</span>
+<span class="fc" id="L52">        restrictedValues.add(&quot;forestry&quot;);</span>
+<span class="fc" id="L53">        restrictedValues.add(&quot;delivery&quot;);</span>
+
+<span class="fc" id="L55">        blockPrivate(properties.getBool(&quot;block_private&quot;, true));</span>
+<span class="fc" id="L56">        blockFords(properties.getBool(&quot;block_fords&quot;, false));</span>
+
+<span class="fc" id="L58">        barriers.add(&quot;kissing_gate&quot;);</span>
+<span class="fc" id="L59">        barriers.add(&quot;fence&quot;);</span>
+<span class="fc" id="L60">        barriers.add(&quot;bollard&quot;);</span>
+<span class="fc" id="L61">        barriers.add(&quot;stile&quot;);</span>
+<span class="fc" id="L62">        barriers.add(&quot;turnstile&quot;);</span>
+<span class="fc" id="L63">        barriers.add(&quot;cycle_barrier&quot;);</span>
+<span class="fc" id="L64">        barriers.add(&quot;motorcycle_barrier&quot;);</span>
+<span class="fc" id="L65">        barriers.add(&quot;block&quot;);</span>
+<span class="fc" id="L66">        barriers.add(&quot;bus_trap&quot;);</span>
+<span class="fc" id="L67">        barriers.add(&quot;sump_buster&quot;);</span>
+<span class="fc" id="L68">        barriers.add(&quot;jersey_barrier&quot;);</span>
+
+<span class="fc" id="L70">        highwayValues.addAll(Arrays.asList(&quot;motorway&quot;, &quot;motorway_link&quot;, &quot;trunk&quot;, &quot;trunk_link&quot;,</span>
+                &quot;primary&quot;, &quot;primary_link&quot;, &quot;secondary&quot;, &quot;secondary_link&quot;, &quot;tertiary&quot;, &quot;tertiary_link&quot;,
+                &quot;unclassified&quot;, &quot;residential&quot;, &quot;living_street&quot;, &quot;service&quot;, &quot;road&quot;, &quot;track&quot;));
+
+<span class="fc" id="L74">        trackTypeValues.addAll(Arrays.asList(&quot;grade1&quot;, &quot;grade2&quot;, &quot;grade3&quot;, null));</span>
+<span class="fc" id="L75">    }</span>
+
+    public WayAccess getAccess(ReaderWay way) {
+        // TODO: Ferries have conditionals, like opening hours or are closed during some time in the year
+<span class="fc" id="L79">        String highwayValue = way.getTag(&quot;highway&quot;);</span>
+<span class="fc" id="L80">        int firstIndex = way.getFirstIndex(restrictionKeys);</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        String firstValue = firstIndex &lt; 0 ? &quot;&quot; : way.getTag(restrictionKeys.get(firstIndex), &quot;&quot;);</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">        if (highwayValue == null) {</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">            if (FerrySpeedCalculator.isFerry(way)) {</span>
+<span class="fc bfc" id="L84" title="All 2 branches covered.">                if (allowedValues.contains(firstValue) ||</span>
+                        // implied default is allowed only if foot and bicycle is not specified:
+<span class="pc bpc" id="L86" title="1 of 6 branches missed.">                        firstValue.isEmpty() &amp;&amp; !way.hasTag(&quot;foot&quot;) &amp;&amp; !way.hasTag(&quot;bicycle&quot;) ||</span>
+                        // if hgv is allowed then smaller trucks and cars are allowed too
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">                        way.hasTag(&quot;hgv&quot;, &quot;yes&quot;))</span>
+<span class="fc" id="L89">                    return WayAccess.FERRY;</span>
+<span class="fc bfc" id="L90" title="All 2 branches covered.">                if (restrictedValues.contains(firstValue))</span>
+<span class="fc" id="L91">                    return WayAccess.CAN_SKIP;</span>
+            }
+<span class="fc" id="L93">            return WayAccess.CAN_SKIP;</span>
+        }
+
+<span class="fc bfc" id="L96" title="All 4 branches covered.">        if (&quot;service&quot;.equals(highwayValue) &amp;&amp; &quot;emergency_access&quot;.equals(way.getTag(&quot;service&quot;)))</span>
+<span class="fc" id="L97">            return WayAccess.CAN_SKIP;</span>
+
+<span class="fc bfc" id="L99" title="All 4 branches covered.">        if (&quot;track&quot;.equals(highwayValue) &amp;&amp; !trackTypeValues.contains(way.getTag(&quot;tracktype&quot;)))</span>
+<span class="fc" id="L100">            return WayAccess.CAN_SKIP;</span>
+
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        if (!highwayValues.contains(highwayValue))</span>
+<span class="fc" id="L103">            return WayAccess.CAN_SKIP;</span>
+
+        // this is a very rare tagging which we should/could remove (the status key itself is described as &quot;vague&quot;)
+<span class="pc bpc" id="L106" title="2 of 4 branches missed.">        if (way.hasTag(&quot;impassable&quot;, &quot;yes&quot;) || way.hasTag(&quot;status&quot;, &quot;impassable&quot;))</span>
+<span class="nc" id="L107">            return WayAccess.CAN_SKIP;</span>
+
+        // multiple restrictions needs special handling
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        if (firstIndex &gt;= 0) {</span>
+<span class="fc" id="L111">            String[] restrict = firstValue.split(&quot;;&quot;);</span>
+            // if any of the values allows access then return early (regardless of the order)
+<span class="fc bfc" id="L113" title="All 2 branches covered.">            for (String value : restrict) {</span>
+<span class="fc bfc" id="L114" title="All 2 branches covered.">                if (allowedValues.contains(value))</span>
+<span class="fc" id="L115">                    return WayAccess.WAY;</span>
+            }
+<span class="fc bfc" id="L117" title="All 2 branches covered.">            for (String value : restrict) {</span>
+<span class="fc bfc" id="L118" title="All 4 branches covered.">                if (restrictedValues.contains(value) &amp;&amp; !hasPermissiveTemporalRestriction(way, firstIndex, restrictionKeys, allowedValues))</span>
+<span class="fc" id="L119">                    return WayAccess.CAN_SKIP;</span>
+            }
+        }
+
+<span class="pc bpc" id="L123" title="1 of 6 branches missed.">        if (isBlockFords() &amp;&amp; (&quot;ford&quot;.equals(highwayValue) || way.hasTag(&quot;ford&quot;)))</span>
+<span class="fc" id="L124">            return WayAccess.CAN_SKIP;</span>
+
+<span class="fc" id="L126">        return WayAccess.WAY;</span>
+    }
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way) {
+<span class="fc" id="L131">        WayAccess access = getAccess(way);</span>
+<span class="fc bfc" id="L132" title="All 2 branches covered.">        if (access.canSkip())</span>
+<span class="fc" id="L133">            return;</span>
+
+<span class="fc bfc" id="L135" title="All 2 branches covered.">        if (!access.isFerry()) {</span>
+<span class="fc" id="L136">            boolean isRoundabout = roundaboutEnc.getBool(false, edgeId, edgeIntAccess);</span>
+<span class="fc bfc" id="L137" title="All 4 branches covered.">            if (isOneway(way) || isRoundabout) {</span>
+<span class="fc bfc" id="L138" title="All 2 branches covered.">                if (isForwardOneway(way))</span>
+<span class="fc" id="L139">                    accessEnc.setBool(false, edgeId, edgeIntAccess, true);</span>
+<span class="fc bfc" id="L140" title="All 2 branches covered.">                if (isBackwardOneway(way))</span>
+<span class="fc" id="L141">                    accessEnc.setBool(true, edgeId, edgeIntAccess, true);</span>
+            } else {
+<span class="fc" id="L143">                accessEnc.setBool(false, edgeId, edgeIntAccess, true);</span>
+<span class="fc" id="L144">                accessEnc.setBool(true, edgeId, edgeIntAccess, true);</span>
+            }
+
+<span class="fc" id="L147">        } else {</span>
+<span class="fc" id="L148">            accessEnc.setBool(false, edgeId, edgeIntAccess, true);</span>
+<span class="fc" id="L149">            accessEnc.setBool(true, edgeId, edgeIntAccess, true);</span>
+        }
+
+<span class="fc bfc" id="L152" title="All 2 branches covered.">        if (way.hasTag(&quot;gh:barrier_edge&quot;)) {</span>
+<span class="fc" id="L153">            List&lt;Map&lt;String, Object&gt;&gt; nodeTags = way.getTag(&quot;node_tags&quot;, Collections.emptyList());</span>
+<span class="fc" id="L154">            handleBarrierEdge(edgeId, edgeIntAccess, nodeTags.get(0));</span>
+        }
+<span class="fc" id="L156">    }</span>
+
+    /**
+     * make sure that isOneway is called before
+     */
+    protected boolean isBackwardOneway(ReaderWay way) {
+<span class="fc bfc" id="L162" title="All 2 branches covered.">        return way.hasTag(&quot;oneway&quot;, &quot;-1&quot;)</span>
+<span class="fc bfc" id="L163" title="All 2 branches covered.">                || way.hasTag(&quot;vehicle:forward&quot;, restrictedValues)</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">                || way.hasTag(&quot;motor_vehicle:forward&quot;, restrictedValues);</span>
+    }
+
+    /**
+     * make sure that isOneway is called before
+     */
+    protected boolean isForwardOneway(ReaderWay way) {
+<span class="fc bfc" id="L171" title="All 2 branches covered.">        return !way.hasTag(&quot;oneway&quot;, &quot;-1&quot;)</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">                &amp;&amp; !way.hasTag(&quot;vehicle:forward&quot;, restrictedValues)</span>
+<span class="fc bfc" id="L173" title="All 2 branches covered.">                &amp;&amp; !way.hasTag(&quot;motor_vehicle:forward&quot;, restrictedValues);</span>
+    }
+
+    protected boolean isOneway(ReaderWay way) {
+<span class="fc bfc" id="L177" title="All 2 branches covered.">        return way.hasTag(&quot;oneway&quot;, ONEWAYS)</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">                || way.hasTag(&quot;vehicle:backward&quot;, restrictedValues)</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">                || way.hasTag(&quot;vehicle:forward&quot;, restrictedValues)</span>
+<span class="fc bfc" id="L180" title="All 2 branches covered.">                || way.hasTag(&quot;motor_vehicle:backward&quot;, restrictedValues)</span>
+<span class="fc bfc" id="L181" title="All 2 branches covered.">                || way.hasTag(&quot;motor_vehicle:forward&quot;, restrictedValues);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RoutingCHEdgeIteratorImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">RoutingCHEdgeIteratorImpl.java</span></div><h1>RoutingCHEdgeIteratorImpl.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.storage;
+
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.EdgeIteratorState;
+
+<span class="fc" id="L26">public class RoutingCHEdgeIteratorImpl extends RoutingCHEdgeIteratorStateImpl implements RoutingCHEdgeExplorer, RoutingCHEdgeIterator {</span>
+    private final BaseGraph.EdgeIteratorImpl baseIterator;
+    private final boolean outgoing;
+    private final boolean incoming;
+    private int nextEdgeId;
+
+    public static RoutingCHEdgeIteratorImpl outEdges(CHStorage chStore, BaseGraph baseGraph, Weighting weighting) {
+<span class="fc" id="L33">        return new RoutingCHEdgeIteratorImpl(chStore, baseGraph, weighting, true, false);</span>
+    }
+
+    public static RoutingCHEdgeIteratorImpl inEdges(CHStorage chStore, BaseGraph baseGraph, Weighting weighting) {
+<span class="fc" id="L37">        return new RoutingCHEdgeIteratorImpl(chStore, baseGraph, weighting, false, true);</span>
+    }
+
+    public RoutingCHEdgeIteratorImpl(CHStorage chStore, BaseGraph baseGraph, Weighting weighting, boolean outgoing, boolean incoming) {
+<span class="fc" id="L41">        super(chStore, baseGraph, new BaseGraph.EdgeIteratorImpl(baseGraph, EdgeFilter.ALL_EDGES), weighting);</span>
+<span class="fc" id="L42">        this.baseIterator = (BaseGraph.EdgeIteratorImpl) super.baseEdgeState;</span>
+<span class="fc" id="L43">        this.outgoing = outgoing;</span>
+<span class="fc" id="L44">        this.incoming = incoming;</span>
+<span class="fc" id="L45">    }</span>
+
+    @Override
+    EdgeIteratorState edgeState() {
+<span class="fc" id="L49">        return baseIterator;</span>
+    }
+
+    @Override
+    public RoutingCHEdgeIterator setBaseNode(int baseNode) {
+<span class="pc bpc" id="L54" title="1 of 2 branches missed.">        assert baseGraph.isFrozen();</span>
+<span class="fc" id="L55">        baseIterator.setBaseNode(baseNode);</span>
+<span class="fc" id="L56">        int lastShortcut = store.getLastShortcut(store.toNodePointer(baseNode));</span>
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        nextEdgeId = edgeId = lastShortcut &lt; 0 ? baseIterator.edgeId : baseGraph.getEdges() + lastShortcut;</span>
+<span class="fc" id="L58">        return this;</span>
+    }
+
+    @Override
+    public boolean next() {
+        // we first traverse shortcuts (in decreasing order) and when we are done we use the base iterator to traverse
+        // the base edges as well. shortcuts are filtered using shortcutFilter, but base edges are only filtered by
+        // access/finite weight.
+<span class="fc bfc" id="L66" title="All 2 branches covered.">        while (nextEdgeId &gt;= baseGraph.getEdges()) {</span>
+<span class="fc" id="L67">            shortcutPointer = store.toShortcutPointer(nextEdgeId - baseGraph.getEdges());</span>
+<span class="fc" id="L68">            baseNode = store.getNodeA(shortcutPointer);</span>
+<span class="fc" id="L69">            adjNode = store.getNodeB(shortcutPointer);</span>
+<span class="fc" id="L70">            edgeId = nextEdgeId;</span>
+<span class="fc" id="L71">            nextEdgeId--;</span>
+<span class="fc bfc" id="L72" title="All 4 branches covered.">            if (nextEdgeId &lt; baseGraph.getEdges() || store.getNodeA(store.toShortcutPointer(nextEdgeId - baseGraph.getEdges())) != baseNode)</span>
+<span class="fc" id="L73">                nextEdgeId = baseIterator.edgeId;</span>
+            // todo: note that it would be more efficient (but cost more memory) to separate in/out edges,
+            //       especially for edge-based where we do not use bidirectional shortcuts
+            // this is needed for edge-based CH, see #1525
+            // background: we need to explicitly accept shortcut edges that are loops so they will be
+            // found as 'incoming' edges no matter which directions we are looking at
+            // todo: or maybe this is not really needed as edge-based shortcuts are not bidirectional anyway?
+<span class="pc bpc" id="L80" title="3 of 8 branches missed.">            if ((baseNode == adjNode &amp;&amp; (store.getFwdAccess(shortcutPointer) || store.getBwdAccess(shortcutPointer))) ||</span>
+<span class="fc bfc" id="L81" title="All 6 branches covered.">                    (outgoing &amp;&amp; store.getFwdAccess(shortcutPointer) || incoming &amp;&amp; store.getBwdAccess(shortcutPointer)))</span>
+<span class="fc" id="L82">                return true;</span>
+        }
+
+        // similar to baseIterator.next(), but we apply our own filter and set edgeId
+<span class="fc bfc" id="L86" title="All 2 branches covered.">        while (EdgeIterator.Edge.isValid(baseIterator.nextEdgeId)) {</span>
+<span class="fc" id="L87">            baseIterator.goToNext();</span>
+            // we update edgeId even when iterating base edges. is it faster to do this also for base/adjNode?
+<span class="fc" id="L89">            edgeId = baseIterator.edgeId;</span>
+<span class="fc bfc" id="L90" title="All 8 branches covered.">            if ((outgoing &amp;&amp; finiteWeight(false)) || (incoming &amp;&amp; finiteWeight(true)))</span>
+<span class="fc" id="L91">                return true;</span>
+        }
+<span class="fc" id="L93">        return false;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L98">        return getEdge() + &quot; &quot; + getBaseNode() + &quot;-&quot; + getAdjNode();</span>
+    }
+
+    private boolean finiteWeight(boolean reverse) {
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        return !Double.isInfinite(getOrigEdgeWeight(reverse));</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

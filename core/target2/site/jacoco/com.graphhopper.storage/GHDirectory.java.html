@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GHDirectory.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">GHDirectory.java</span></div><h1>GHDirectory.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import java.io.File;
+import java.util.*;
+
+import static com.graphhopper.storage.DAType.RAM_INT;
+import static com.graphhopper.storage.DAType.RAM_INT_STORE;
+import static com.graphhopper.util.Helper.*;
+
+/**
+ * Implements some common methods for the subclasses.
+ *
+ * @author Peter Karich
+ */
+public class GHDirectory implements Directory {
+    protected final String location;
+    private final DAType typeFallback;
+    // first rule matches =&gt; LinkedHashMap
+<span class="fc" id="L36">    private final Map&lt;String, DAType&gt; defaultTypes = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L37">    private final Map&lt;String, Integer&gt; mmapPreloads = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L38">    private final Map&lt;String, DataAccess&gt; map = Collections.synchronizedMap(new HashMap&lt;&gt;());</span>
+
+<span class="fc" id="L40">    public GHDirectory(String _location, DAType defaultType) {</span>
+<span class="fc" id="L41">        this.typeFallback = defaultType;</span>
+<span class="fc bfc" id="L42" title="All 2 branches covered.">        if (isEmpty(_location))</span>
+<span class="fc" id="L43">            _location = new File(&quot;&quot;).getAbsolutePath();</span>
+
+<span class="pc bpc" id="L45" title="1 of 2 branches missed.">        if (!_location.endsWith(&quot;/&quot;))</span>
+<span class="fc" id="L46">            _location += &quot;/&quot;;</span>
+
+<span class="fc" id="L48">        location = _location;</span>
+<span class="fc" id="L49">        File dir = new File(location);</span>
+<span class="pc bpc" id="L50" title="1 of 4 branches missed.">        if (dir.exists() &amp;&amp; !dir.isDirectory())</span>
+<span class="nc" id="L51">            throw new RuntimeException(&quot;file '&quot; + dir + &quot;' exists but is not a directory&quot;);</span>
+<span class="fc" id="L52">    }</span>
+
+    /**
+     * Configure the DAType (specified by the value) of a single DataAccess object (specified by the key). For &quot;MMAP&quot; you
+     * can prepend &quot;preload.&quot; to the name and specify a percentage which preloads the DataAccess into physical memory of
+     * the specified percentage (only applied for load, not for import).
+     * As keys can be patterns the order is important and the LinkedHashMap is forced as type.
+     */
+    public Directory configure(LinkedHashMap&lt;String, String&gt; config) {
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        for (Map.Entry&lt;String, String&gt; kv : config.entrySet()) {</span>
+<span class="fc" id="L62">            String value = kv.getValue().trim();</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">            if (kv.getKey().startsWith(&quot;preload.&quot;))</span>
+                try {
+<span class="fc" id="L65">                    String pattern = kv.getKey().substring(&quot;preload.&quot;.length());</span>
+<span class="fc" id="L66">                    mmapPreloads.put(pattern, Integer.parseInt(value));</span>
+<span class="nc" id="L67">                } catch (NumberFormatException ex) {</span>
+<span class="nc" id="L68">                    throw new IllegalArgumentException(&quot;DataAccess &quot; + kv.getKey() + &quot; has an incorrect preload value: &quot; + value);</span>
+<span class="fc" id="L69">                }</span>
+            else {
+<span class="fc" id="L71">                String pattern = kv.getKey();</span>
+<span class="fc" id="L72">                defaultTypes.put(pattern, DAType.fromString(value));</span>
+            }
+<span class="fc" id="L74">        }</span>
+<span class="fc" id="L75">        return this;</span>
+    }
+
+    /**
+     * Returns the preload value or 0 if no patterns match.
+     * See {@link #configure(LinkedHashMap)}
+     */
+    int getPreload(String name) {
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">        for (Map.Entry&lt;String, Integer&gt; entry : mmapPreloads.entrySet())</span>
+<span class="pc bpc" id="L84" title="1 of 2 branches missed.">            if (name.matches(entry.getKey())) return entry.getValue();</span>
+<span class="nc" id="L85">        return 0;</span>
+    }
+
+    public void loadMMap() {
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        for (DataAccess da : map.values()) {</span>
+<span class="pc bpc" id="L90" title="1 of 2 branches missed.">            if (!(da instanceof MMapDataAccess))</span>
+<span class="fc" id="L91">                continue;</span>
+<span class="nc" id="L92">            int preload = getPreload(da.getName());</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">            if (preload &gt; 0)</span>
+<span class="nc" id="L94">                ((MMapDataAccess) da).load(preload);</span>
+<span class="nc" id="L95">        }</span>
+<span class="fc" id="L96">    }</span>
+
+    @Override
+    public DataAccess create(String name) {
+<span class="fc" id="L100">        return create(name, getDefault(name, typeFallback));</span>
+    }
+
+    @Override
+    public DataAccess create(String name, int segmentSize) {
+<span class="fc" id="L105">        return create(name, getDefault(name, typeFallback), segmentSize);</span>
+    }
+
+    private DAType getDefault(String name, DAType typeFallback) {
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        for (Map.Entry&lt;String, DAType&gt; entry : defaultTypes.entrySet())</span>
+<span class="fc bfc" id="L110" title="All 2 branches covered.">            if (name.matches(entry.getKey())) return entry.getValue();</span>
+<span class="fc" id="L111">        return typeFallback;</span>
+    }
+
+    @Override
+    public DataAccess create(String name, DAType type) {
+<span class="fc" id="L116">        return create(name, type, -1);</span>
+    }
+
+    @Override
+    public DataAccess create(String name, DAType type, int segmentSize) {
+<span class="pc bpc" id="L121" title="1 of 2 branches missed.">        if (!name.equals(toLowerCase(name)))</span>
+<span class="nc" id="L122">            throw new IllegalArgumentException(&quot;Since 0.7 DataAccess objects does no longer accept upper case names&quot;);</span>
+
+<span class="fc bfc" id="L124" title="All 2 branches covered.">        if (map.containsKey(name))</span>
+            // we do not allow creating two DataAccess with the same name, because on disk there can only be one DA
+            // per file name
+<span class="fc" id="L127">            throw new IllegalStateException(&quot;DataAccess &quot; + name + &quot; has already been created&quot;);</span>
+
+        DataAccess da;
+<span class="fc bfc" id="L130" title="All 2 branches covered.">        if (type.isInMemory()) {</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">            if (type.isInteg()) {</span>
+<span class="fc bfc" id="L132" title="All 2 branches covered.">                if (type.isStoring())</span>
+<span class="fc" id="L133">                    da = new RAMIntDataAccess(name, location, true, segmentSize);</span>
+                else
+<span class="fc" id="L135">                    da = new RAMIntDataAccess(name, location, false, segmentSize);</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">            } else if (type.isStoring())</span>
+<span class="fc" id="L137">                da = new RAMDataAccess(name, location, true, segmentSize);</span>
+            else
+<span class="fc" id="L139">                da = new RAMDataAccess(name, location, false, segmentSize);</span>
+<span class="pc bpc" id="L140" title="1 of 2 branches missed.">        } else if (type.isMMap()) {</span>
+<span class="fc" id="L141">            da = new MMapDataAccess(name, location, type.isAllowWrites(), segmentSize);</span>
+        } else {
+<span class="nc" id="L143">            throw new IllegalArgumentException(&quot;DAType not supported &quot; + type);</span>
+        }
+
+<span class="fc" id="L146">        map.put(name, da);</span>
+<span class="fc" id="L147">        return da;</span>
+    }
+
+    @Override
+    public void close() {
+<span class="nc bnc" id="L152" title="All 2 branches missed.">        for (DataAccess da : map.values()) {</span>
+<span class="nc" id="L153">            da.close();</span>
+<span class="nc" id="L154">        }</span>
+<span class="nc" id="L155">        map.clear();</span>
+<span class="nc" id="L156">    }</span>
+
+    @Override
+    public void clear() {
+<span class="fc bfc" id="L160" title="All 2 branches covered.">        for (DataAccess da : map.values()) {</span>
+<span class="fc" id="L161">            da.close();</span>
+<span class="fc" id="L162">            removeBackingFile(da, da.getName());</span>
+<span class="fc" id="L163">        }</span>
+<span class="fc" id="L164">        map.clear();</span>
+<span class="fc" id="L165">    }</span>
+
+    @Override
+    public void remove(String name) {
+<span class="fc" id="L169">        DataAccess old = map.remove(name);</span>
+<span class="pc bpc" id="L170" title="1 of 2 branches missed.">        if (old == null)</span>
+<span class="nc" id="L171">            throw new IllegalStateException(&quot;Couldn't remove DataAccess: &quot; + name);</span>
+
+<span class="fc" id="L173">        old.close();</span>
+<span class="fc" id="L174">        removeBackingFile(old, name);</span>
+<span class="fc" id="L175">    }</span>
+
+    private void removeBackingFile(DataAccess da, String name) {
+<span class="fc bfc" id="L178" title="All 2 branches covered.">        if (da.getType().isStoring())</span>
+<span class="fc" id="L179">            removeDir(new File(location + name));</span>
+<span class="fc" id="L180">    }</span>
+
+    @Override
+    public DAType getDefaultType() {
+<span class="fc" id="L184">        return typeFallback;</span>
+    }
+
+    /**
+     * This method returns the default DAType of the specified DataAccess (as string). If preferInts is true then this
+     * method returns e.g. RAM_INT if the type of the specified DataAccess is RAM.
+     */
+    public DAType getDefaultType(String dataAccess, boolean preferInts) {
+<span class="fc" id="L192">        DAType type = getDefault(dataAccess, typeFallback);</span>
+<span class="fc bfc" id="L193" title="All 4 branches covered.">        if (preferInts &amp;&amp; type.isInMemory())</span>
+<span class="fc bfc" id="L194" title="All 2 branches covered.">            return type.isStoring() ? RAM_INT_STORE : RAM_INT;</span>
+<span class="fc" id="L195">        return type;</span>
+    }
+
+    public boolean isStoring() {
+<span class="fc" id="L199">        return typeFallback.isStoring();</span>
+    }
+
+    @Override
+    public Directory create() {
+<span class="fc bfc" id="L204" title="All 2 branches covered.">        if (isStoring())</span>
+<span class="fc" id="L205">            new File(location).mkdirs();</span>
+<span class="fc" id="L206">        return this;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L211">        return getLocation();</span>
+    }
+
+    @Override
+    public String getLocation() {
+<span class="fc" id="L216">        return location;</span>
+    }
+
+    @Override
+    public Map&lt;String, DataAccess&gt; getDAs() {
+<span class="nc" id="L221">        return map;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

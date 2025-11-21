@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IntersectionValues.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util.details</a> &gt; <span class="el_source">IntersectionValues.java</span></div><h1>IntersectionValues.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util.details;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+<span class="fc" id="L26">public class IntersectionValues {</span>
+    public int bearing;
+    public boolean entry;
+    public boolean in;
+    public boolean out;
+
+    /**
+     *  create a List of IntersectionValues from a PathDetail
+     */
+    public static List&lt;IntersectionValues&gt; createList(Map&lt;String, Object&gt; intersectionMap) {
+<span class="nc" id="L36">        List&lt;IntersectionValues&gt; list = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L38">        List&lt;Integer&gt; bearings = (List&lt;Integer&gt;) intersectionMap.get(&quot;bearings&quot;);</span>
+<span class="nc" id="L39">        Integer in = (Integer) intersectionMap.getOrDefault(&quot;in&quot;, -1);</span>
+<span class="nc" id="L40">        Integer out = (Integer) intersectionMap.getOrDefault(&quot;out&quot;, -1);</span>
+<span class="nc" id="L41">        List&lt;Boolean&gt; entry = (List&lt;Boolean&gt;) intersectionMap.get(&quot;entries&quot;);</span>
+
+<span class="nc bnc" id="L43" title="All 2 branches missed.">        if (bearings.size() != entry.size()) {</span>
+<span class="nc" id="L44">            throw new IllegalStateException(&quot;Bearings and entry array sizes different&quot;);</span>
+        }
+<span class="nc" id="L46">        int numEntries = bearings.size();</span>
+
+<span class="nc bnc" id="L48" title="All 2 branches missed.">        for (int i = 0; i &lt; numEntries; i++) {</span>
+<span class="nc" id="L49">            IntersectionValues iv = new IntersectionValues();</span>
+<span class="nc" id="L50">            iv.bearing = bearings.get(i);</span>
+<span class="nc" id="L51">            iv.entry = entry.get(i);</span>
+<span class="nc bnc" id="L52" title="All 2 branches missed.">            iv.in = (in == i);</span>
+<span class="nc bnc" id="L53" title="All 2 branches missed.">            iv.out = (out == i);</span>
+
+<span class="nc" id="L55">            list.add(iv);</span>
+        }
+<span class="nc" id="L57">        return list;</span>
+    }
+
+    /**
+     * create a PathDetail from a List of IntersectionValues
+     */
+    public static Map&lt;String, Object&gt; createIntersection(List&lt;IntersectionValues&gt; list) {
+<span class="fc" id="L64">        Map&lt;String, Object&gt; intersection = new HashMap&lt;&gt;();</span>
+
+<span class="fc" id="L66">        intersection.put(&quot;bearings&quot;,</span>
+<span class="fc" id="L67">                list.stream().map(x -&gt; x.bearing).collect(Collectors.toList()));</span>
+<span class="fc" id="L68">        intersection.put(&quot;entries&quot;,</span>
+<span class="fc" id="L69">                list.stream().map(x -&gt; x.entry).collect(Collectors.toList()));</span>
+
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        for (int m = 0; m &lt; list.size(); m++) {</span>
+<span class="fc" id="L72">            IntersectionValues intersectionValues = list.get(m);</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">            if (intersectionValues.in) {</span>
+<span class="fc" id="L74">                intersection.put(&quot;in&quot;, m);</span>
+            }
+<span class="fc bfc" id="L76" title="All 2 branches covered.">            if (intersectionValues.out) {</span>
+<span class="fc" id="L77">                intersection.put(&quot;out&quot;, m);</span>
+            }
+        }
+<span class="fc" id="L80">        return intersection;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

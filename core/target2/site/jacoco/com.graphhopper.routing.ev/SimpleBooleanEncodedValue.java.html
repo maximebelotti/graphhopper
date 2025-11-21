@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SimpleBooleanEncodedValue.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">SimpleBooleanEncodedValue.java</span></div><h1>SimpleBooleanEncodedValue.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ev;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+/**
+ * This class implements a simple boolean storage via an UnsignedIntEncodedValue with 1 bit.
+ */
+public final class SimpleBooleanEncodedValue extends IntEncodedValueImpl implements BooleanEncodedValue {
+    public SimpleBooleanEncodedValue(String name) {
+<span class="fc" id="L28">        this(name, false);</span>
+<span class="fc" id="L29">    }</span>
+
+    public SimpleBooleanEncodedValue(String name, boolean storeBothDirections) {
+<span class="fc" id="L32">        super(name, 1, storeBothDirections);</span>
+<span class="fc" id="L33">    }</span>
+
+    @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
+    SimpleBooleanEncodedValue(
+            @JsonProperty(&quot;name&quot;) String name,
+            @JsonProperty(&quot;bits&quot;) int bits,
+            @JsonProperty(&quot;min_storable_value&quot;) int minStorableValue,
+            @JsonProperty(&quot;max_storable_value&quot;) int maxStorableValue,
+            @JsonProperty(&quot;max_value&quot;) int maxValue,
+            @JsonProperty(&quot;negate_reverse_direction&quot;) boolean negateReverseDirection,
+            @JsonProperty(&quot;store_two_directions&quot;) boolean storeTwoDirections,
+            @JsonProperty(&quot;fwd_data_index&quot;) int fwdDataIndex,
+            @JsonProperty(&quot;bwd_data_index&quot;) int bwdDataIndex,
+            @JsonProperty(&quot;fwd_shift&quot;) int fwdShift,
+            @JsonProperty(&quot;bwd_shift&quot;) int bwdShift,
+            @JsonProperty(&quot;fwd_mask&quot;) int fwdMask,
+            @JsonProperty(&quot;bwd_mask&quot;) int bwdMask
+    ) {
+        // we need this constructor for Jackson
+<span class="fc" id="L52">        super(name, bits, minStorableValue, maxStorableValue, maxValue, negateReverseDirection, storeTwoDirections, fwdDataIndex, bwdDataIndex, fwdShift, bwdShift, fwdMask, bwdMask);</span>
+<span class="fc" id="L53">    }</span>
+
+    @Override
+    public final void setBool(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess, boolean value) {
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        setInt(reverse, edgeId, edgeIntAccess, value ? 1 : 0);</span>
+<span class="fc" id="L58">    }</span>
+
+    @Override
+    public final boolean getBool(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess) {
+<span class="fc bfc" id="L62" title="All 2 branches covered.">        return getInt(reverse, edgeId, edgeIntAccess) == 1;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

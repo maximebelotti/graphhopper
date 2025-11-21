@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RoutingAlgorithmFactorySimple.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">RoutingAlgorithmFactorySimple.java</span></div><h1>RoutingAlgorithmFactorySimple.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.weighting.BeelineWeightApproximator;
+import com.graphhopper.routing.weighting.WeightApproximator;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.util.DistanceCalcEarth;
+import com.graphhopper.util.DistancePlaneProjection;
+import com.graphhopper.util.Helper;
+import com.graphhopper.util.PMap;
+
+import static com.graphhopper.util.Parameters.Algorithms.*;
+
+/**
+ * A simple factory creating normal algorithms (RoutingAlgorithm) without preparation.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+<span class="fc" id="L38">public class RoutingAlgorithmFactorySimple implements RoutingAlgorithmFactory {</span>
+    @Override
+    public RoutingAlgorithm createAlgo(Graph g, Weighting w, AlgorithmOptions opts) {
+        RoutingAlgorithm ra;
+<span class="fc" id="L42">        String algoStr = opts.getAlgorithm();</span>
+<span class="fc" id="L43">        Weighting weighting = g.wrapWeighting(w);</span>
+<span class="fc bfc" id="L44" title="All 2 branches covered.">        if (DIJKSTRA_BI.equalsIgnoreCase(algoStr)) {</span>
+<span class="fc" id="L45">            ra = new DijkstraBidirectionRef(g, weighting, opts.getTraversalMode());</span>
+<span class="fc bfc" id="L46" title="All 2 branches covered.">        } else if (DIJKSTRA.equalsIgnoreCase(algoStr)) {</span>
+<span class="fc" id="L47">            ra = new Dijkstra(g, weighting, opts.getTraversalMode());</span>
+
+<span class="fc bfc" id="L49" title="All 4 branches covered.">        } else if (ASTAR_BI.equalsIgnoreCase(algoStr) || Helper.isEmpty(algoStr)) {</span>
+<span class="fc" id="L50">            AStarBidirection aStarBi = new AStarBidirection(g, weighting,</span>
+<span class="fc" id="L51">                    opts.getTraversalMode());</span>
+<span class="fc" id="L52">            aStarBi.setApproximation(getApproximation(ASTAR_BI, opts.getHints(), weighting, g.getNodeAccess()));</span>
+<span class="fc" id="L53">            ra = aStarBi;</span>
+
+<span class="pc bpc" id="L55" title="1 of 2 branches missed.">        } else if (DIJKSTRA_ONE_TO_MANY.equalsIgnoreCase(algoStr)) {</span>
+<span class="nc" id="L56">            ra = new DijkstraOneToMany(g, weighting, opts.getTraversalMode());</span>
+
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        } else if (ASTAR.equalsIgnoreCase(algoStr)) {</span>
+<span class="fc" id="L59">            AStar aStar = new AStar(g, weighting, opts.getTraversalMode());</span>
+<span class="fc" id="L60">            aStar.setApproximation(getApproximation(ASTAR, opts.getHints(), w, g.getNodeAccess()));</span>
+<span class="fc" id="L61">            ra = aStar;</span>
+
+<span class="pc bpc" id="L63" title="1 of 2 branches missed.">        } else if (ALT_ROUTE.equalsIgnoreCase(algoStr)) {</span>
+<span class="fc" id="L64">            ra = new AlternativeRoute(g, weighting, opts.getTraversalMode(), opts.getHints());</span>
+
+        } else {
+<span class="nc" id="L67">            throw new IllegalArgumentException(&quot;Algorithm &quot; + algoStr + &quot; not found in &quot; + getClass().getName());</span>
+        }
+
+<span class="fc" id="L70">        ra.setMaxVisitedNodes(opts.getMaxVisitedNodes());</span>
+<span class="fc" id="L71">        ra.setTimeoutMillis(opts.getTimeoutMillis());</span>
+<span class="fc" id="L72">        return ra;</span>
+    }
+
+    public static WeightApproximator getApproximation(String prop, PMap opts, Weighting weighting, NodeAccess na) {
+<span class="fc" id="L76">        String approxAsStr = opts.getString(prop + &quot;.approximation&quot;, &quot;BeelineSimplification&quot;);</span>
+<span class="fc" id="L77">        double epsilon = opts.getDouble(prop + &quot;.epsilon&quot;, 1);</span>
+
+<span class="fc" id="L79">        BeelineWeightApproximator approx = new BeelineWeightApproximator(na, weighting);</span>
+<span class="fc" id="L80">        approx.setEpsilon(epsilon);</span>
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">        if (&quot;BeelineSimplification&quot;.equals(approxAsStr))</span>
+<span class="fc" id="L82">            approx.setDistanceCalc(DistancePlaneProjection.DIST_PLANE);</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        else if (&quot;BeelineAccurate&quot;.equals(approxAsStr))</span>
+<span class="nc" id="L84">            approx.setDistanceCalc(DistanceCalcEarth.DIST_EARTH);</span>
+        else
+<span class="nc" id="L86">            throw new IllegalArgumentException(&quot;Approximation &quot; + approxAsStr + &quot; not found in &quot; + RoutingAlgorithmFactorySimple.class.getName());</span>
+
+<span class="fc" id="L88">        return approx;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

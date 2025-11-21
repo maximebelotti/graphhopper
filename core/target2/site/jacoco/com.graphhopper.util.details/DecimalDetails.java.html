@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DecimalDetails.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util.details</a> &gt; <span class="el_source">DecimalDetails.java</span></div><h1>DecimalDetails.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util.details;
+
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.util.EdgeIteratorState;
+
+public class DecimalDetails extends AbstractPathDetailsBuilder {
+
+    private final DecimalEncodedValue ev;
+    private Double decimalValue;
+    private final String infinityJsonValue;
+    private final double precision;
+
+    public DecimalDetails(String name, DecimalEncodedValue ev) {
+<span class="fc" id="L31">        this(name, ev, null, 0.001);</span>
+<span class="fc" id="L32">    }</span>
+
+    /**
+     * @param infinityJsonValue DecimalEncodedValue can return infinity as default value, but JSON cannot include this
+     *                          https://stackoverflow.com/a/9218955/194609 so we need a special string to handle this or null.
+     * @param precision         e.g. 0.1 to avoid creating too many path details, i.e. round the speed to the specified precision
+     *                          *                  before detecting a change.
+     */
+    public DecimalDetails(String name, DecimalEncodedValue ev, String infinityJsonValue, double precision) {
+<span class="fc" id="L41">        super(name);</span>
+<span class="fc" id="L42">        this.ev = ev;</span>
+<span class="fc" id="L43">        this.infinityJsonValue = infinityJsonValue;</span>
+<span class="fc" id="L44">        this.precision = precision;</span>
+<span class="fc" id="L45">    }</span>
+
+    @Override
+    protected Object getCurrentValue() {
+<span class="fc bfc" id="L49" title="All 2 branches covered.">        if (Double.isInfinite(decimalValue))</span>
+<span class="fc" id="L50">            return infinityJsonValue;</span>
+
+<span class="fc" id="L52">        return decimalValue;</span>
+    }
+
+    @Override
+    public boolean isEdgeDifferentToLastEdge(EdgeIteratorState edge) {
+<span class="fc" id="L57">        double tmpVal = edge.get(ev);</span>
+<span class="fc bfc" id="L58" title="All 4 branches covered.">        if (decimalValue == null || Math.abs(tmpVal - decimalValue) &gt;= precision) {</span>
+<span class="fc bfc" id="L59" title="All 2 branches covered.">            this.decimalValue = Double.isInfinite(tmpVal) ? tmpVal : Math.round(tmpVal / precision) * precision;</span>
+<span class="fc" id="L60">            return true;</span>
+        }
+<span class="fc" id="L62">        return false;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

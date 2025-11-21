@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EdgeChangeBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.querygraph</a> &gt; <span class="el_source">EdgeChangeBuilder.java</span></div><h1>EdgeChangeBuilder.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.querygraph;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntObjectMap;
+import com.carrotsearch.hppc.procedures.IntProcedure;
+import com.graphhopper.coll.GHIntHashSet;
+import com.graphhopper.util.EdgeIteratorState;
+
+import java.util.List;
+
+import static com.graphhopper.routing.querygraph.QueryGraph.*;
+
+/**
+ * Helper class for {@link QueryOverlayBuilder}
+ *
+ * @see #build(IntArrayList, List, int, IntObjectMap)
+ */
+class EdgeChangeBuilder {
+    private final IntArrayList closestEdges;
+    private final List&lt;VirtualEdgeIteratorState&gt; virtualEdges;
+    private final IntObjectMap&lt;QueryOverlay.EdgeChanges&gt; edgeChangesAtRealNodes;
+    private final int firstVirtualNodeId;
+
+    /**
+     * Builds a mapping between real node ids and the set of changes for their adjacent edges.
+     *
+     * @param edgeChangesAtRealNodes output parameter, you need to pass an empty &amp; modifiable map and the results will
+     *                               be added to it
+     */
+    static void build(IntArrayList closestEdges, List&lt;VirtualEdgeIteratorState&gt; virtualEdges, int firstVirtualNodeId, IntObjectMap&lt;QueryOverlay.EdgeChanges&gt; edgeChangesAtRealNodes) {
+<span class="fc" id="L49">        new EdgeChangeBuilder(closestEdges, virtualEdges, firstVirtualNodeId, edgeChangesAtRealNodes).build();</span>
+<span class="fc" id="L50">    }</span>
+
+<span class="fc" id="L52">    private EdgeChangeBuilder(IntArrayList closestEdges, List&lt;VirtualEdgeIteratorState&gt; virtualEdges, int firstVirtualNodeId, IntObjectMap&lt;QueryOverlay.EdgeChanges&gt; edgeChangesAtRealNodes) {</span>
+<span class="fc" id="L53">        this.closestEdges = closestEdges;</span>
+<span class="fc" id="L54">        this.virtualEdges = virtualEdges;</span>
+<span class="fc" id="L55">        this.firstVirtualNodeId = firstVirtualNodeId;</span>
+<span class="pc bpc" id="L56" title="1 of 2 branches missed.">        if (!edgeChangesAtRealNodes.isEmpty()) {</span>
+<span class="nc" id="L57">            throw new IllegalArgumentException(&quot;real node modifications need to be empty&quot;);</span>
+        }
+<span class="fc" id="L59">        this.edgeChangesAtRealNodes = edgeChangesAtRealNodes;</span>
+<span class="fc" id="L60">    }</span>
+
+    private void build() {
+<span class="fc" id="L63">        final GHIntHashSet towerNodesToChange = new GHIntHashSet(getNumVirtualNodes());</span>
+
+        // 1. for every real node adjacent to a virtual one we collect the virtual edges, also build a set of
+        //    these adjacent real nodes so we can use them in the next step
+<span class="fc bfc" id="L67" title="All 2 branches covered.">        for (int i = 0; i &lt; getNumVirtualNodes(); i++) {</span>
+            // base node
+<span class="fc" id="L69">            EdgeIteratorState baseRevEdge = getVirtualEdge(i * 4 + SNAP_BASE);</span>
+<span class="fc" id="L70">            int towerNode = baseRevEdge.getAdjNode();</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">            if (!isVirtualNode(towerNode)) {</span>
+<span class="fc" id="L72">                towerNodesToChange.add(towerNode);</span>
+<span class="fc" id="L73">                addVirtualEdges(true, towerNode, i);</span>
+            }
+
+            // adj node
+<span class="fc" id="L77">            EdgeIteratorState adjEdge = getVirtualEdge(i * 4 + SNAP_ADJ);</span>
+<span class="fc" id="L78">            towerNode = adjEdge.getAdjNode();</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">            if (!isVirtualNode(towerNode)) {</span>
+<span class="fc" id="L80">                towerNodesToChange.add(towerNode);</span>
+<span class="fc" id="L81">                addVirtualEdges(false, towerNode, i);</span>
+            }
+        }
+
+        // 2. build the list of removed edges for all real nodes adjacent to virtual ones
+<span class="fc" id="L86">        towerNodesToChange.forEach(new IntProcedure() {</span>
+            @Override
+            public void apply(int value) {
+<span class="fc" id="L89">                addRemovedEdges(value);</span>
+<span class="fc" id="L90">            }</span>
+        });
+<span class="fc" id="L92">    }</span>
+
+    /**
+     * Adds the virtual edges adjacent to the real tower nodes
+     */
+    private void addVirtualEdges(boolean base, int node, int virtNode) {
+<span class="fc" id="L98">        QueryOverlay.EdgeChanges edgeChanges = edgeChangesAtRealNodes.get(node);</span>
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        if (edgeChanges == null) {</span>
+<span class="fc" id="L100">            edgeChanges = new QueryOverlay.EdgeChanges(2, 2);</span>
+<span class="fc" id="L101">            edgeChangesAtRealNodes.put(node, edgeChanges);</span>
+        }
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        EdgeIteratorState edge = base</span>
+<span class="fc" id="L104">                ? getVirtualEdge(virtNode * 4 + BASE_SNAP)</span>
+<span class="fc" id="L105">                : getVirtualEdge(virtNode * 4 + ADJ_SNAP);</span>
+<span class="fc" id="L106">        edgeChanges.getAdditionalEdges().add(edge);</span>
+<span class="fc" id="L107">    }</span>
+
+    /**
+     * Adds the ids of the removed edges at the real tower nodes. We need to do this such that we cannot 'skip'
+     * virtual nodes by just using the original edges and also to prevent u-turns at the real nodes adjacent to the
+     * virtual ones.
+     */
+    private void addRemovedEdges(int towerNode) {
+<span class="pc bpc" id="L115" title="1 of 2 branches missed.">        if (isVirtualNode(towerNode))</span>
+<span class="nc" id="L116">            throw new IllegalStateException(&quot;Node should not be virtual:&quot; + towerNode + &quot;, &quot; + edgeChangesAtRealNodes);</span>
+
+<span class="fc" id="L118">        QueryOverlay.EdgeChanges edgeChanges = edgeChangesAtRealNodes.get(towerNode);</span>
+<span class="fc" id="L119">        List&lt;EdgeIteratorState&gt; existingEdges = edgeChanges.getAdditionalEdges();</span>
+<span class="fc" id="L120">        IntArrayList removedEdges = edgeChanges.getRemovedEdges();</span>
+<span class="fc bfc" id="L121" title="All 2 branches covered.">        for (EdgeIteratorState existingEdge : existingEdges) {</span>
+<span class="fc" id="L122">            removedEdges.add(getClosestEdge(existingEdge.getAdjNode()));</span>
+<span class="fc" id="L123">        }</span>
+<span class="fc" id="L124">    }</span>
+
+    private boolean isVirtualNode(int nodeId) {
+<span class="fc bfc" id="L127" title="All 2 branches covered.">        return nodeId &gt;= firstVirtualNodeId;</span>
+    }
+
+    private int getNumVirtualNodes() {
+<span class="fc" id="L131">        return closestEdges.size();</span>
+    }
+
+    private int getClosestEdge(int node) {
+<span class="fc" id="L135">        return closestEdges.get(node - firstVirtualNodeId);</span>
+    }
+
+    private VirtualEdgeIteratorState getVirtualEdge(int virtualEdgeId) {
+<span class="fc" id="L139">        return virtualEdges.get(virtualEdgeId);</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

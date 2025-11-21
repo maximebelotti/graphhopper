@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TranslationMap.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">TranslationMap.java</span></div><h1>TranslationMap.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import java.io.*;
+import java.util.*;
+import java.util.Map.Entry;
+
+import static com.graphhopper.util.Helper.*;
+
+/**
+ * A class which manages the translations in-memory. See here for more information:
+ * ./docs/core/translations.md
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+<span class="fc" id="L33">public class TranslationMap {</span>
+    // ISO codes (639-1), use 'en_US' as reference
+<span class="fc" id="L35">    private static final List&lt;String&gt; LOCALES = Arrays.asList(&quot;ar&quot;, &quot;ast&quot;, &quot;bg&quot;, &quot;bn_BN&quot;, &quot;ca&quot;,</span>
+            &quot;cs_CZ&quot;, &quot;da_DK&quot;, &quot;de_DE&quot;, &quot;el&quot;, &quot;eo&quot;, &quot;es&quot;, &quot;en_US&quot;, &quot;fa&quot;, &quot;fil&quot;, &quot;fi&quot;,
+            &quot;fr_FR&quot;, &quot;fr_CH&quot;, &quot;gl&quot;, &quot;he&quot;, &quot;hr_HR&quot;, &quot;hsb&quot;, &quot;hu_HU&quot;, &quot;in_ID&quot;, &quot;it&quot;, &quot;ja&quot;, &quot;ko&quot;,
+            &quot;kz&quot;, &quot;lt_LT&quot;, &quot;mn&quot;, &quot;nb_NO&quot;, &quot;ne&quot;, &quot;nl&quot;, &quot;pl_PL&quot;, &quot;pt_BR&quot;, &quot;pt_PT&quot;, &quot;ro&quot;, &quot;ru&quot;, &quot;sk&quot;,
+            &quot;sl_SI&quot;, &quot;sr_RS&quot;, &quot;sv_SE&quot;, &quot;tr&quot;, &quot;uk&quot;, &quot;uz&quot;, &quot;vi_VN&quot;, &quot;zh_CN&quot;, &quot;zh_HK&quot;, &quot;zh_TW&quot;);
+
+<span class="fc" id="L41">    private final Map&lt;String, Translation&gt; translations = new HashMap&lt;&gt;();</span>
+
+    public static int countOccurence(String phrase, String splitter) {
+<span class="pc bpc" id="L44" title="1 of 2 branches missed.">        if (isEmpty(phrase))</span>
+<span class="nc" id="L45">            return 0;</span>
+<span class="fc" id="L46">        return phrase.trim().split(splitter).length;</span>
+    }
+
+    /**
+     * This loads the translation files from the specified folder.
+     */
+    public TranslationMap doImport(File folder) {
+        try {
+<span class="nc bnc" id="L54" title="All 2 branches missed.">            for (String locale : LOCALES) {</span>
+<span class="nc" id="L55">                TranslationHashMap trMap = new TranslationHashMap(getLocale(locale));</span>
+<span class="nc" id="L56">                trMap.doImport(new FileInputStream(new File(folder, locale + &quot;.txt&quot;)));</span>
+<span class="nc" id="L57">                add(trMap);</span>
+<span class="nc" id="L58">            }</span>
+<span class="nc" id="L59">            postImportHook();</span>
+<span class="nc" id="L60">            return this;</span>
+<span class="nc" id="L61">        } catch (Exception ex) {</span>
+<span class="nc" id="L62">            throw new RuntimeException(ex);</span>
+        }
+    }
+
+    /**
+     * This loads the translation files from classpath.
+     */
+    public TranslationMap doImport() {
+        try {
+<span class="fc bfc" id="L71" title="All 2 branches covered.">            for (String locale : LOCALES) {</span>
+<span class="fc" id="L72">                TranslationHashMap trMap = new TranslationHashMap(getLocale(locale));</span>
+<span class="fc" id="L73">                trMap.doImport(TranslationMap.class.getResourceAsStream(locale + &quot;.txt&quot;));</span>
+<span class="fc" id="L74">                add(trMap);</span>
+<span class="fc" id="L75">            }</span>
+<span class="fc" id="L76">            postImportHook();</span>
+<span class="fc" id="L77">            return this;</span>
+<span class="nc" id="L78">        } catch (Exception ex) {</span>
+<span class="nc" id="L79">            throw new RuntimeException(ex);</span>
+        }
+    }
+
+    public void add(Translation tr) {
+<span class="fc" id="L84">        Locale locale = tr.getLocale();</span>
+<span class="fc" id="L85">        translations.put(locale.toString(), tr);</span>
+<span class="fc bfc" id="L86" title="All 4 branches covered.">        if (!locale.getCountry().isEmpty() &amp;&amp; !translations.containsKey(tr.getLanguage()))</span>
+<span class="fc" id="L87">            translations.put(tr.getLanguage(), tr);</span>
+
+        // Hebrew locale was &quot;iw&quot; in old JDKs but is now he
+        // required in old JDKs:
+<span class="pc bpc" id="L91" title="1 of 2 branches missed.">        if (&quot;iw&quot;.equals(locale.getLanguage())) translations.put(&quot;he&quot;, tr);</span>
+        // required since jdk17 to still provide translation for &quot;iw&quot;:
+<span class="fc bfc" id="L93" title="All 2 branches covered.">        if (&quot;he&quot;.equals(locale.getLanguage())) translations.put(&quot;iw&quot;, tr);</span>
+
+        // Indonesia locale was &quot;in_ID&quot; in old JDKs but is now id_ID
+        // required in old JDKs:
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">        if (&quot;in&quot;.equals(locale.getLanguage())) translations.put(&quot;id&quot;, tr);</span>
+        // required since jdk17 to still provide translation for &quot;in&quot;:
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        if (&quot;id&quot;.equals(locale.getLanguage())) translations.put(&quot;in&quot;, tr);</span>
+        // Indian locales are: en-IN and hi-IN and are not overwritten by that
+<span class="fc" id="L101">    }</span>
+
+    /**
+     * Returns the Translation object for the specified locale and falls back to English if the
+     * locale was not found.
+     */
+    public Translation getWithFallBack(Locale locale) {
+<span class="fc" id="L108">        Translation tr = get(locale.toString());</span>
+<span class="pc bpc" id="L109" title="1 of 2 branches missed.">        if (tr == null) {</span>
+<span class="nc" id="L110">            tr = get(locale.getLanguage());</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">            if (tr == null)</span>
+<span class="nc" id="L112">                tr = get(&quot;en&quot;);</span>
+        }
+<span class="fc" id="L114">        return tr;</span>
+    }
+
+    /**
+     * Returns the Translation object for the specified locale and returns null if not found.
+     */
+    public Translation get(String locale) {
+<span class="fc" id="L121">        locale = locale.replace(&quot;-&quot;, &quot;_&quot;);</span>
+<span class="fc" id="L122">        Translation tr = translations.get(locale);</span>
+<span class="fc bfc" id="L123" title="All 4 branches covered.">        if (locale.contains(&quot;_&quot;) &amp;&amp; tr == null)</span>
+<span class="fc" id="L124">            tr = translations.get(locale.substring(0, 2));</span>
+
+<span class="fc" id="L126">        return tr;</span>
+    }
+
+    /**
+     * This method does some checks and fills missing translation from en
+     */
+    private void postImportHook() {
+<span class="fc" id="L133">        Map&lt;String, String&gt; enMap = get(&quot;en&quot;).asMap();</span>
+<span class="fc" id="L134">        StringBuilder sb = new StringBuilder();</span>
+<span class="fc bfc" id="L135" title="All 2 branches covered.">        for (Translation tr : translations.values()) {</span>
+<span class="fc" id="L136">            Map&lt;String, String&gt; trMap = tr.asMap();</span>
+<span class="fc bfc" id="L137" title="All 2 branches covered.">            for (Entry&lt;String, String&gt; enEntry : enMap.entrySet()) {</span>
+<span class="fc" id="L138">                String value = trMap.get(enEntry.getKey());</span>
+<span class="fc bfc" id="L139" title="All 2 branches covered.">                if (isEmpty(value)) {</span>
+<span class="fc" id="L140">                    trMap.put(enEntry.getKey(), enEntry.getValue());</span>
+<span class="fc" id="L141">                    continue;</span>
+                }
+
+<span class="fc" id="L144">                int expectedCount = countOccurence(enEntry.getValue(), &quot;\\%&quot;);</span>
+<span class="pc bpc" id="L145" title="1 of 2 branches missed.">                if (expectedCount != countOccurence(value, &quot;\\%&quot;)) {</span>
+<span class="nc" id="L146">                    sb.append(tr.getLocale()).append(&quot; - error in &quot;).</span>
+<span class="nc" id="L147">                            append(enEntry.getKey()).append(&quot;-&gt;&quot;).</span>
+<span class="nc" id="L148">                            append(value).append(&quot;\n&quot;);</span>
+                } else {
+                    // try if formatting works, many times e.g. '%1$' instead of '%1$s'
+<span class="fc" id="L151">                    Object[] strs = new String[expectedCount];</span>
+<span class="fc" id="L152">                    Arrays.fill(strs, &quot;tmp&quot;);</span>
+                    try {
+<span class="fc" id="L154">                        String.format(Locale.ROOT, value, strs);</span>
+<span class="nc" id="L155">                    } catch (Exception ex) {</span>
+<span class="nc" id="L156">                        sb.append(tr.getLocale()).append(&quot; - error &quot;).append(ex.getMessage()).append(&quot;in &quot;).</span>
+<span class="nc" id="L157">                                append(enEntry.getKey()).append(&quot;-&gt;&quot;).</span>
+<span class="nc" id="L158">                                append(value).append(&quot;\n&quot;);</span>
+<span class="fc" id="L159">                    }</span>
+                }
+<span class="fc" id="L161">            }</span>
+<span class="fc" id="L162">        }</span>
+
+<span class="pc bpc" id="L164" title="1 of 2 branches missed.">        if (sb.length() &gt; 0) {</span>
+<span class="nc" id="L165">            System.out.println(sb);</span>
+<span class="nc" id="L166">            throw new IllegalStateException(sb.toString());</span>
+        }
+<span class="fc" id="L168">    }</span>
+
+    @Override
+    public String toString() {
+<span class="nc" id="L172">        return translations.toString();</span>
+    }
+
+    public static class TranslationHashMap implements Translation {
+        final Locale locale;
+<span class="fc" id="L177">        private final Map&lt;String, String&gt; map = new HashMap&lt;&gt;();</span>
+
+<span class="fc" id="L179">        public TranslationHashMap(Locale locale) {</span>
+<span class="fc" id="L180">            this.locale = locale;</span>
+<span class="fc" id="L181">        }</span>
+
+        public void clear() {
+<span class="nc" id="L184">            map.clear();</span>
+<span class="nc" id="L185">        }</span>
+
+        @Override
+        public Locale getLocale() {
+<span class="fc" id="L189">            return locale;</span>
+        }
+
+        @Override
+        public String getLanguage() {
+<span class="fc" id="L194">            return locale.getLanguage();</span>
+        }
+
+        @Override
+        public String tr(String key, Object... params) {
+<span class="fc" id="L199">            String val = map.get(toLowerCase(key));</span>
+<span class="pc bpc" id="L200" title="1 of 2 branches missed.">            if (isEmpty(val))</span>
+<span class="nc" id="L201">                return key;</span>
+
+<span class="fc" id="L203">            return String.format(Locale.ROOT, val, params);</span>
+        }
+
+        public TranslationHashMap put(String key, String val) {
+<span class="fc" id="L207">            String existing = map.put(toLowerCase(key), val);</span>
+<span class="pc bpc" id="L208" title="1 of 2 branches missed.">            if (existing != null)</span>
+<span class="nc" id="L209">                throw new IllegalStateException(&quot;Cannot overwrite key &quot; + key + &quot; with &quot; + val + &quot;, was: &quot; + existing);</span>
+<span class="fc" id="L210">            return this;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L215">            return map.toString();</span>
+        }
+
+        @Override
+        public Map&lt;String, String&gt; asMap() {
+<span class="fc" id="L220">            return map;</span>
+        }
+
+        public TranslationHashMap doImport(InputStream is) {
+<span class="pc bpc" id="L224" title="1 of 2 branches missed.">            if (is == null)</span>
+<span class="nc" id="L225">                throw new IllegalStateException(&quot;No input stream found in class path!?&quot;);</span>
+            try {
+<span class="fc bfc" id="L227" title="All 2 branches covered.">                for (String line : readFile(new InputStreamReader(is, UTF_CS))) {</span>
+<span class="pc bpc" id="L228" title="1 of 6 branches missed.">                    if (line.isEmpty() || line.startsWith(&quot;//&quot;) || line.startsWith(&quot;#&quot;))</span>
+<span class="fc" id="L229">                        continue;</span>
+
+<span class="fc" id="L231">                    int index = line.indexOf('=');</span>
+<span class="pc bpc" id="L232" title="1 of 2 branches missed.">                    if (index &lt; 0)</span>
+<span class="nc" id="L233">                        continue;</span>
+<span class="fc" id="L234">                    String key = line.substring(0, index);</span>
+<span class="pc bpc" id="L235" title="1 of 2 branches missed.">                    if (key.isEmpty())</span>
+<span class="nc" id="L236">                        throw new IllegalStateException(&quot;No key provided:&quot; + line);</span>
+
+<span class="fc" id="L238">                    String value = line.substring(index + 1);</span>
+<span class="fc bfc" id="L239" title="All 2 branches covered.">                    if (!value.isEmpty())</span>
+<span class="fc" id="L240">                        put(key, value);</span>
+
+<span class="fc" id="L242">                }</span>
+<span class="nc" id="L243">            } catch (IOException ex) {</span>
+<span class="nc" id="L244">                throw new RuntimeException(ex);</span>
+<span class="fc" id="L245">            }</span>
+<span class="fc" id="L246">            return this;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

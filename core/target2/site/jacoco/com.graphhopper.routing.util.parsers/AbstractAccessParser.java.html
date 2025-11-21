@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractAccessParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">AbstractAccessParser.java</span></div><h1>AbstractAccessParser.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderNode;
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.storage.IntsRef;
+
+import java.util.*;
+
+public abstract class AbstractAccessParser implements TagParser {
+<span class="fc" id="L29">    static final Collection&lt;String&gt; ONEWAYS = Arrays.asList(&quot;yes&quot;, &quot;true&quot;, &quot;1&quot;, &quot;-1&quot;);</span>
+<span class="fc" id="L30">    static final Collection&lt;String&gt; INTENDED = Arrays.asList(&quot;yes&quot;, &quot;designated&quot;, &quot;official&quot;, &quot;permissive&quot;);</span>
+
+    // order is important
+    protected final List&lt;String&gt; restrictionKeys;
+<span class="fc" id="L34">    protected final Set&lt;String&gt; restrictedValues = new HashSet&lt;&gt;(5);</span>
+
+<span class="fc" id="L36">    protected final Set&lt;String&gt; allowedValues = new HashSet&lt;&gt;(INTENDED);</span>
+    // http://wiki.openstreetmap.org/wiki/Mapfeatures#Barrier
+<span class="fc" id="L38">    protected final Set&lt;String&gt; barriers = new HashSet&lt;&gt;(5);</span>
+    protected final BooleanEncodedValue accessEnc;
+<span class="fc" id="L40">    private boolean blockFords = true;</span>
+
+<span class="fc" id="L42">    protected AbstractAccessParser(BooleanEncodedValue accessEnc, List&lt;String&gt; restrictionKeys) {</span>
+<span class="fc" id="L43">        this.accessEnc = accessEnc;</span>
+<span class="fc" id="L44">        this.restrictionKeys = restrictionKeys;</span>
+
+<span class="fc" id="L46">        allowedValues.add(&quot;destination&quot;);</span>
+
+<span class="fc" id="L48">        restrictedValues.add(&quot;no&quot;);</span>
+<span class="fc" id="L49">        restrictedValues.add(&quot;restricted&quot;);</span>
+<span class="fc" id="L50">        restrictedValues.add(&quot;military&quot;);</span>
+<span class="fc" id="L51">        restrictedValues.add(&quot;emergency&quot;);</span>
+<span class="fc" id="L52">        restrictedValues.add(&quot;private&quot;);</span>
+<span class="fc" id="L53">        restrictedValues.add(&quot;permit&quot;);</span>
+<span class="fc" id="L54">    }</span>
+
+    public boolean isBlockFords() {
+<span class="fc" id="L57">        return blockFords;</span>
+    }
+
+    protected void blockFords(boolean blockFords) {
+<span class="fc" id="L61">        this.blockFords = blockFords;</span>
+<span class="fc" id="L62">    }</span>
+
+    protected void blockPrivate(boolean blockPrivate) {
+<span class="fc bfc" id="L65" title="All 2 branches covered.">        if (!blockPrivate) {</span>
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">            if (!restrictedValues.remove(&quot;private&quot;))</span>
+<span class="nc" id="L67">                throw new IllegalStateException(&quot;no 'private' found in restrictedValues&quot;);</span>
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">            if (!restrictedValues.remove(&quot;permit&quot;))</span>
+<span class="nc" id="L69">                throw new IllegalStateException(&quot;no 'permit' found in restrictedValues&quot;);</span>
+<span class="fc" id="L70">            allowedValues.add(&quot;private&quot;);</span>
+<span class="fc" id="L71">            allowedValues.add(&quot;permit&quot;);</span>
+        }
+<span class="fc" id="L73">    }</span>
+
+    protected void handleBarrierEdge(int edgeId, EdgeIntAccess edgeIntAccess, Map&lt;String, Object&gt; nodeTags) {
+        // for now we just create a dummy reader node, because our encoders do not make use of the coordinates anyway
+<span class="fc" id="L77">        ReaderNode readerNode = new ReaderNode(0, 0, 0, nodeTags);</span>
+        // block access for barriers
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (isBarrier(readerNode)) {</span>
+<span class="fc" id="L80">            BooleanEncodedValue accessEnc = getAccessEnc();</span>
+<span class="fc" id="L81">            accessEnc.setBool(false, edgeId, edgeIntAccess, false);</span>
+<span class="fc" id="L82">            accessEnc.setBool(true, edgeId, edgeIntAccess, false);</span>
+        }
+<span class="fc" id="L84">    }</span>
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
+<span class="fc" id="L88">        handleWayTags(edgeId, edgeIntAccess, way);</span>
+<span class="fc" id="L89">    }</span>
+
+    public abstract void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way);
+
+    /**
+     * @return true if the given OSM node blocks access for the specified restrictions, false otherwise
+     */
+    public boolean isBarrier(ReaderNode node) {
+        // note that this method will be only called for certain nodes as defined by OSMReader!
+<span class="fc" id="L98">        String firstValue = node.getFirstValue(restrictionKeys);</span>
+
+<span class="fc bfc" id="L100" title="All 2 branches covered.">        if (restrictedValues.contains(firstValue))</span>
+<span class="fc" id="L101">            return true;</span>
+<span class="fc bfc" id="L102" title="All 4 branches covered.">        else if (node.hasTag(&quot;locked&quot;, &quot;yes&quot;) &amp;&amp; !allowedValues.contains(firstValue))</span>
+<span class="fc" id="L103">            return true;</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">        else if (allowedValues.contains(firstValue))</span>
+<span class="fc" id="L105">            return false;</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        else if (node.hasTag(&quot;barrier&quot;, barriers))</span>
+<span class="fc" id="L107">            return true;</span>
+        else
+<span class="fc bfc" id="L109" title="All 4 branches covered.">            return blockFords &amp;&amp; node.hasTag(&quot;ford&quot;, &quot;yes&quot;);</span>
+    }
+
+    public final BooleanEncodedValue getAccessEnc() {
+<span class="fc" id="L113">        return accessEnc;</span>
+    }
+
+    public final List&lt;String&gt; getRestrictionKeys() {
+<span class="nc" id="L117">        return restrictionKeys;</span>
+    }
+
+    public final String getName() {
+<span class="nc" id="L121">        return accessEnc.getName();</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L126">        return getName();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

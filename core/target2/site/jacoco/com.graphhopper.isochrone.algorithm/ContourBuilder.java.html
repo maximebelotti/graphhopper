@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ContourBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.isochrone.algorithm</a> &gt; <span class="el_source">ContourBuilder.java</span></div><h1>ContourBuilder.java</h1><pre class="source lang-java linenums">/* This program is free software: you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public License
+ as published by the Free Software Foundation, either version 3 of
+ the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see &lt;http://www.gnu.org/licenses/&gt;. */
+
+package com.graphhopper.isochrone.algorithm;
+
+import org.locationtech.jts.algorithm.Area;
+import org.locationtech.jts.geom.*;
+import org.locationtech.jts.geom.prep.PreparedPolygon;
+import org.locationtech.jts.triangulate.quadedge.Vertex;
+
+import java.util.*;
+import java.util.function.ToIntBiFunction;
+
+/**
+ *
+ * Adapted from org.opentripplanner.common.geometry.DelaunayIsolineBuilder,
+ * which is under LGPL.
+ *
+ * @author laurent
+ * @author michaz
+ *
+ */
+public class ContourBuilder {
+
+    private static final double EPSILON = 0.000001;
+
+    // OpenStreetMap has 1E7 (coordinates with 7 decimal places), and we walk on the edges of that grid,
+    // so we use 1E8 so we can, in theory, always wedge a point petween any two OSM points.
+<span class="fc" id="L39">    private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(1E8));</span>
+    private final ReadableTriangulation triangulation;
+
+<span class="fc" id="L42">    public ContourBuilder(ReadableTriangulation triangulation) {</span>
+<span class="fc" id="L43">        this.triangulation = triangulation;</span>
+<span class="fc" id="L44">    }</span>
+
+    public MultiPolygon computeIsoline(double z0, Collection&lt;ReadableQuadEdge&gt; seedEdges) {
+<span class="fc" id="L47">        ToIntBiFunction&lt;Vertex, Vertex&gt; cut = (orig, dest) -&gt; {</span>
+<span class="fc" id="L48">            double za = orig.getZ();</span>
+<span class="fc" id="L49">            double zb = dest.getZ();</span>
+<span class="fc bfc" id="L50" title="All 4 branches covered.">            if (za &lt;= z0 &amp;&amp; zb &gt; z0) return 1;</span>
+<span class="pc bpc" id="L51" title="1 of 4 branches missed.">            if (za &gt; z0 &amp;&amp; zb &lt;= z0) return -1;</span>
+<span class="fc" id="L52">            return 0;</span>
+        };
+<span class="fc" id="L54">        return computeIsoline(cut, seedEdges);</span>
+    }
+
+    public MultiPolygon computeIsoline(ToIntBiFunction&lt;Vertex, Vertex&gt; cut, Collection&lt;ReadableQuadEdge&gt; seedEdges) {
+<span class="fc" id="L58">        Set&lt;ReadableQuadEdge&gt; processed = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L59">        List&lt;LinearRing&gt; rings = new ArrayList&lt;&gt;();</span>
+
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        for (ReadableQuadEdge f : seedEdges) {</span>
+<span class="fc" id="L62">            ReadableQuadEdge e = f.getPrimary();</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">            if (processed.contains(e))</span>
+<span class="fc" id="L64">                continue;</span>
+<span class="fc" id="L65">            processed.add(e);</span>
+<span class="fc" id="L66">            int cut0 = cut.applyAsInt(e.orig(), e.dest());</span>
+<span class="fc bfc" id="L67" title="All 2 branches covered.">            if (cut0 == 0) {</span>
+<span class="fc" id="L68">                continue; // While, next edge</span>
+            }
+<span class="fc" id="L70">            List&lt;Coordinate&gt; polyPoints = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">            boolean ccw = cut0 &gt; 0;</span>
+            while (true) {
+                // Add a point to polyline
+                Coordinate cC;
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">                if (isFrameVertex(e.orig())) {</span>
+<span class="nc" id="L76">                    cC = moveEpsilonTowards(e.dest().getCoordinate(), e.orig().getCoordinate());</span>
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">                } else if (isFrameVertex(e.dest())) {</span>
+<span class="nc" id="L78">                    cC = moveEpsilonTowards(e.orig().getCoordinate(), e.dest().getCoordinate());</span>
+                } else {
+<span class="fc" id="L80">                    cC = e.orig().midPoint(e.dest()).getCoordinate();</span>
+                }
+                // Strip z coordinate
+<span class="fc" id="L83">                polyPoints.add(new Coordinate(cC.x, cC.y));</span>
+<span class="fc" id="L84">                processed.add(e);</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">                ReadableQuadEdge E1 = ccw ? e.oNext().getPrimary() : e.oPrev().getPrimary();</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">                ReadableQuadEdge E2 = ccw ? e.dPrev().getPrimary() : e.dNext().getPrimary();</span>
+<span class="pc bpc" id="L87" title="1 of 2 branches missed.">                int cut1 = E1 == null ? 0 : cut.applyAsInt(E1.orig(), E1.dest());</span>
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">                int cut2 = E2 == null ? 0 : cut.applyAsInt(E2.orig(), E2.dest());</span>
+<span class="fc bfc" id="L89" title="All 4 branches covered.">                boolean ok1 = cut1 != 0 &amp;&amp; !processed.contains(E1);</span>
+<span class="pc bpc" id="L90" title="1 of 4 branches missed.">                boolean ok2 = cut2 != 0 &amp;&amp; !processed.contains(E2);</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">                if (ok1) {</span>
+<span class="fc" id="L92">                    e = E1;</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">                    ccw = cut1 &gt; 0;</span>
+<span class="fc bfc" id="L94" title="All 2 branches covered.">                } else if (ok2) {</span>
+<span class="fc" id="L95">                    e = E2;</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">                    ccw = cut2 &gt; 0;</span>
+                } else {
+                    // This must be the end of the polyline...
+                    break;
+                }
+<span class="fc" id="L101">            }</span>
+            // Close the polyline
+<span class="fc" id="L103">            polyPoints.add(polyPoints.get(0));</span>
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">            if (polyPoints.size() &gt;= 4) {</span>
+<span class="fc" id="L105">                LinearRing ring = geometryFactory.createLinearRing(polyPoints</span>
+<span class="fc" id="L106">                        .toArray(new Coordinate[polyPoints.size()]));</span>
+<span class="fc" id="L107">                rings.add(ring);</span>
+            }
+<span class="fc" id="L109">        }</span>
+<span class="fc" id="L110">        List&lt;Polygon&gt; isolinePolygons = punchHoles(rings);</span>
+<span class="fc" id="L111">        return geometryFactory.createMultiPolygon(isolinePolygons.toArray(new Polygon[isolinePolygons.size()]));</span>
+    }
+
+    private boolean isFrameVertex(Vertex v) {
+<span class="pc bpc" id="L115" title="1 of 2 branches missed.">        return v.getZ() == Double.MAX_VALUE;</span>
+    }
+
+    private Coordinate moveEpsilonTowards(Coordinate coordinate, Coordinate distantFrameCoordinate) {
+<span class="nc" id="L119">        return new Coordinate(coordinate.x + EPSILON * (distantFrameCoordinate.x - coordinate.x), coordinate.y + EPSILON * (distantFrameCoordinate.y - coordinate.y));</span>
+    }
+
+    @SuppressWarnings(&quot;unchecked&quot;)
+    private List&lt;Polygon&gt; punchHoles(List&lt;LinearRing&gt; rings) {
+<span class="fc" id="L124">        List&lt;PreparedPolygon&gt; shells = new ArrayList&lt;&gt;(rings.size());</span>
+<span class="fc" id="L125">        List&lt;LinearRing&gt; holes = new ArrayList&lt;&gt;(rings.size() / 2);</span>
+        // 1. Split the polygon list in two: shells and holes (CCW and CW)
+<span class="fc bfc" id="L127" title="All 2 branches covered.">        for (LinearRing ring : rings) {</span>
+<span class="pc bpc" id="L128" title="1 of 2 branches missed.">            if (Area.ofRingSigned(ring.getCoordinateSequence()) &gt; 0.0)</span>
+<span class="nc" id="L129">                holes.add(ring);</span>
+            else
+<span class="fc" id="L131">                shells.add(new PreparedPolygon(geometryFactory.createPolygon(ring)));</span>
+<span class="fc" id="L132">        }</span>
+        // 2. Sort the shells based on number of points to optimize step 3.
+<span class="pc" id="L134">        shells.sort((o1, o2) -&gt; o2.getGeometry().getNumPoints() - o1.getGeometry().getNumPoints());</span>
+<span class="fc bfc" id="L135" title="All 2 branches covered.">        for (PreparedPolygon shell : shells) {</span>
+<span class="fc" id="L136">            shell.getGeometry().setUserData(new ArrayList&lt;LinearRing&gt;());</span>
+<span class="fc" id="L137">        }</span>
+        // 3. For each hole, determine which shell it fits in.
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">        for (LinearRing hole : holes) {</span>
+            outer: {
+                // Probably most of the time, the first shell will be the one
+<span class="nc bnc" id="L142" title="All 2 branches missed.">                for (PreparedPolygon shell : shells) {</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">                    if (shell.contains(hole)) {</span>
+<span class="nc" id="L144">                        ((List&lt;LinearRing&gt;) shell.getGeometry().getUserData()).add(hole);</span>
+<span class="nc" id="L145">                        break outer;</span>
+                    }
+<span class="nc" id="L147">                }</span>
+<span class="nc" id="L148">                throw new RuntimeException(&quot;Found a hole without a shell.&quot;);</span>
+            }
+<span class="nc" id="L150">        }</span>
+        // 4. Build the list of punched polygons
+<span class="fc" id="L152">        List&lt;Polygon&gt; punched = new ArrayList&lt;&gt;(shells.size());</span>
+<span class="fc bfc" id="L153" title="All 2 branches covered.">        for (PreparedPolygon shell : shells) {</span>
+<span class="fc" id="L154">            List&lt;LinearRing&gt; shellHoles = ((List&lt;LinearRing&gt;) shell.getGeometry().getUserData());</span>
+<span class="fc" id="L155">            punched.add(geometryFactory.createPolygon((LinearRing) (((Polygon) shell.getGeometry()).getExteriorRing()),</span>
+<span class="fc" id="L156">                    shellHoles.toArray(new LinearRing[shellHoles.size()])));</span>
+<span class="fc" id="L157">        }</span>
+<span class="fc" id="L158">        return punched;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

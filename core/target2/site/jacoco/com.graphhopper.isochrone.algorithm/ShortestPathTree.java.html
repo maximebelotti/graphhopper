@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ShortestPathTree.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.isochrone.algorithm</a> &gt; <span class="el_source">ShortestPathTree.java</span></div><h1>ShortestPathTree.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.isochrone.algorithm;
+
+import com.carrotsearch.hppc.IntObjectHashMap;
+import com.carrotsearch.hppc.cursors.ObjectCursor;
+import com.graphhopper.coll.GHIntObjectHashMap;
+import com.graphhopper.routing.AbstractRoutingAlgorithm;
+import com.graphhopper.routing.Path;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.GHUtility;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.PriorityQueue;
+import java.util.function.Consumer;
+
+import static com.graphhopper.isochrone.algorithm.ShortestPathTree.ExploreType.*;
+import static java.util.Comparator.comparingDouble;
+import static java.util.Comparator.comparingLong;
+
+/**
+ * Computes a shortest path tree by a given weighting. Terminates when all shortest paths up to
+ * a given travel time, distance, or weight have been explored.
+ * &lt;p&gt;
+ * IMPLEMENTATION NOTE:
+ * util.PriorityQueue doesn't support efficient removes. We work around this by giving the labels
+ * a deleted flag, not remove()ing them, and popping deleted elements off both queues.
+ * Note to self/others: If you think this optimization is not needed, please test it with a scenario
+ * where updates actually occur a lot, such as using finite, non-zero u-turn costs.
+ *
+ * @author Peter Karich
+ * @author Michael Zilske
+ */
+public class ShortestPathTree extends AbstractRoutingAlgorithm {
+
+<span class="fc" id="L55">    enum ExploreType {TIME, DISTANCE, WEIGHT}</span>
+
+    public static class IsoLabel {
+
+<span class="fc" id="L59">        IsoLabel(int node, int edge, double weight, long time, double distance, IsoLabel parent) {</span>
+<span class="fc" id="L60">            this.node = node;</span>
+<span class="fc" id="L61">            this.edge = edge;</span>
+<span class="fc" id="L62">            this.weight = weight;</span>
+<span class="fc" id="L63">            this.time = time;</span>
+<span class="fc" id="L64">            this.distance = distance;</span>
+<span class="fc" id="L65">            this.parent = parent;</span>
+<span class="fc" id="L66">        }</span>
+
+<span class="fc" id="L68">        public boolean deleted = false;</span>
+        public int node;
+        public int edge;
+        public double weight;
+        public long time;
+        public double distance;
+        public IsoLabel parent;
+
+        @Override
+        public String toString() {
+<span class="nc" id="L78">            return &quot;IsoLabel{&quot; +</span>
+                    &quot;node=&quot; + node +
+                    &quot;, edge=&quot; + edge +
+                    &quot;, weight=&quot; + weight +
+                    &quot;, time=&quot; + time +
+                    &quot;, distance=&quot; + distance +
+                    '}';
+        }
+    }
+
+    private final IntObjectHashMap&lt;IsoLabel&gt; fromMap;
+    private final PriorityQueue&lt;IsoLabel&gt; queueByWeighting; // a.k.a. the Dijkstra queue
+    private PriorityQueue&lt;IsoLabel&gt; queueByZ; // so we know when we are finished
+    private int visitedNodes;
+<span class="fc" id="L92">    private double limit = -1;</span>
+<span class="fc" id="L93">    private ExploreType exploreType = TIME;</span>
+    private final boolean reverseFlow;
+
+    public ShortestPathTree(Graph g, Weighting weighting, boolean reverseFlow, TraversalMode traversalMode) {
+<span class="fc" id="L97">        super(g, weighting, traversalMode);</span>
+<span class="fc" id="L98">        queueByWeighting = new PriorityQueue&lt;&gt;(1000, comparingDouble(l -&gt; l.weight));</span>
+<span class="fc" id="L99">        queueByZ = new PriorityQueue&lt;&gt;(1000);</span>
+<span class="fc" id="L100">        fromMap = new GHIntObjectHashMap&lt;&gt;(1000);</span>
+<span class="fc" id="L101">        this.reverseFlow = reverseFlow;</span>
+<span class="fc" id="L102">    }</span>
+
+    @Override
+    public Path calcPath(int from, int to) {
+<span class="nc" id="L106">        throw new IllegalStateException(&quot;call search instead&quot;);</span>
+    }
+
+    /**
+     * Time limit in milliseconds
+     */
+    public void setTimeLimit(double limit) {
+<span class="fc" id="L113">        exploreType = TIME;</span>
+<span class="fc" id="L114">        this.limit = limit;</span>
+<span class="fc" id="L115">        this.queueByZ = new PriorityQueue&lt;&gt;(1000, comparingLong(l -&gt; l.time));</span>
+<span class="fc" id="L116">    }</span>
+
+    /**
+     * Distance limit in meter
+     */
+    public void setDistanceLimit(double limit) {
+<span class="fc" id="L122">        exploreType = DISTANCE;</span>
+<span class="fc" id="L123">        this.limit = limit;</span>
+<span class="fc" id="L124">        this.queueByZ = new PriorityQueue&lt;&gt;(1000, comparingDouble(l -&gt; l.distance));</span>
+<span class="fc" id="L125">    }</span>
+
+    public void setWeightLimit(double limit) {
+<span class="nc" id="L128">        exploreType = WEIGHT;</span>
+<span class="nc" id="L129">        this.limit = limit;</span>
+<span class="nc" id="L130">        this.queueByZ = new PriorityQueue&lt;&gt;(1000, comparingDouble(l -&gt; l.weight));</span>
+<span class="nc" id="L131">    }</span>
+
+    public void search(int from, final Consumer&lt;IsoLabel&gt; consumer) {
+<span class="fc" id="L134">        checkAlreadyRun();</span>
+<span class="fc" id="L135">        IsoLabel currentLabel = new IsoLabel(from, -1, 0, 0, 0, null);</span>
+<span class="fc" id="L136">        queueByWeighting.add(currentLabel);</span>
+<span class="fc" id="L137">        queueByZ.add(currentLabel);</span>
+<span class="fc bfc" id="L138" title="All 2 branches covered.">        if (traversalMode == TraversalMode.NODE_BASED) {</span>
+<span class="fc" id="L139">            fromMap.put(from, currentLabel);</span>
+        }
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        while (!finished()) {</span>
+<span class="fc" id="L142">            currentLabel = queueByWeighting.poll();</span>
+<span class="fc bfc" id="L143" title="All 2 branches covered.">            if (currentLabel.deleted)</span>
+<span class="fc" id="L144">                continue;</span>
+<span class="fc bfc" id="L145" title="All 2 branches covered.">            if (getExploreValue(currentLabel) &lt;= limit) {</span>
+<span class="fc" id="L146">                consumer.accept(currentLabel);</span>
+            }
+<span class="fc" id="L148">            currentLabel.deleted = true;</span>
+<span class="fc" id="L149">            visitedNodes++;</span>
+
+<span class="fc" id="L151">            EdgeIterator iter = edgeExplorer.setBaseNode(currentLabel.node);</span>
+<span class="fc bfc" id="L152" title="All 2 branches covered.">            while (iter.next()) {</span>
+<span class="fc bfc" id="L153" title="All 2 branches covered.">                if (!accept(iter, currentLabel.edge)) {</span>
+<span class="fc" id="L154">                    continue;</span>
+                }
+
+<span class="fc" id="L157">                double nextWeight = GHUtility.calcWeightWithTurnWeight(weighting, iter, reverseFlow, currentLabel.edge) + currentLabel.weight;</span>
+<span class="fc bfc" id="L158" title="All 2 branches covered.">                if (Double.isInfinite(nextWeight))</span>
+<span class="fc" id="L159">                    continue;</span>
+
+<span class="fc" id="L161">                double nextDistance = iter.getDistance() + currentLabel.distance;</span>
+<span class="fc" id="L162">                long nextTime = GHUtility.calcMillisWithTurnMillis(weighting, iter, reverseFlow, currentLabel.edge) + currentLabel.time;</span>
+<span class="fc" id="L163">                int nextTraversalId = traversalMode.createTraversalId(iter, reverseFlow);</span>
+<span class="fc" id="L164">                IsoLabel nextLabel = fromMap.get(nextTraversalId);</span>
+<span class="fc bfc" id="L165" title="All 2 branches covered.">                if (nextLabel == null) {</span>
+<span class="fc" id="L166">                    nextLabel = new IsoLabel(iter.getAdjNode(), iter.getEdge(), nextWeight, nextTime, nextDistance, currentLabel);</span>
+<span class="fc" id="L167">                    fromMap.put(nextTraversalId, nextLabel);</span>
+<span class="fc" id="L168">                    queueByWeighting.add(nextLabel);</span>
+<span class="fc" id="L169">                    queueByZ.add(nextLabel);</span>
+<span class="fc bfc" id="L170" title="All 2 branches covered.">                } else if (nextLabel.weight &gt; nextWeight) {</span>
+<span class="fc" id="L171">                    nextLabel.deleted = true;</span>
+<span class="fc" id="L172">                    nextLabel = new IsoLabel(iter.getAdjNode(), iter.getEdge(), nextWeight, nextTime, nextDistance, currentLabel);</span>
+<span class="fc" id="L173">                    fromMap.put(nextTraversalId, nextLabel);</span>
+<span class="fc" id="L174">                    queueByWeighting.add(nextLabel);</span>
+<span class="fc" id="L175">                    queueByZ.add(nextLabel);</span>
+                }
+<span class="fc" id="L177">            }</span>
+<span class="fc" id="L178">        }</span>
+<span class="fc" id="L179">    }</span>
+
+    public Collection&lt;IsoLabel&gt; getIsochroneEdges() {
+        // assert alreadyRun
+<span class="fc" id="L183">        return getIsochroneEdges(limit);</span>
+    }
+
+    public ArrayList&lt;IsoLabel&gt; getIsochroneEdges(double z) {
+<span class="fc" id="L187">        ArrayList&lt;IsoLabel&gt; result = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L188" title="All 2 branches covered.">        for (ObjectCursor&lt;IsoLabel&gt; cursor : fromMap.values()) {</span>
+<span class="fc bfc" id="L189" title="All 2 branches covered.">            if (cursor.value.parent != null &amp;&amp;</span>
+<span class="pc bpc" id="L190" title="1 of 6 branches missed.">                    (getExploreValue(cursor.value) &gt; z ^ getExploreValue(cursor.value.parent) &gt; z)) {</span>
+<span class="fc" id="L191">                result.add(cursor.value);</span>
+            }
+<span class="fc" id="L193">        }</span>
+<span class="fc" id="L194">        return result;</span>
+    }
+
+    private double getExploreValue(IsoLabel label) {
+<span class="fc bfc" id="L198" title="All 2 branches covered.">        if (exploreType == TIME)</span>
+<span class="fc" id="L199">            return label.time;</span>
+<span class="pc bpc" id="L200" title="1 of 2 branches missed.">        if (exploreType == WEIGHT)</span>
+<span class="nc" id="L201">            return label.weight;</span>
+<span class="fc" id="L202">        return label.distance;</span>
+    }
+
+    protected boolean finished() {
+<span class="fc bfc" id="L206" title="All 4 branches covered.">        while (queueByZ.peek() != null &amp;&amp; queueByZ.peek().deleted)</span>
+<span class="fc" id="L207">            queueByZ.poll();</span>
+<span class="fc bfc" id="L208" title="All 2 branches covered.">        if (queueByZ.peek() == null)</span>
+<span class="fc" id="L209">            return true;</span>
+<span class="fc bfc" id="L210" title="All 2 branches covered.">        return getExploreValue(queueByZ.peek()) &gt;= limit;</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="nc" id="L215">        return &quot;reachability&quot;;</span>
+    }
+
+    @Override
+    public int getVisitedNodes() {
+<span class="fc" id="L220">        return visitedNodes;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

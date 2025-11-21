@@ -1,0 +1,380 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>VirtualEdgeIteratorState.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.querygraph</a> &gt; <span class="el_source">VirtualEdgeIteratorState.java</span></div><h1>VirtualEdgeIteratorState.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.querygraph;
+
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.search.KVStorage;
+import com.graphhopper.storage.IntsRef;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.FetchMode;
+import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.PointList;
+
+import java.util.Map;
+
+import static com.graphhopper.util.Parameters.Details.STREET_NAME;
+
+/**
+ * Creates an edge state decoupled from a graph where nodes, pointList, etc are kept in memory.
+ * &lt;p&gt;
+ * Note, this class is not suited for public use and can change with minor releases unexpectedly or
+ * even gets removed.
+ */
+public class VirtualEdgeIteratorState implements EdgeIteratorState {
+    private final PointList pointList;
+    private final int edgeKey;
+    private final int baseNode;
+    private final int adjNode;
+    private final int originalEdgeKey;
+    private double distance;
+    private IntsRef edgeFlags;
+    private EdgeIntAccess edgeIntAccess;
+    private Map&lt;String, KVStorage.KValue&gt; keyValues;
+    // true if edge should be avoided as start/stop
+    private boolean unfavored;
+    private EdgeIteratorState reverseEdge;
+    private final boolean reverse;
+
+    public VirtualEdgeIteratorState(int originalEdgeKey, int edgeKey, int baseNode, int adjNode, double distance,
+<span class="fc" id="L54">                                    IntsRef edgeFlags, Map&lt;String, KVStorage.KValue&gt; keyValues, PointList pointList, boolean reverse) {</span>
+<span class="fc" id="L55">        this.originalEdgeKey = originalEdgeKey;</span>
+<span class="fc" id="L56">        this.edgeKey = edgeKey;</span>
+<span class="fc" id="L57">        this.baseNode = baseNode;</span>
+<span class="fc" id="L58">        this.adjNode = adjNode;</span>
+<span class="fc" id="L59">        this.distance = distance;</span>
+<span class="fc" id="L60">        this.edgeFlags = edgeFlags;</span>
+<span class="fc" id="L61">        this.edgeIntAccess = new IntsRefEdgeIntAccess(edgeFlags);</span>
+<span class="fc" id="L62">        this.keyValues = keyValues;</span>
+<span class="fc" id="L63">        this.pointList = pointList;</span>
+<span class="fc" id="L64">        this.reverse = reverse;</span>
+<span class="fc" id="L65">    }</span>
+
+    /**
+     * This method returns the original (not virtual!) edge key. I.e. also the direction is
+     * already correctly encoded.
+     *
+     * @see EdgeIteratorState#getEdgeKey()
+     */
+    public int getOriginalEdgeKey() {
+<span class="fc" id="L74">        return originalEdgeKey;</span>
+    }
+
+    @Override
+    public int getEdge() {
+<span class="fc" id="L79">        return GHUtility.getEdgeFromEdgeKey(edgeKey);</span>
+    }
+
+    @Override
+    public int getEdgeKey() {
+<span class="fc" id="L84">        return edgeKey;</span>
+    }
+
+    @Override
+    public int getReverseEdgeKey() {
+<span class="fc" id="L89">        return GHUtility.reverseEdgeKey(edgeKey);</span>
+    }
+
+    @Override
+    public int getBaseNode() {
+<span class="fc" id="L94">        return baseNode;</span>
+    }
+
+    @Override
+    public int getAdjNode() {
+<span class="fc" id="L99">        return adjNode;</span>
+    }
+
+    @Override
+    public PointList fetchWayGeometry(FetchMode mode) {
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">        if (pointList.isEmpty())</span>
+<span class="nc" id="L105">            return PointList.EMPTY;</span>
+        // due to API we need to create a new instance per call!
+<span class="fc bfc" id="L107" title="All 2 branches covered.">        if (mode == FetchMode.TOWER_ONLY) {</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">            if (pointList.size() &lt; 3)</span>
+<span class="fc" id="L109">                return pointList.clone(false);</span>
+<span class="fc" id="L110">            PointList towerNodes = new PointList(2, pointList.is3D());</span>
+<span class="fc" id="L111">            towerNodes.add(pointList, 0);</span>
+<span class="fc" id="L112">            towerNodes.add(pointList, pointList.size() - 1);</span>
+<span class="fc" id="L113">            return towerNodes;</span>
+<span class="fc bfc" id="L114" title="All 2 branches covered.">        } else if (mode == FetchMode.ALL)</span>
+<span class="fc" id="L115">            return pointList.clone(false);</span>
+<span class="fc bfc" id="L116" title="All 2 branches covered.">        else if (mode == FetchMode.BASE_AND_PILLAR)</span>
+<span class="fc" id="L117">            return pointList.copy(0, pointList.size() - 1);</span>
+<span class="fc bfc" id="L118" title="All 2 branches covered.">        else if (mode == FetchMode.PILLAR_AND_ADJ)</span>
+<span class="fc" id="L119">            return pointList.copy(1, pointList.size());</span>
+<span class="pc bpc" id="L120" title="1 of 2 branches missed.">        else if (mode == FetchMode.PILLAR_ONLY) {</span>
+<span class="pc bpc" id="L121" title="1 of 2 branches missed.">            if (pointList.size() == 1)</span>
+<span class="nc" id="L122">                return PointList.EMPTY;</span>
+<span class="fc" id="L123">            return pointList.copy(1, pointList.size() - 1);</span>
+        }
+<span class="nc" id="L125">        throw new UnsupportedOperationException(&quot;Illegal mode:&quot; + mode);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setWayGeometry(PointList list) {
+<span class="nc" id="L130">        throw new UnsupportedOperationException(&quot;Not supported for virtual edge. Set when creating it.&quot;);</span>
+    }
+
+    @Override
+    public double getDistance() {
+<span class="fc" id="L135">        return distance;</span>
+    }
+
+    @Override
+    public EdgeIteratorState setDistance(double dist) {
+<span class="fc" id="L140">        this.distance = dist;</span>
+<span class="fc" id="L141">        return this;</span>
+    }
+
+    @Override
+    public IntsRef getFlags() {
+<span class="fc" id="L146">        return edgeFlags;</span>
+    }
+
+    @Override
+    public EdgeIteratorState setFlags(IntsRef flags) {
+<span class="fc" id="L151">        this.edgeFlags = flags;</span>
+<span class="fc" id="L152">        this.edgeIntAccess = new IntsRefEdgeIntAccess(flags);</span>
+<span class="fc" id="L153">        return this;</span>
+    }
+
+    @Override
+    public boolean get(BooleanEncodedValue property) {
+<span class="fc bfc" id="L158" title="All 2 branches covered.">        if (property == EdgeIteratorState.UNFAVORED_EDGE)</span>
+<span class="fc" id="L159">            return unfavored;</span>
+
+<span class="fc" id="L161">        return property.getBool(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(BooleanEncodedValue property, boolean value) {
+<span class="nc" id="L166">        property.setBool(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L167">        return this;</span>
+    }
+
+    @Override
+    public boolean getReverse(BooleanEncodedValue property) {
+<span class="fc bfc" id="L172" title="All 2 branches covered.">        if (property == EdgeIteratorState.UNFAVORED_EDGE)</span>
+<span class="fc" id="L173">            return unfavored;</span>
+<span class="fc bfc" id="L174" title="All 2 branches covered.">        return property.getBool(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setReverse(BooleanEncodedValue property, boolean value) {
+<span class="nc bnc" id="L179" title="All 2 branches missed.">        property.setBool(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L180">        return this;</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(BooleanEncodedValue property, boolean fwd, boolean bwd) {
+<span class="nc bnc" id="L185" title="All 2 branches missed.">        if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L186">            throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="nc" id="L187">        property.setBool(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, fwd);</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">        property.setBool(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, bwd);</span>
+<span class="nc" id="L189">        return this;</span>
+    }
+
+    @Override
+    public int get(IntEncodedValue property) {
+<span class="fc" id="L194">        return property.getInt(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(IntEncodedValue property, int value) {
+<span class="nc" id="L199">        property.setInt(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L200">        return this;</span>
+    }
+
+    @Override
+    public int getReverse(IntEncodedValue property) {
+<span class="fc bfc" id="L205" title="All 2 branches covered.">        return property.getInt(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setReverse(IntEncodedValue property, int value) {
+<span class="nc bnc" id="L210" title="All 2 branches missed.">        property.setInt(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L211">        return this;</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(IntEncodedValue property, int fwd, int bwd) {
+<span class="nc bnc" id="L216" title="All 2 branches missed.">        if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L217">            throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="nc" id="L218">        property.setInt(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, fwd);</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">        property.setInt(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, bwd);</span>
+<span class="nc" id="L220">        return this;</span>
+    }
+
+    @Override
+    public double get(DecimalEncodedValue property) {
+<span class="fc" id="L225">        return property.getDecimal(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(DecimalEncodedValue property, double value) {
+<span class="nc" id="L230">        property.setDecimal(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L231">        return this;</span>
+    }
+
+    @Override
+    public double getReverse(DecimalEncodedValue property) {
+<span class="fc bfc" id="L236" title="All 2 branches covered.">        return property.getDecimal(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setReverse(DecimalEncodedValue property, double value) {
+<span class="nc bnc" id="L241" title="All 2 branches missed.">        property.setDecimal(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L242">        return this;</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(DecimalEncodedValue property, double fwd, double bwd) {
+<span class="nc bnc" id="L247" title="All 2 branches missed.">        if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L248">            throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="nc" id="L249">        property.setDecimal(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, fwd);</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">        property.setDecimal(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, bwd);</span>
+<span class="nc" id="L251">        return this;</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; T get(EnumEncodedValue&lt;T&gt; property) {
+<span class="fc" id="L256">        return property.getEnum(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; EdgeIteratorState set(EnumEncodedValue&lt;T&gt; property, T value) {
+<span class="nc" id="L261">        property.setEnum(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L262">        return this;</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; T getReverse(EnumEncodedValue&lt;T&gt; property) {
+<span class="fc bfc" id="L267" title="All 2 branches covered.">        return property.getEnum(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; EdgeIteratorState setReverse(EnumEncodedValue&lt;T&gt; property, T value) {
+<span class="nc bnc" id="L272" title="All 2 branches missed.">        property.setEnum(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L273">        return this;</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; EdgeIteratorState set(EnumEncodedValue&lt;T&gt; property, T fwd, T bwd) {
+<span class="nc bnc" id="L278" title="All 2 branches missed.">        if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L279">            throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="nc" id="L280">        property.setEnum(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, fwd);</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">        property.setEnum(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, bwd);</span>
+<span class="nc" id="L282">        return this;</span>
+    }
+
+    @Override
+    public String get(StringEncodedValue property) {
+<span class="nc" id="L287">        return property.getString(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(StringEncodedValue property, String value) {
+<span class="nc" id="L292">        property.setString(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L293">        return this;</span>
+    }
+
+    @Override
+    public String getReverse(StringEncodedValue property) {
+<span class="nc bnc" id="L298" title="All 2 branches missed.">        return property.getString(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setReverse(StringEncodedValue property, String value) {
+<span class="nc bnc" id="L303" title="All 2 branches missed.">        property.setString(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);</span>
+<span class="nc" id="L304">        return this;</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(StringEncodedValue property, String fwd, String bwd) {
+<span class="nc bnc" id="L309" title="All 2 branches missed.">        if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L310">            throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="nc" id="L311">        property.setString(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, fwd);</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">        property.setString(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, bwd);</span>
+<span class="nc" id="L313">        return this;</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="fc" id="L318">        String name = (String) getValue(STREET_NAME);</span>
+        // preserve backward compatibility (returns empty string if name tag missing)
+<span class="fc bfc" id="L320" title="All 2 branches covered.">        return name == null ? &quot;&quot; : name;</span>
+    }
+
+    @Override
+    public EdgeIteratorState setKeyValues(Map&lt;String, KVStorage.KValue&gt; list) {
+<span class="fc" id="L325">        this.keyValues = list;</span>
+<span class="fc" id="L326">        return this;</span>
+    }
+
+    @Override
+    public Map&lt;String, KVStorage.KValue&gt; getKeyValues() {
+<span class="fc" id="L331">        return keyValues;</span>
+    }
+
+    @Override
+    public Object getValue(String key) {
+<span class="fc" id="L336">        KVStorage.KValue value = keyValues.get(key);</span>
+<span class="fc bfc" id="L337" title="All 2 branches covered.">        if (value != null) {</span>
+<span class="fc bfc" id="L338" title="All 4 branches covered.">            if (!reverse &amp;&amp; value.getFwd() != null) return value.getFwd();</span>
+<span class="fc bfc" id="L339" title="All 4 branches covered.">            if (reverse &amp;&amp; value.getBwd() != null) return value.getBwd();</span>
+        }
+<span class="fc" id="L341">        return null;</span>
+    }
+
+    /**
+     * This method sets edge to unfavored status for routing from the start or to the stop location.
+     */
+    public void setUnfavored(boolean unfavored) {
+<span class="fc" id="L348">        this.unfavored = unfavored;</span>
+<span class="fc" id="L349">    }</span>
+
+    @Override
+    public String toString() {
+<span class="fc" id="L353">        return baseNode + &quot;-&gt;&quot; + adjNode;</span>
+    }
+
+    @Override
+    public EdgeIteratorState detach(boolean reverse) {
+<span class="pc bpc" id="L358" title="1 of 2 branches missed.">        if (reverse) {</span>
+            // update properties of reverse edge
+            // TODO copy pointList (geometry) too
+<span class="fc" id="L361">            reverseEdge.setFlags(getFlags());</span>
+<span class="fc" id="L362">            reverseEdge.setKeyValues(getKeyValues());</span>
+<span class="fc" id="L363">            reverseEdge.setDistance(getDistance());</span>
+<span class="fc" id="L364">            return reverseEdge;</span>
+        } else {
+<span class="nc" id="L366">            return this;</span>
+        }
+    }
+
+    @Override
+    public EdgeIteratorState copyPropertiesFrom(EdgeIteratorState fromEdge) {
+<span class="nc" id="L372">        throw new RuntimeException(&quot;Not supported.&quot;);</span>
+    }
+
+    public void setReverseEdge(EdgeIteratorState reverseEdge) {
+<span class="fc" id="L376">        this.reverseEdge = reverseEdge;</span>
+<span class="fc" id="L377">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

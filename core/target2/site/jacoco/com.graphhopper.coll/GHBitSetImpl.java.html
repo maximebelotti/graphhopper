@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GHBitSetImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.coll</a> &gt; <span class="el_source">GHBitSetImpl.java</span></div><h1>GHBitSetImpl.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.coll;
+
+import java.util.BitSet;
+
+/**
+ * This implementation stores the bits inside the values of a long-array. Be aware that the size of this array grows
+ * depending on the values you pass into this set. If you only want to add a few (possibly large) integers you should
+ * use {@link GHTBitSet} instead.
+ *
+ * @author Peter Karich
+ */
+public class GHBitSetImpl extends BitSet implements GHBitSet {
+    public GHBitSetImpl() {
+<span class="fc" id="L31">        super();</span>
+<span class="fc" id="L32">    }</span>
+
+    public GHBitSetImpl(int nbits) {
+<span class="fc" id="L35">        super(nbits);</span>
+<span class="fc" id="L36">    }</span>
+
+    @Override
+    public final boolean contains(int index) {
+<span class="fc" id="L40">        return super.get(index);</span>
+    }
+
+    @Override
+    public final void add(int index) {
+<span class="fc" id="L45">        super.set(index);</span>
+<span class="fc" id="L46">    }</span>
+
+    @Override
+    public final int getCardinality() {
+<span class="fc" id="L50">        return super.cardinality();</span>
+    }
+
+    @Override
+    public final int next(int index) {
+<span class="fc" id="L55">        return super.nextSetBit(index);</span>
+    }
+
+    public final int nextClear(int index) {
+<span class="nc" id="L59">        return super.nextClearBit(index);</span>
+    }
+
+    @Override
+    public void remove(int index) {
+<span class="nc" id="L64">        super.clear(index);</span>
+<span class="nc" id="L65">    }</span>
+
+    @Override
+    public final GHBitSet copyTo(GHBitSet bs) {
+<span class="fc" id="L69">        bs.clear();</span>
+<span class="pc bpc" id="L70" title="1 of 2 branches missed.">        if (bs instanceof GHBitSetImpl) {</span>
+<span class="fc" id="L71">            ((GHBitSetImpl) bs).or(this);</span>
+        } else {
+<span class="nc bnc" id="L73" title="All 2 branches missed.">            for (int index = super.nextSetBit(0); index &gt;= 0;</span>
+<span class="nc" id="L74">                 index = super.nextSetBit(index + 1)) {</span>
+<span class="nc" id="L75">                bs.add(index);</span>
+            }
+        }
+<span class="fc" id="L78">        return bs;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MiniPerfTest.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">MiniPerfTest.java</span></div><h1>MiniPerfTest.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.util.Locale;
+
+/**
+ * @author Peter Karich
+ */
+<span class="nc" id="L27">public class MiniPerfTest {</span>
+
+    private static final double NS_PER_S = 1e9;
+    private static final double NS_PER_MS = 1e6;
+    private static final double NS_PER_US = 1e3;
+
+<span class="nc" id="L33">    private int counts = 100;</span>
+<span class="nc" id="L34">    private long fullTime = 0;</span>
+    private long max;
+<span class="nc" id="L36">    private long min = Long.MAX_VALUE;</span>
+    private int dummySum;
+
+    /**
+     * Important: Make sure to use the dummy sum in your program somewhere such that it's calculation cannot be skipped
+     * by the JVM. Either use {@link #getDummySum()} or {@link #getReport()} after running this method.
+     */
+    public MiniPerfTest start(Task m) {
+<span class="nc" id="L44">        int warmupCount = Math.max(1, counts / 3);</span>
+<span class="nc bnc" id="L45" title="All 2 branches missed.">        for (int i = 0; i &lt; warmupCount; i++) {</span>
+<span class="nc" id="L46">            dummySum += m.doCalc(true, i);</span>
+        }
+<span class="nc" id="L48">        long startFull = System.nanoTime();</span>
+<span class="nc bnc" id="L49" title="All 2 branches missed.">        for (int i = 0; i &lt; counts; i++) {</span>
+<span class="nc" id="L50">            long start = System.nanoTime();</span>
+<span class="nc" id="L51">            dummySum += m.doCalc(false, i);</span>
+<span class="nc" id="L52">            long time = System.nanoTime() - start;</span>
+<span class="nc bnc" id="L53" title="All 2 branches missed.">            if (time &lt; min)</span>
+<span class="nc" id="L54">                min = time;</span>
+
+<span class="nc bnc" id="L56" title="All 2 branches missed.">            if (time &gt; max)</span>
+<span class="nc" id="L57">                max = time;</span>
+        }
+<span class="nc" id="L59">        fullTime = System.nanoTime() - startFull;</span>
+<span class="nc" id="L60">        return this;</span>
+    }
+
+    public interface Task {
+
+        /**
+         * @return return some integer as result from your processing to make sure that the JVM cannot
+         * optimize (away) the call or within the call something.
+         */
+        int doCalc(boolean warmup, int run);
+    }
+
+    public MiniPerfTest setIterations(int counts) {
+<span class="nc" id="L73">        this.counts = counts;</span>
+<span class="nc" id="L74">        return this;</span>
+    }
+
+    /**
+     * @return minimum time of every call, in ms
+     */
+    public double getMin() {
+<span class="nc" id="L81">        return min / NS_PER_MS;</span>
+    }
+
+    /**
+     * @return maximum time of every calls, in ms
+     */
+    public double getMax() {
+<span class="nc" id="L88">        return max / NS_PER_MS;</span>
+    }
+
+    /**
+     * @return time for all calls accumulated, in ms
+     */
+    public double getSum() {
+<span class="nc" id="L95">        return fullTime / NS_PER_MS;</span>
+    }
+
+    /**
+     * @return mean time per call, in ms
+     */
+    public double getMean() {
+<span class="nc" id="L102">        return getSum() / counts;</span>
+    }
+
+    private String formatDuration(double durationNs) {
+        double divisor;
+        String unit;
+<span class="nc bnc" id="L108" title="All 2 branches missed.">        if (durationNs &gt; 1e7d) {</span>
+<span class="nc" id="L109">            divisor = NS_PER_S;</span>
+<span class="nc" id="L110">            unit = &quot;s&quot;;</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">        } else if (durationNs &gt; 1e4d) {</span>
+<span class="nc" id="L112">            divisor = NS_PER_MS;</span>
+<span class="nc" id="L113">            unit = &quot;ms&quot;;</span>
+        } else {
+<span class="nc" id="L115">            divisor = NS_PER_US;</span>
+<span class="nc" id="L116">            unit = &quot;µs&quot;;</span>
+        }
+<span class="nc" id="L118">        return nf(durationNs / divisor) + unit;</span>
+    }
+
+    public String getReport() {
+<span class="nc" id="L122">        double meanNs = ((double) fullTime) / counts;</span>
+<span class="nc" id="L123">        return &quot;sum:&quot; + formatDuration(fullTime) + &quot;, time/call:&quot; + formatDuration(meanNs) + &quot;, dummy: &quot; + dummySum;</span>
+    }
+
+    public int getDummySum() {
+<span class="nc" id="L127">        return dummySum;</span>
+    }
+
+    private String nf(Number num) {
+<span class="nc" id="L131">        return new DecimalFormat(&quot;#.###&quot;, DecimalFormatSymbols.getInstance(Locale.ROOT)).format(num);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

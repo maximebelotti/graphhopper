@@ -1,0 +1,579 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BaseGraphNodesAndEdges.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">BaseGraphNodesAndEdges.java</span></div><h1>BaseGraphNodesAndEdges.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.storage;
+
+import com.carrotsearch.hppc.BitSet;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.BBox;
+
+import java.util.Locale;
+import java.util.function.IntUnaryOperator;
+
+import static com.graphhopper.util.EdgeIterator.NO_EDGE;
+import static com.graphhopper.util.Helper.nf;
+
+/**
+ * Underlying storage for nodes and edges of {@link BaseGraph}. Nodes and edges are stored using two {@link DataAccess}
+ * instances. Nodes and edges are simply stored sequentially, see the memory layout in the constructor.
+ */
+class BaseGraphNodesAndEdges implements EdgeIntAccess {
+    // Currently distances are stored as 4 byte integers. using a conversion factor of 1000 the minimum distance
+    // that is not considered zero is 0.0005m (=0.5mm) and the maximum distance per edge is about 2.147.483m=2147km.
+    // See OSMReader.addEdge and #1871.
+    private static final double INT_DIST_FACTOR = 1000d;
+<span class="fc" id="L41">    static double MAX_DIST = Integer.MAX_VALUE / INT_DIST_FACTOR;</span>
+
+    // nodes
+    private final DataAccess nodes;
+    private final int N_EDGE_REF, N_LAT, N_LON, N_ELE, N_TC;
+    private int nodeEntryBytes;
+    private int nodeCount;
+
+    // edges
+    private final DataAccess edges;
+    private final int E_NODEA, E_NODEB, E_LINKA, E_LINKB, E_DIST, E_KV, E_FLAGS, E_GEO;
+    private final int bytesForFlags;
+    private int edgeEntryBytes;
+    private int edgeCount;
+
+    private final boolean withTurnCosts;
+    private final boolean withElevation;
+
+    // we do not write the bounding box directly to storage, but rather to this bbox object. we only write to storage
+    // when flushing. why? just because we did it like this in the past, and otherwise we run into rounding errors,
+    // because of: #2393
+    public final BBox bounds;
+    private boolean frozen;
+
+<span class="fc" id="L65">    public BaseGraphNodesAndEdges(Directory dir, boolean withElevation, boolean withTurnCosts, int segmentSize, int bytesForFlags) {</span>
+<span class="fc" id="L66">        nodes = dir.create(&quot;nodes&quot;, dir.getDefaultType(&quot;nodes&quot;, true), segmentSize);</span>
+<span class="fc" id="L67">        edges = dir.create(&quot;edges&quot;, dir.getDefaultType(&quot;edges&quot;, false), segmentSize);</span>
+<span class="fc" id="L68">        this.bytesForFlags = bytesForFlags;</span>
+<span class="fc" id="L69">        this.withTurnCosts = withTurnCosts;</span>
+<span class="fc" id="L70">        this.withElevation = withElevation;</span>
+<span class="fc" id="L71">        bounds = BBox.createInverse(withElevation);</span>
+
+        // memory layout for nodes
+<span class="fc" id="L74">        N_EDGE_REF = 0;</span>
+<span class="fc" id="L75">        N_LAT = 4;</span>
+<span class="fc" id="L76">        N_LON = 8;</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        N_ELE = N_LON + (withElevation ? 4 : 0);</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">        N_TC = N_ELE + (withTurnCosts ? 4 : 0);</span>
+<span class="fc" id="L79">        nodeEntryBytes = N_TC + 4;</span>
+
+        // memory layout for edges
+<span class="fc" id="L82">        E_NODEA = 0;</span>
+<span class="fc" id="L83">        E_NODEB = 4;</span>
+<span class="fc" id="L84">        E_LINKA = 8;</span>
+<span class="fc" id="L85">        E_LINKB = 12;</span>
+<span class="fc" id="L86">        E_DIST = 16;</span>
+<span class="fc" id="L87">        E_KV = 20;</span>
+<span class="fc" id="L88">        E_FLAGS = 24;</span>
+<span class="fc" id="L89">        E_GEO = E_FLAGS + bytesForFlags;</span>
+<span class="fc" id="L90">        edgeEntryBytes = E_GEO + 5;</span>
+<span class="fc" id="L91">    }</span>
+
+    public void create(long initSize) {
+<span class="fc" id="L94">        nodes.create(initSize);</span>
+<span class="fc" id="L95">        edges.create(initSize);</span>
+<span class="fc" id="L96">    }</span>
+
+    public boolean loadExisting() {
+<span class="pc bpc" id="L99" title="2 of 4 branches missed.">        if (!nodes.loadExisting() || !edges.loadExisting())</span>
+<span class="nc" id="L100">            return false;</span>
+
+        // now load some properties from stored data
+<span class="fc" id="L103">        final int nodesVersion = nodes.getHeader(0 * 4);</span>
+<span class="fc" id="L104">        GHUtility.checkDAVersion(&quot;nodes&quot;, Constants.VERSION_NODE, nodesVersion);</span>
+<span class="fc" id="L105">        nodeEntryBytes = nodes.getHeader(1 * 4);</span>
+<span class="fc" id="L106">        nodeCount = nodes.getHeader(2 * 4);</span>
+<span class="fc" id="L107">        bounds.minLon = Helper.intToDegree(nodes.getHeader(3 * 4));</span>
+<span class="fc" id="L108">        bounds.maxLon = Helper.intToDegree(nodes.getHeader(4 * 4));</span>
+<span class="fc" id="L109">        bounds.minLat = Helper.intToDegree(nodes.getHeader(5 * 4));</span>
+<span class="fc" id="L110">        bounds.maxLat = Helper.intToDegree(nodes.getHeader(6 * 4));</span>
+<span class="fc bfc" id="L111" title="All 2 branches covered.">        boolean hasElevation = nodes.getHeader(7 * 4) == 1;</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        if (hasElevation != withElevation)</span>
+            // :( we should load data from disk to create objects, not the other way around!
+<span class="fc" id="L114">            throw new IllegalStateException(&quot;Configured dimension elevation=&quot; + withElevation + &quot; is not equal &quot;</span>
+                    + &quot;to dimension of loaded graph elevation =&quot; + hasElevation);
+<span class="fc bfc" id="L116" title="All 2 branches covered.">        if (withElevation) {</span>
+<span class="fc" id="L117">            bounds.minEle = Helper.uIntToEle(nodes.getHeader(8 * 4));</span>
+<span class="fc" id="L118">            bounds.maxEle = Helper.uIntToEle(nodes.getHeader(9 * 4));</span>
+        }
+<span class="fc bfc" id="L120" title="All 2 branches covered.">        frozen = nodes.getHeader(10 * 4) == 1;</span>
+
+<span class="fc" id="L122">        final int edgesVersion = edges.getHeader(0 * 4);</span>
+<span class="fc" id="L123">        GHUtility.checkDAVersion(&quot;edges&quot;, Constants.VERSION_EDGE, edgesVersion);</span>
+<span class="fc" id="L124">        edgeEntryBytes = edges.getHeader(1 * 4);</span>
+<span class="fc" id="L125">        edgeCount = edges.getHeader(2 * 4);</span>
+<span class="fc" id="L126">        return true;</span>
+    }
+
+    public void flush() {
+<span class="fc" id="L130">        nodes.setHeader(0 * 4, Constants.VERSION_NODE);</span>
+<span class="fc" id="L131">        nodes.setHeader(1 * 4, nodeEntryBytes);</span>
+<span class="fc" id="L132">        nodes.setHeader(2 * 4, nodeCount);</span>
+<span class="fc" id="L133">        nodes.setHeader(3 * 4, Helper.degreeToInt(bounds.minLon));</span>
+<span class="fc" id="L134">        nodes.setHeader(4 * 4, Helper.degreeToInt(bounds.maxLon));</span>
+<span class="fc" id="L135">        nodes.setHeader(5 * 4, Helper.degreeToInt(bounds.minLat));</span>
+<span class="fc" id="L136">        nodes.setHeader(6 * 4, Helper.degreeToInt(bounds.maxLat));</span>
+<span class="fc bfc" id="L137" title="All 2 branches covered.">        nodes.setHeader(7 * 4, withElevation ? 1 : 0);</span>
+<span class="fc bfc" id="L138" title="All 2 branches covered.">        if (withElevation) {</span>
+<span class="fc" id="L139">            nodes.setHeader(8 * 4, Helper.eleToUInt(bounds.minEle));</span>
+<span class="fc" id="L140">            nodes.setHeader(9 * 4, Helper.eleToUInt(bounds.maxEle));</span>
+        }
+<span class="fc bfc" id="L142" title="All 2 branches covered.">        nodes.setHeader(10 * 4, frozen ? 1 : 0);</span>
+
+<span class="fc" id="L144">        edges.setHeader(0 * 4, Constants.VERSION_EDGE);</span>
+<span class="fc" id="L145">        edges.setHeader(1 * 4, edgeEntryBytes);</span>
+<span class="fc" id="L146">        edges.setHeader(2 * 4, edgeCount);</span>
+
+<span class="fc" id="L148">        edges.flush();</span>
+<span class="fc" id="L149">        nodes.flush();</span>
+<span class="fc" id="L150">    }</span>
+
+    public void close() {
+<span class="fc" id="L153">        edges.close();</span>
+<span class="fc" id="L154">        nodes.close();</span>
+<span class="fc" id="L155">    }</span>
+
+    public int getNodes() {
+<span class="fc" id="L158">        return nodeCount;</span>
+    }
+
+    public int getEdges() {
+<span class="fc" id="L162">        return edgeCount;</span>
+    }
+
+    IntsRef createEdgeFlags() {
+<span class="fc" id="L166">        return new IntsRef((int) Math.ceil((double) getBytesForFlags() / 4));</span>
+    }
+
+    public int getBytesForFlags() {
+<span class="fc" id="L170">        return bytesForFlags;</span>
+    }
+
+    public boolean withElevation() {
+<span class="fc" id="L174">        return withElevation;</span>
+    }
+
+    public boolean withTurnCosts() {
+<span class="fc" id="L178">        return withTurnCosts;</span>
+    }
+
+    public BBox getBounds() {
+<span class="fc" id="L182">        return bounds;</span>
+    }
+
+    public long getCapacity() {
+<span class="nc" id="L186">        return nodes.getCapacity() + edges.getCapacity();</span>
+    }
+
+    public boolean isClosed() {
+<span class="pc bpc" id="L190" title="1 of 2 branches missed.">        assert nodes.isClosed() == edges.isClosed();</span>
+<span class="fc" id="L191">        return nodes.isClosed();</span>
+    }
+
+    public int edge(int nodeA, int nodeB) {
+<span class="pc bpc" id="L195" title="1 of 2 branches missed.">        if (edgeCount == Integer.MAX_VALUE)</span>
+<span class="nc" id="L196">            throw new IllegalStateException(&quot;Maximum edge count exceeded: &quot; + edgeCount);</span>
+<span class="pc bpc" id="L197" title="1 of 2 branches missed.">        if (nodeA == nodeB)</span>
+<span class="nc" id="L198">            throw new IllegalArgumentException(&quot;Loop edges are not supported, got: &quot; + nodeA + &quot; - &quot; + nodeB);</span>
+<span class="fc" id="L199">        ensureNodeCapacity(Math.max(nodeA, nodeB));</span>
+<span class="fc" id="L200">        final int edge = edgeCount;</span>
+<span class="fc" id="L201">        final long edgePointer = (long) edgeCount * edgeEntryBytes;</span>
+<span class="fc" id="L202">        edgeCount++;</span>
+<span class="fc" id="L203">        edges.ensureCapacity((long) edgeCount * edgeEntryBytes);</span>
+
+<span class="fc" id="L205">        setNodeA(edgePointer, nodeA);</span>
+<span class="fc" id="L206">        setNodeB(edgePointer, nodeB);</span>
+        // we keep a linked list of edges at each node. here we prepend the new edge at the already existing linked
+        // list of edges.
+<span class="fc" id="L209">        long nodePointerA = toNodePointer(nodeA);</span>
+<span class="fc" id="L210">        int edgeRefA = getEdgeRef(nodePointerA);</span>
+<span class="fc bfc" id="L211" title="All 2 branches covered.">        setLinkA(edgePointer, EdgeIterator.Edge.isValid(edgeRefA) ? edgeRefA : NO_EDGE);</span>
+<span class="fc" id="L212">        setEdgeRef(nodePointerA, edge);</span>
+
+<span class="pc bpc" id="L214" title="1 of 2 branches missed.">        if (nodeA != nodeB) {</span>
+<span class="fc" id="L215">            long nodePointerB = toNodePointer(nodeB);</span>
+<span class="fc" id="L216">            int edgeRefB = getEdgeRef(nodePointerB);</span>
+<span class="fc bfc" id="L217" title="All 2 branches covered.">            setLinkB(edgePointer, EdgeIterator.Edge.isValid(edgeRefB) ? edgeRefB : NO_EDGE);</span>
+<span class="fc" id="L218">            setEdgeRef(nodePointerB, edge);</span>
+        }
+<span class="fc" id="L220">        return edge;</span>
+    }
+
+    public void sortEdges(IntUnaryOperator getNewEdgeForOldEdge) {
+<span class="fc" id="L224">        BitSet visited = new BitSet(getEdges());</span>
+<span class="fc bfc" id="L225" title="All 2 branches covered.">        for (int edge = 0; edge &lt; getEdges(); edge++) {</span>
+<span class="fc bfc" id="L226" title="All 2 branches covered.">            if (visited.get(edge)) continue;</span>
+<span class="fc" id="L227">            int curr = edge;</span>
+
+<span class="fc" id="L229">            long pointer = toEdgePointer(curr);</span>
+<span class="fc" id="L230">            int nodeA = getNodeA(pointer);</span>
+<span class="fc" id="L231">            int nodeB = getNodeB(pointer);</span>
+<span class="fc" id="L232">            int linkA = getLinkA(pointer);</span>
+<span class="fc" id="L233">            int linkB = getLinkB(pointer);</span>
+<span class="fc" id="L234">            int dist = edges.getInt(pointer + E_DIST);</span>
+<span class="fc" id="L235">            int kv = getKeyValuesRef(pointer);</span>
+<span class="fc" id="L236">            IntsRef flags = createEdgeFlags();</span>
+<span class="fc" id="L237">            readFlags(pointer, flags);</span>
+<span class="fc" id="L238">            long geo = getGeoRef(pointer);</span>
+
+            do {
+<span class="fc" id="L241">                visited.set(curr);</span>
+
+<span class="fc" id="L243">                int newEdge = getNewEdgeForOldEdge.applyAsInt(curr);</span>
+<span class="fc" id="L244">                long newPointer = toEdgePointer(newEdge);</span>
+<span class="fc" id="L245">                int tmpNodeA = getNodeA(newPointer);</span>
+<span class="fc" id="L246">                int tmpNodeB = getNodeB(newPointer);</span>
+<span class="fc" id="L247">                int tmpLinkA = getLinkA(newPointer);</span>
+<span class="fc" id="L248">                int tmpLinkB = getLinkB(newPointer);</span>
+<span class="fc" id="L249">                int tmpDist = edges.getInt(newPointer + E_DIST);</span>
+<span class="fc" id="L250">                int tmpKV = getKeyValuesRef(newPointer);</span>
+<span class="fc" id="L251">                IntsRef tmpFlags = createEdgeFlags();</span>
+<span class="fc" id="L252">                readFlags(newPointer, tmpFlags);</span>
+<span class="fc" id="L253">                long tmpGeo = getGeoRef(newPointer);</span>
+
+<span class="fc" id="L255">                setNodeA(newPointer, nodeA);</span>
+<span class="fc" id="L256">                setNodeB(newPointer, nodeB);</span>
+<span class="fc bfc" id="L257" title="All 2 branches covered.">                setLinkA(newPointer, linkA == -1 ? -1 : getNewEdgeForOldEdge.applyAsInt(linkA));</span>
+<span class="fc bfc" id="L258" title="All 2 branches covered.">                setLinkB(newPointer, linkB == -1 ? -1 : getNewEdgeForOldEdge.applyAsInt(linkB));</span>
+<span class="fc" id="L259">                edges.setInt(newPointer + E_DIST, dist);</span>
+<span class="fc" id="L260">                setKeyValuesRef(newPointer, kv);</span>
+<span class="fc" id="L261">                writeFlags(newPointer, flags);</span>
+<span class="fc" id="L262">                setGeoRef(newPointer, geo);</span>
+
+<span class="fc" id="L264">                nodeA = tmpNodeA;</span>
+<span class="fc" id="L265">                nodeB = tmpNodeB;</span>
+<span class="fc" id="L266">                linkA = tmpLinkA;</span>
+<span class="fc" id="L267">                linkB = tmpLinkB;</span>
+<span class="fc" id="L268">                dist = tmpDist;</span>
+<span class="fc" id="L269">                kv = tmpKV;</span>
+<span class="fc" id="L270">                flags = tmpFlags;</span>
+<span class="fc" id="L271">                geo = tmpGeo;</span>
+
+<span class="fc" id="L273">                curr = newEdge;</span>
+<span class="fc bfc" id="L274" title="All 2 branches covered.">            } while (curr != edge);</span>
+        }
+
+        // update edge references
+<span class="fc bfc" id="L278" title="All 2 branches covered.">        for (int node = 0; node &lt; getNodes(); node++) {</span>
+<span class="fc" id="L279">            long pointer = toNodePointer(node);</span>
+<span class="fc" id="L280">            setEdgeRef(pointer, getNewEdgeForOldEdge.applyAsInt(getEdgeRef(pointer)));</span>
+        }
+<span class="fc" id="L282">    }</span>
+
+    public void relabelNodes(IntUnaryOperator getNewNodeForOldNode) {
+<span class="fc bfc" id="L285" title="All 2 branches covered.">        for (int edge = 0; edge &lt; getEdges(); edge++) {</span>
+<span class="fc" id="L286">            long pointer = toEdgePointer(edge);</span>
+<span class="fc" id="L287">            setNodeA(pointer, getNewNodeForOldNode.applyAsInt(getNodeA(pointer)));</span>
+<span class="fc" id="L288">            setNodeB(pointer, getNewNodeForOldNode.applyAsInt(getNodeB(pointer)));</span>
+        }
+<span class="fc" id="L290">        BitSet visited = new BitSet(getNodes());</span>
+<span class="fc bfc" id="L291" title="All 2 branches covered.">        for (int node = 0; node &lt; getNodes(); node++) {</span>
+<span class="fc bfc" id="L292" title="All 2 branches covered.">            if (visited.get(node)) continue;</span>
+
+<span class="fc" id="L294">            int curr = node;</span>
+<span class="fc" id="L295">            long pointer = toNodePointer(node);</span>
+<span class="fc" id="L296">            int edgeRef = getEdgeRef(pointer);</span>
+<span class="fc" id="L297">            double lat = getLat(pointer);</span>
+<span class="fc" id="L298">            double lon = getLon(pointer);</span>
+<span class="fc bfc" id="L299" title="All 2 branches covered.">            double ele = withElevation() ? getEle(pointer) : Double.NaN;</span>
+<span class="fc bfc" id="L300" title="All 2 branches covered.">            int tc = withTurnCosts() ? getTurnCostRef(pointer) : -1;</span>
+
+            do {
+<span class="fc" id="L303">                visited.set(curr);</span>
+<span class="fc" id="L304">                int newNode = getNewNodeForOldNode.applyAsInt(curr);</span>
+<span class="fc" id="L305">                long newPointer = toNodePointer(newNode);</span>
+<span class="fc" id="L306">                int tmpEdgeRef = getEdgeRef(newPointer);</span>
+<span class="fc" id="L307">                double tmpLat = getLat(newPointer);</span>
+<span class="fc" id="L308">                double tmpLon = getLon(newPointer);</span>
+<span class="fc bfc" id="L309" title="All 2 branches covered.">                double tmpEle = withElevation() ? getEle(newPointer) : Double.NaN;</span>
+<span class="fc bfc" id="L310" title="All 2 branches covered.">                int tmpTC = withTurnCosts() ? getTurnCostRef(newPointer) : -1;</span>
+
+<span class="fc" id="L312">                setEdgeRef(newPointer, edgeRef);</span>
+<span class="fc" id="L313">                setLat(newPointer, lat);</span>
+<span class="fc" id="L314">                setLon(newPointer, lon);</span>
+<span class="fc bfc" id="L315" title="All 2 branches covered.">                if (withElevation())</span>
+<span class="fc" id="L316">                    setEle(newPointer, ele);</span>
+<span class="fc bfc" id="L317" title="All 2 branches covered.">                if (withTurnCosts())</span>
+<span class="fc" id="L318">                    setTurnCostRef(newPointer, tc);</span>
+
+<span class="fc" id="L320">                edgeRef = tmpEdgeRef;</span>
+<span class="fc" id="L321">                lat = tmpLat;</span>
+<span class="fc" id="L322">                lon = tmpLon;</span>
+<span class="fc" id="L323">                ele = tmpEle;</span>
+<span class="fc" id="L324">                tc = tmpTC;</span>
+
+<span class="fc" id="L326">                curr = newNode;</span>
+<span class="fc bfc" id="L327" title="All 2 branches covered.">            } while (curr != node);</span>
+        }
+<span class="fc" id="L329">    }</span>
+
+    public void ensureNodeCapacity(int node) {
+<span class="fc bfc" id="L332" title="All 2 branches covered.">        if (node &lt; nodeCount)</span>
+<span class="fc" id="L333">            return;</span>
+
+<span class="fc" id="L335">        int oldNodes = nodeCount;</span>
+<span class="fc" id="L336">        nodeCount = node + 1;</span>
+<span class="fc" id="L337">        nodes.ensureCapacity((long) nodeCount * nodeEntryBytes);</span>
+<span class="fc bfc" id="L338" title="All 2 branches covered.">        for (int n = oldNodes; n &lt; nodeCount; ++n) {</span>
+<span class="fc" id="L339">            setEdgeRef(toNodePointer(n), NO_EDGE);</span>
+<span class="fc bfc" id="L340" title="All 2 branches covered.">            if (withTurnCosts)</span>
+<span class="fc" id="L341">                setTurnCostRef(toNodePointer(n), TurnCostStorage.NO_TURN_ENTRY);</span>
+        }
+<span class="fc" id="L343">    }</span>
+
+    public long toNodePointer(int node) {
+<span class="pc bpc" id="L346" title="1 of 4 branches missed.">        if (node &lt; 0 || node &gt;= nodeCount)</span>
+<span class="fc" id="L347">            throw new IllegalArgumentException(&quot;node: &quot; + node + &quot; out of bounds [0,&quot; + nodeCount + &quot;[&quot;);</span>
+<span class="fc" id="L348">        return (long) node * nodeEntryBytes;</span>
+    }
+
+    public long toEdgePointer(int edge) {
+<span class="pc bpc" id="L352" title="2 of 4 branches missed.">        if (edge &lt; 0 || edge &gt;= edgeCount)</span>
+<span class="nc" id="L353">            throw new IllegalArgumentException(&quot;edge: &quot; + edge + &quot; out of bounds [0,&quot; + edgeCount + &quot;[&quot;);</span>
+<span class="fc" id="L354">        return (long) edge * edgeEntryBytes;</span>
+    }
+
+    public void readFlags(long edgePointer, IntsRef edgeFlags) {
+<span class="fc" id="L358">        int size = edgeFlags.ints.length;</span>
+<span class="fc bfc" id="L359" title="All 2 branches covered.">        for (int i = 0; i &lt; size; ++i)</span>
+<span class="fc" id="L360">            edgeFlags.ints[i] = getFlagInt(edgePointer, i * 4);</span>
+<span class="fc" id="L361">    }</span>
+
+    public void writeFlags(long edgePointer, IntsRef edgeFlags) {
+<span class="fc" id="L364">        int size = edgeFlags.ints.length;</span>
+<span class="fc bfc" id="L365" title="All 2 branches covered.">        for (int i = 0; i &lt; size; ++i)</span>
+<span class="fc" id="L366">            setFlagInt(edgePointer, i * 4, edgeFlags.ints[i]);</span>
+<span class="fc" id="L367">    }</span>
+
+    private int getFlagInt(long edgePointer, int byteOffset) {
+<span class="pc bpc" id="L370" title="1 of 2 branches missed.">        if (byteOffset &gt;= bytesForFlags)</span>
+<span class="nc" id="L371">            throw new IllegalArgumentException(&quot;too large byteOffset &quot; + byteOffset + &quot; vs &quot; + bytesForFlags);</span>
+<span class="fc" id="L372">        edgePointer += byteOffset;</span>
+<span class="fc bfc" id="L373" title="All 2 branches covered.">        if (byteOffset + 3 == bytesForFlags) {</span>
+<span class="fc" id="L374">            return (edges.getShort(edgePointer + E_FLAGS) &lt;&lt; 8) &amp; 0x00FF_FFFF | edges.getByte(edgePointer + E_FLAGS + 2) &amp; 0xFF;</span>
+<span class="fc bfc" id="L375" title="All 2 branches covered.">        } else if (byteOffset + 2 == bytesForFlags) {</span>
+<span class="fc" id="L376">            return edges.getShort(edgePointer + E_FLAGS) &amp; 0xFFFF;</span>
+<span class="fc bfc" id="L377" title="All 2 branches covered.">        } else if (byteOffset + 1 == bytesForFlags) {</span>
+<span class="fc" id="L378">            return edges.getByte(edgePointer + E_FLAGS) &amp; 0xFF;</span>
+        }
+<span class="fc" id="L380">        return edges.getInt(edgePointer + E_FLAGS);</span>
+    }
+
+    private void setFlagInt(long edgePointer, int byteOffset, int value) {
+<span class="pc bpc" id="L384" title="1 of 2 branches missed.">        if (byteOffset &gt;= bytesForFlags)</span>
+<span class="nc" id="L385">            throw new IllegalArgumentException(&quot;too large byteOffset &quot; + byteOffset + &quot; vs &quot; + bytesForFlags);</span>
+<span class="fc" id="L386">        edgePointer += byteOffset;</span>
+<span class="fc bfc" id="L387" title="All 2 branches covered.">        if (byteOffset + 3 == bytesForFlags) {</span>
+<span class="pc bpc" id="L388" title="1 of 2 branches missed.">            if ((value &amp; 0xFF00_0000) != 0)</span>
+<span class="nc" id="L389">                throw new IllegalArgumentException(&quot;value at byteOffset &quot; + byteOffset + &quot; must not have the highest byte set but was &quot; + value);</span>
+<span class="fc" id="L390">            edges.setShort(edgePointer + E_FLAGS, (short) (value &gt;&gt; 8));</span>
+<span class="fc" id="L391">            edges.setByte(edgePointer + E_FLAGS + 2, (byte) value);</span>
+<span class="fc bfc" id="L392" title="All 2 branches covered.">        } else if (byteOffset + 2 == bytesForFlags) {</span>
+<span class="pc bpc" id="L393" title="1 of 2 branches missed.">            if ((value &amp; 0xFFFF_0000) != 0)</span>
+<span class="nc" id="L394">                throw new IllegalArgumentException(&quot;value at byteOffset &quot; + byteOffset + &quot; must not have the 2 highest bytes set but was &quot; + value);</span>
+<span class="fc" id="L395">            edges.setShort(edgePointer + E_FLAGS, (short) value);</span>
+<span class="fc bfc" id="L396" title="All 2 branches covered.">        } else if (byteOffset + 1 == bytesForFlags) {</span>
+<span class="pc bpc" id="L397" title="1 of 2 branches missed.">            if ((value &amp; 0xFFFF_FF00) != 0)</span>
+<span class="nc" id="L398">                throw new IllegalArgumentException(&quot;value at byteOffset &quot; + byteOffset + &quot; must not have the 3 highest bytes set but was &quot; + value);</span>
+<span class="fc" id="L399">            edges.setByte(edgePointer + E_FLAGS, (byte) value);</span>
+        } else {
+<span class="fc" id="L401">            edges.setInt(edgePointer + E_FLAGS, value);</span>
+        }
+<span class="fc" id="L403">    }</span>
+
+    @Override
+    public int getInt(int edgeId, int index) {
+<span class="fc" id="L407">        return getFlagInt(toEdgePointer(edgeId), index * 4);</span>
+    }
+
+    @Override
+    public void setInt(int edgeId, int index, int value) {
+<span class="fc" id="L412">        setFlagInt(toEdgePointer(edgeId), index * 4, value);</span>
+<span class="fc" id="L413">    }</span>
+
+    public void setNodeA(long edgePointer, int nodeA) {
+<span class="fc" id="L416">        edges.setInt(edgePointer + E_NODEA, nodeA);</span>
+<span class="fc" id="L417">    }</span>
+
+    public void setNodeB(long edgePointer, int nodeB) {
+<span class="fc" id="L420">        edges.setInt(edgePointer + E_NODEB, nodeB);</span>
+<span class="fc" id="L421">    }</span>
+
+    public void setLinkA(long edgePointer, int linkA) {
+<span class="fc" id="L424">        edges.setInt(edgePointer + E_LINKA, linkA);</span>
+<span class="fc" id="L425">    }</span>
+
+    public void setLinkB(long edgePointer, int linkB) {
+<span class="fc" id="L428">        edges.setInt(edgePointer + E_LINKB, linkB);</span>
+<span class="fc" id="L429">    }</span>
+
+    public void setDist(long edgePointer, double distance) {
+<span class="fc" id="L432">        edges.setInt(edgePointer + E_DIST, distToInt(distance));</span>
+<span class="fc" id="L433">    }</span>
+
+    public void setGeoRef(long edgePointer, long geoRef) {
+<span class="fc" id="L436">        int highest25Bits = (int) (geoRef &gt;&gt;&gt; 39);</span>
+        // Only two cases are allowed for highest bits. If geoRef is positive then all high bits are 0. If negative then all are 1.
+<span class="fc bfc" id="L438" title="All 4 branches covered.">        if (highest25Bits != 0 &amp;&amp; highest25Bits != 0x1_FF_FFFF)</span>
+<span class="pc bpc" id="L439" title="1 of 2 branches missed.">            throw new IllegalArgumentException(&quot;geoRef is too &quot; + (geoRef &gt; 0 ? &quot;large &quot; : &quot;small &quot;) + geoRef + &quot;, &quot; + Long.toBinaryString(geoRef));</span>
+
+<span class="fc" id="L441">        edges.setInt(edgePointer + E_GEO, (int) (geoRef));</span>
+<span class="fc" id="L442">        edges.setByte(edgePointer + E_GEO + 4, (byte) (geoRef &gt;&gt; 32));</span>
+<span class="fc" id="L443">    }</span>
+
+    public void setKeyValuesRef(long edgePointer, int nameRef) {
+<span class="fc" id="L446">        edges.setInt(edgePointer + E_KV, nameRef);</span>
+<span class="fc" id="L447">    }</span>
+
+    public int getNodeA(long edgePointer) {
+<span class="fc" id="L450">        return edges.getInt(edgePointer + E_NODEA);</span>
+    }
+
+    public int getNodeB(long edgePointer) {
+<span class="fc" id="L454">        return edges.getInt(edgePointer + E_NODEB);</span>
+    }
+
+    public int getLinkA(long edgePointer) {
+<span class="fc" id="L458">        return edges.getInt(edgePointer + E_LINKA);</span>
+    }
+
+    public int getLinkB(long edgePointer) {
+<span class="fc" id="L462">        return edges.getInt(edgePointer + E_LINKB);</span>
+    }
+
+    public double getDist(long pointer) {
+<span class="fc" id="L466">        int val = edges.getInt(pointer + E_DIST);</span>
+        // do never return infinity even if INT MAX, see #435
+<span class="fc" id="L468">        return val / INT_DIST_FACTOR;</span>
+    }
+
+    public long getGeoRef(long edgePointer) {
+<span class="fc" id="L472">        return BitUtil.LITTLE.toLong(</span>
+<span class="fc" id="L473">                edges.getInt(edgePointer + E_GEO),</span>
+                // to support negative georefs (#2985) do not mask byte with 0xFF:
+<span class="fc" id="L475">                edges.getByte(edgePointer + E_GEO + 4));</span>
+    }
+
+    public int getKeyValuesRef(long edgePointer) {
+<span class="fc" id="L479">        return edges.getInt(edgePointer + E_KV);</span>
+    }
+
+    public void setEdgeRef(long nodePointer, int edgeRef) {
+<span class="fc" id="L483">        nodes.setInt(nodePointer + N_EDGE_REF, edgeRef);</span>
+<span class="fc" id="L484">    }</span>
+
+    public void setLat(long nodePointer, double lat) {
+<span class="fc" id="L487">        nodes.setInt(nodePointer + N_LAT, Helper.degreeToInt(lat));</span>
+<span class="fc" id="L488">    }</span>
+
+    public void setLon(long nodePointer, double lon) {
+<span class="fc" id="L491">        nodes.setInt(nodePointer + N_LON, Helper.degreeToInt(lon));</span>
+<span class="fc" id="L492">    }</span>
+
+    public void setEle(long elePointer, double ele) {
+<span class="fc" id="L495">        nodes.setInt(elePointer + N_ELE, Helper.eleToUInt(ele));</span>
+<span class="fc" id="L496">    }</span>
+
+    public void setTurnCostRef(long nodePointer, int tcRef) {
+<span class="fc" id="L499">        nodes.setInt(nodePointer + N_TC, tcRef);</span>
+<span class="fc" id="L500">    }</span>
+
+    public int getEdgeRef(long nodePointer) {
+<span class="fc" id="L503">        return nodes.getInt(nodePointer + N_EDGE_REF);</span>
+    }
+
+    public double getLat(long nodePointer) {
+<span class="fc" id="L507">        return Helper.intToDegree(nodes.getInt(nodePointer + N_LAT));</span>
+    }
+
+    public double getLon(long nodePointer) {
+<span class="fc" id="L511">        return Helper.intToDegree(nodes.getInt(nodePointer + N_LON));</span>
+    }
+
+    public double getEle(long nodePointer) {
+<span class="fc" id="L515">        return Helper.uIntToEle(nodes.getInt(nodePointer + N_ELE));</span>
+    }
+
+    public int getTurnCostRef(long nodePointer) {
+<span class="fc" id="L519">        return nodes.getInt(nodePointer + N_TC);</span>
+    }
+
+    public void setFrozen(boolean frozen) {
+<span class="fc" id="L523">        this.frozen = frozen;</span>
+<span class="fc" id="L524">    }</span>
+
+    public boolean getFrozen() {
+<span class="fc" id="L527">        return frozen;</span>
+    }
+
+    public void debugPrint() {
+<span class="nc" id="L531">        final int printMax = 100;</span>
+<span class="nc" id="L532">        System.out.println(&quot;nodes:&quot;);</span>
+<span class="nc" id="L533">        String formatNodes = &quot;%12s | %12s | %12s | %12s | %12s | %12s\n&quot;;</span>
+<span class="nc" id="L534">        System.out.format(Locale.ROOT, formatNodes, &quot;#&quot;, &quot;N_EDGE_REF&quot;, &quot;N_LAT&quot;, &quot;N_LON&quot;, &quot;N_ELE&quot;, &quot;N_TC&quot;);</span>
+<span class="nc bnc" id="L535" title="All 2 branches missed.">        for (int i = 0; i &lt; Math.min(nodeCount, printMax); ++i) {</span>
+<span class="nc" id="L536">            long nodePointer = toNodePointer(i);</span>
+<span class="nc bnc" id="L537" title="All 4 branches missed.">            System.out.format(Locale.ROOT, formatNodes, i, getEdgeRef(nodePointer), getLat(nodePointer), getLon(nodePointer), withElevation ? getEle(nodePointer) : &quot;&quot;, withTurnCosts ? getTurnCostRef(nodePointer) : &quot;-&quot;);</span>
+        }
+<span class="nc bnc" id="L539" title="All 2 branches missed.">        if (nodeCount &gt; printMax) {</span>
+<span class="nc" id="L540">            System.out.format(Locale.ROOT, &quot; ... %d more nodes\n&quot;, nodeCount - printMax);</span>
+        }
+<span class="nc" id="L542">        System.out.println(&quot;edges:&quot;);</span>
+<span class="nc" id="L543">        String formatEdges = &quot;%12s | %12s | %12s | %12s | %12s | %12s | %12s \n&quot;;</span>
+<span class="nc" id="L544">        System.out.format(Locale.ROOT, formatEdges, &quot;#&quot;, &quot;E_NODEA&quot;, &quot;E_NODEB&quot;, &quot;E_LINKA&quot;, &quot;E_LINKB&quot;, &quot;E_FLAGS&quot;, &quot;E_DIST&quot;);</span>
+<span class="nc" id="L545">        IntsRef edgeFlags = createEdgeFlags();</span>
+<span class="nc bnc" id="L546" title="All 2 branches missed.">        for (int i = 0; i &lt; Math.min(edgeCount, printMax); ++i) {</span>
+<span class="nc" id="L547">            long edgePointer = toEdgePointer(i);</span>
+<span class="nc" id="L548">            readFlags(edgePointer, edgeFlags);</span>
+<span class="nc" id="L549">            System.out.format(Locale.ROOT, formatEdges, i,</span>
+<span class="nc" id="L550">                    getNodeA(edgePointer),</span>
+<span class="nc" id="L551">                    getNodeB(edgePointer),</span>
+<span class="nc" id="L552">                    getLinkA(edgePointer),</span>
+<span class="nc" id="L553">                    getLinkB(edgePointer),</span>
+                    edgeFlags,
+<span class="nc" id="L555">                    getDist(edgePointer));</span>
+        }
+<span class="nc bnc" id="L557" title="All 2 branches missed.">        if (edgeCount &gt; printMax) {</span>
+<span class="nc" id="L558">            System.out.printf(Locale.ROOT, &quot; ... %d more edges&quot;, edgeCount - printMax);</span>
+        }
+<span class="nc" id="L560">    }</span>
+
+    private int distToInt(double distance) {
+<span class="fc bfc" id="L563" title="All 2 branches covered.">        if (distance &lt; 0)</span>
+<span class="fc" id="L564">            throw new IllegalArgumentException(&quot;Distance cannot be negative: &quot; + distance);</span>
+<span class="fc bfc" id="L565" title="All 2 branches covered.">        if (distance &gt; MAX_DIST) {</span>
+<span class="fc" id="L566">            distance = MAX_DIST;</span>
+        }
+<span class="fc" id="L568">        int intDist = (int) Math.round(distance * INT_DIST_FACTOR);</span>
+<span class="pc bpc" id="L569" title="1 of 2 branches missed.">        assert intDist &gt;= 0 : &quot;distance out of range&quot;;</span>
+<span class="fc" id="L570">        return intDist;</span>
+    }
+
+    public String toDetailsString() {
+<span class="fc" id="L574">        return &quot;edges: &quot; + nf(edgeCount) + &quot;(&quot; + edges.getCapacity() / Helper.MB + &quot;MB), &quot;</span>
+<span class="fc" id="L575">                + &quot;nodes: &quot; + nf(nodeCount) + &quot;(&quot; + nodes.getCapacity() / Helper.MB + &quot;MB), &quot;</span>
+                + &quot;bounds: &quot; + bounds;
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

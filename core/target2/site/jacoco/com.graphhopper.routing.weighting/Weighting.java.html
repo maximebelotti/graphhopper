@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Weighting.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting</a> &gt; <span class="el_source">Weighting.java</span></div><h1>Weighting.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.weighting;
+
+import com.graphhopper.util.EdgeIteratorState;
+
+/**
+ * Specifies how the best route is calculated.
+ *
+ * @author Peter Karich
+ */
+public interface Weighting {
+
+    /**
+     * Used only for the heuristic estimation in A*
+     *
+     * @return minimal weight per meter. E.g. if you calculate the fastest way the return value
+     * is '1/max_velocity' or a shortest weighting would return 1.
+     */
+    double calcMinWeightPerDistance();
+
+    /**
+     * This method calculates the weight of a given {@link EdgeIteratorState}. E.g. a high value indicates that the edge
+     * should be avoided during shortest path search. Make sure that this method is very fast and optimized as this is
+     * called potentially millions of times for one route or a lot more for nearly any preprocessing phase.
+     *
+     * @param edgeState the edge for which the weight should be calculated
+     * @param reverse   if the specified edge is specified in reverse direction e.g. from the reverse
+     *                  case of a bidirectional search.
+     * @return the calculated weight with the specified velocity has to be in the range of 0 and
+     * +Infinity. Make sure your method does not return NaN which can e.g. occur for 0/0.
+     */
+    double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse);
+
+    /**
+     * This method calculates the time taken (in milliseconds) to travel along the specified edgeState.
+     * It is typically used for post-processing and on only a few thousand edges.
+     */
+    long calcEdgeMillis(EdgeIteratorState edgeState, boolean reverse);
+
+    double calcTurnWeight(int inEdge, int viaNode, int outEdge);
+
+    long calcTurnMillis(int inEdge, int viaNode, int outEdge);
+
+    /**
+     * This method can be used to check whether or not this weighting returns turn costs (or if they are all zero).
+     * This is sometimes needed to do safety checks as not all graph algorithms can be run edge-based and might yield
+     * wrong results when turn costs are applied while running node-based.
+     */
+    boolean hasTurnCosts();
+
+    String getName();
+
+    static boolean isValidName(String name) {
+<span class="pc bpc" id="L70" title="2 of 4 branches missed.">        if (name == null || name.isEmpty())</span>
+<span class="nc" id="L71">            return false;</span>
+
+<span class="fc" id="L73">        return name.matches(&quot;[\\|_a-z]+&quot;);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

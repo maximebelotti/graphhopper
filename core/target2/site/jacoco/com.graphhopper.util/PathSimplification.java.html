@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PathSimplification.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">PathSimplification.java</span></div><h1>PathSimplification.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import com.graphhopper.ResponsePath;
+import com.graphhopper.util.details.PathDetail;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * This class simplifies the path, using {@link RamerDouglasPeucker}, but also considers a given list of partitions of
+ * the path. Each partition separates the points of the path into non-overlapping intervals and the simplification is
+ * done such that we never simplify across the boundaries of these intervals. This is important, because the points
+ * at the interval boundaries must not be removed, e.g. when they are referenced by instructions.
+ * For example for a path with twenty points and three partitions like this
+ * &lt;p&gt;
+ * - (0,1,2,3)(3,4)(4,4)(4,5,6,7)(7,8,9,10,11,12)(12,13,14,15,16)(17,18,19)
+ * - (0,1)(1,2,3,4)(4,5,6,7)(7,7)(8,9,10,11)(12,13,14,15)(16,17,18,19)
+ * - (0,1,2,3,4,5)(6,7,8,9,10,11,12,13,14),(14,15,16,17,18)(18,18)(18,19)
+ * &lt;p&gt;
+ * we run the simplification for the following intervals:
+ * &lt;p&gt;
+ * (0,1)(1,2,3)(3,4)(4,5)(5,6,7)(7,8,9,10,11)(11,12)(12,13,14)(14,15)(15,16)(16,17,18)(18,19)
+ *
+ * @author Robin Boldt
+ * @author easbar
+ */
+public class PathSimplification {
+
+    private final PointList pointList;
+    /**
+     * @see PathSimplification
+     */
+    private final List&lt;Partition&gt; partitions;
+    private final RamerDouglasPeucker ramerDouglasPeucker;
+
+    // temporary variables used when traversing the different partitions
+    private final int numPartitions;
+    private final int[] currIntervalIndex;
+    private final int[] currIntervalStart;
+    private final int[] currIntervalEnd;
+    private final boolean[] partitionFinished;
+    // keep track of how many points were removed by Ramer-Douglas-Peucker in the current and previous intervals
+    private final int[] removedPointsInCurrInterval;
+    private final int[] removedPointsInPrevIntervals;
+
+    /**
+     * Convenience method used to obtain the partitions from a calculated path with details and instructions
+     */
+    public static PointList simplify(ResponsePath responsePath, RamerDouglasPeucker ramerDouglasPeucker, boolean enableInstructions) {
+<span class="fc" id="L68">        final PointList pointList = responsePath.getPoints();</span>
+<span class="fc" id="L69">        List&lt;Partition&gt; partitions = new ArrayList&lt;&gt;();</span>
+
+        // make sure all waypoints are retained in the simplified point list
+        // we copy the waypoint indices into temporary intervals where they will be mutated by the simplification,
+        // afterwards we need to update the way point indices accordingly.
+<span class="fc" id="L74">        List&lt;Interval&gt; intervals = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        for (int i = 0; i &lt; responsePath.getWaypointIndices().size() - 1; i++)</span>
+<span class="fc" id="L76">            intervals.add(new Interval(responsePath.getWaypointIndices().get(i), responsePath.getWaypointIndices().get(i + 1)));</span>
+<span class="fc" id="L77">        partitions.add(new Partition() {</span>
+            @Override
+            public int size() {
+<span class="fc" id="L80">                return intervals.size();</span>
+            }
+
+            @Override
+            public int getIntervalLength(int index) {
+<span class="fc" id="L85">                return intervals.get(index).end - intervals.get(index).start;</span>
+            }
+
+            @Override
+            public void setInterval(int index, int start, int end) {
+<span class="fc" id="L90">                intervals.get(index).start = start;</span>
+<span class="fc" id="L91">                intervals.get(index).end = end;</span>
+<span class="fc" id="L92">            }</span>
+        });
+
+        // todo: maybe this code can be simplified if path details and instructions would be merged, see #1121
+<span class="fc bfc" id="L96" title="All 2 branches covered.">        if (enableInstructions) {</span>
+<span class="fc" id="L97">            final InstructionList instructions = responsePath.getInstructions();</span>
+<span class="fc" id="L98">            partitions.add(new Partition() {</span>
+                @Override
+                public int size() {
+<span class="fc" id="L101">                    return instructions.size();</span>
+                }
+
+                @Override
+                public int getIntervalLength(int index) {
+<span class="fc" id="L106">                    return instructions.get(index).getLength();</span>
+                }
+
+                @Override
+                public void setInterval(int index, int start, int end) {
+<span class="fc" id="L111">                    Instruction instruction = instructions.get(index);</span>
+<span class="fc bfc" id="L112" title="All 4 branches covered.">                    if (instruction instanceof ViaInstruction || instruction instanceof FinishInstruction) {</span>
+<span class="pc bpc" id="L113" title="1 of 2 branches missed.">                        if (start != end) {</span>
+<span class="nc" id="L114">                            throw new IllegalStateException(&quot;via- and finish-instructions are expected to have zero length&quot;);</span>
+                        }
+                        // have to make sure that via instructions and finish instructions contain a single point
+                        // even though their 'instruction length' is zero.
+<span class="fc" id="L118">                        end++;</span>
+                    }
+<span class="fc" id="L120">                    instruction.setPoints(pointList.shallowCopy(start, end, false));</span>
+<span class="fc" id="L121">                }</span>
+            });
+        }
+
+<span class="fc bfc" id="L125" title="All 2 branches covered.">        for (final Map.Entry&lt;String, List&lt;PathDetail&gt;&gt; entry : responsePath.getPathDetails().entrySet()) {</span>
+            // If the pointList only contains one point, PathDetails have to be empty because 1 point =&gt; 0 edges
+<span class="fc" id="L127">            final List&lt;PathDetail&gt; detail = entry.getValue();</span>
+<span class="pc bpc" id="L128" title="1 of 4 branches missed.">            if (detail.isEmpty() &amp;&amp; pointList.size() &gt; 1)</span>
+<span class="nc" id="L129">                throw new IllegalStateException(&quot;PathDetails &quot; + entry.getKey() + &quot; must not be empty&quot;);</span>
+
+<span class="fc" id="L131">            partitions.add(new Partition() {</span>
+                @Override
+                public int size() {
+<span class="fc" id="L134">                    return detail.size();</span>
+                }
+
+                @Override
+                public int getIntervalLength(int index) {
+<span class="fc" id="L139">                    return detail.get(index).getLength();</span>
+                }
+
+                @Override
+                public void setInterval(int index, int start, int end) {
+<span class="fc" id="L144">                    PathDetail pd = detail.get(index);</span>
+<span class="fc" id="L145">                    pd.setFirst(start);</span>
+<span class="fc" id="L146">                    pd.setLast(end);</span>
+<span class="fc" id="L147">                }</span>
+            });
+<span class="fc" id="L149">        }</span>
+
+<span class="fc" id="L151">        simplify(responsePath.getPoints(), partitions, ramerDouglasPeucker);</span>
+
+<span class="fc" id="L153">        List&lt;Integer&gt; simplifiedWaypointIndices = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L154">        simplifiedWaypointIndices.add(intervals.get(0).start);</span>
+<span class="fc bfc" id="L155" title="All 2 branches covered.">        for (Interval interval : intervals)</span>
+<span class="fc" id="L156">            simplifiedWaypointIndices.add(interval.end);</span>
+<span class="fc" id="L157">        responsePath.setWaypointIndices(simplifiedWaypointIndices);</span>
+
+<span class="fc" id="L159">        assertConsistencyOfPathDetails(responsePath.getPathDetails());</span>
+<span class="fc bfc" id="L160" title="All 2 branches covered.">        if (enableInstructions)</span>
+<span class="fc" id="L161">            assertConsistencyOfInstructions(responsePath.getInstructions(), responsePath.getPoints().size());</span>
+<span class="fc" id="L162">        return pointList;</span>
+    }
+
+    public static void simplify(PointList pointList, List&lt;Partition&gt; partitions, RamerDouglasPeucker ramerDouglasPeucker) {
+<span class="fc" id="L166">        new PathSimplification(pointList, partitions, ramerDouglasPeucker).simplify();</span>
+<span class="fc" id="L167">    }</span>
+
+<span class="fc" id="L169">    private PathSimplification(PointList pointList, List&lt;Partition&gt; partitions, RamerDouglasPeucker ramerDouglasPeucker) {</span>
+<span class="fc" id="L170">        this.pointList = pointList;</span>
+<span class="fc" id="L171">        this.partitions = partitions;</span>
+<span class="fc" id="L172">        this.ramerDouglasPeucker = ramerDouglasPeucker;</span>
+<span class="fc" id="L173">        numPartitions = this.partitions.size();</span>
+<span class="fc" id="L174">        currIntervalIndex = new int[numPartitions];</span>
+<span class="fc" id="L175">        currIntervalStart = new int[numPartitions];</span>
+<span class="fc" id="L176">        currIntervalEnd = new int[numPartitions];</span>
+<span class="fc" id="L177">        partitionFinished = new boolean[numPartitions];</span>
+<span class="fc" id="L178">        removedPointsInCurrInterval = new int[numPartitions];</span>
+<span class="fc" id="L179">        removedPointsInPrevIntervals = new int[numPartitions];</span>
+<span class="fc" id="L180">    }</span>
+
+    private void simplify() {
+<span class="fc bfc" id="L183" title="All 2 branches covered.">        if (pointList.size() &lt;= 2) {</span>
+<span class="fc" id="L184">            pointList.makeImmutable();</span>
+<span class="fc" id="L185">            return;</span>
+        }
+
+        // no partitions -&gt; no constraints, just simplify the entire point list
+<span class="pc bpc" id="L189" title="1 of 2 branches missed.">        if (partitions.isEmpty()) {</span>
+<span class="nc" id="L190">            ramerDouglasPeucker.simplify(pointList, 0, pointList.size() - 1);</span>
+<span class="nc" id="L191">            pointList.makeImmutable();</span>
+<span class="nc" id="L192">            return;</span>
+        }
+
+        // Ramer-Douglas-Peucker never removes the first/last point of a given interval, so as long as we only run it
+        // on each interval we can be sure that the interval boundaries will remain in the point list.
+        // Whenever we remove points from an interval we have to update the interval indices of all partitions.
+        // For example if an interval goes from point 4 to 9 and we remove points 5 and 7 we have to update the interval
+        // to [4,7].
+        // The basic idea to do this is as follows: We iterate through the point list and whenever we hit an interval
+        // end (q) in one of the partitions we run Ramer-Douglas-Peucker for the interval [p,q], where p is the point where
+        // the last interval ended. We keep track of the number of removed points in the current and previous intervals
+        // to be able to calculate the updated indices.
+
+        // prepare for the first interval in each partition
+<span class="fc" id="L206">        int intervalStart = 0;</span>
+<span class="fc bfc" id="L207" title="All 2 branches covered.">        for (int i = 0; i &lt; numPartitions; i++) {</span>
+<span class="fc" id="L208">            currIntervalEnd[i] = this.partitions.get(i).getIntervalLength(currIntervalIndex[i]);</span>
+        }
+
+        // iterate the point list and simplify and update the intervals on the go
+<span class="fc bfc" id="L212" title="All 2 branches covered.">        for (int p = 0; p &lt; pointList.size(); p++) {</span>
+<span class="fc" id="L213">            int removed = 0;</span>
+            // first we check if we hit the end of an interval for one of the partitions and run Ramer-Douglas-Peucker if we do
+<span class="fc bfc" id="L215" title="All 2 branches covered.">            for (int s = 0; s &lt; numPartitions; s++) {</span>
+<span class="pc bpc" id="L216" title="1 of 2 branches missed.">                if (partitionFinished[s]) {</span>
+<span class="nc" id="L217">                    continue;</span>
+                }
+<span class="fc bfc" id="L219" title="All 2 branches covered.">                if (p == currIntervalEnd[s]) {</span>
+                    // This is important for performance: we must not compress the point list after each call to
+                    // simplify, otherwise a lot of data is copied, especially for long routes (e.g. many via nodes),
+                    // see #1764. Note that since the point list does not get compressed here yet we have to keep track
+                    // of the total number of removed points to calculate the new interval boundaries later
+<span class="fc" id="L224">                    final boolean compress = false;</span>
+<span class="fc" id="L225">                    removed = ramerDouglasPeucker.simplify(pointList, intervalStart, currIntervalEnd[s], compress);</span>
+<span class="fc" id="L226">                    intervalStart = p;</span>
+<span class="fc" id="L227">                    break;</span>
+                }
+            }
+
+            // now we have (possibly) removed some points we need to update the current intervals in all partitions
+<span class="fc bfc" id="L232" title="All 2 branches covered.">            for (int s = 0; s &lt; numPartitions; s++) {</span>
+<span class="pc bpc" id="L233" title="1 of 2 branches missed.">                if (partitionFinished[s]) {</span>
+<span class="nc" id="L234">                    continue;</span>
+                }
+<span class="fc" id="L236">                removedPointsInCurrInterval[s] += removed;</span>
+                // if the current interval of this partition ends at p, we update the interval boundaries. there is
+                // just a special catch: there can be multiple consecutive intervals that end with p, because there
+                // are intervals with a single point, for example p=3 and a partition=[0,3][3,3][3,3]
+                boolean nextIntervalHasOnlyOnePoint;
+                do {
+<span class="fc bfc" id="L242" title="All 2 branches covered.">                    if (p == currIntervalEnd[s]) {</span>
+<span class="fc" id="L243">                        nextIntervalHasOnlyOnePoint = updateInterval(p, s);</span>
+                    } else {
+                        break;
+                    }
+<span class="fc bfc" id="L247" title="All 2 branches covered.">                } while (nextIntervalHasOnlyOnePoint);</span>
+            }
+        }
+
+        // now we finally have to compress the pointList (actually remove the deleted points). note only after this
+        // call the (now shifted) indices in path details and instructions are correct
+<span class="fc" id="L253">        RamerDouglasPeucker.removeNaN(pointList);</span>
+
+        // Make sure that the instruction references are not broken
+<span class="fc" id="L256">        pointList.makeImmutable();</span>
+
+<span class="fc" id="L258">        assertConsistencyOfIntervals();</span>
+<span class="fc" id="L259">    }</span>
+
+    /**
+     * @param p point index
+     * @param s partition index
+     */
+    private boolean updateInterval(int p, int s) {
+<span class="fc" id="L266">        boolean nextIntervalHasOnlyOnePoint = false;</span>
+        // update interval boundaries
+<span class="fc" id="L268">        final int updatedStart = currIntervalStart[s] - removedPointsInPrevIntervals[s];</span>
+<span class="fc" id="L269">        final int updatedEnd = currIntervalEnd[s] - removedPointsInPrevIntervals[s] - removedPointsInCurrInterval[s];</span>
+<span class="fc" id="L270">        this.partitions.get(s).setInterval(currIntervalIndex[s], updatedStart, updatedEnd);</span>
+
+        // update the removed point counters
+<span class="fc" id="L273">        removedPointsInPrevIntervals[s] += removedPointsInCurrInterval[s];</span>
+<span class="fc" id="L274">        removedPointsInCurrInterval[s] = 0;</span>
+
+        // prepare for the next interval
+<span class="fc" id="L277">        currIntervalIndex[s]++;</span>
+<span class="fc" id="L278">        currIntervalStart[s] = p;</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">        if (currIntervalIndex[s] &gt;= this.partitions.get(s).size()) {</span>
+<span class="fc" id="L280">            partitionFinished[s] = true;</span>
+        } else {
+<span class="fc" id="L282">            int length = this.partitions.get(s).getIntervalLength(currIntervalIndex[s]);</span>
+<span class="fc" id="L283">            currIntervalEnd[s] += length;</span>
+            // special case at via points etc.
+<span class="fc bfc" id="L285" title="All 2 branches covered.">            if (length == 0) {</span>
+<span class="fc" id="L286">                nextIntervalHasOnlyOnePoint = true;</span>
+            }
+        }
+<span class="fc" id="L289">        return nextIntervalHasOnlyOnePoint;</span>
+    }
+
+    private void assertConsistencyOfIntervals() {
+<span class="fc" id="L293">        final int expected = pointList.size() - 1;</span>
+<span class="fc bfc" id="L294" title="All 2 branches covered.">        for (int i = 0; i &lt; partitions.size(); i++) {</span>
+<span class="fc" id="L295">            final Partition partition = partitions.get(i);</span>
+<span class="fc" id="L296">            int count = 0;</span>
+<span class="fc bfc" id="L297" title="All 2 branches covered.">            for (int j = 0; j &lt; partition.size(); j++) {</span>
+<span class="fc" id="L298">                count += partition.getIntervalLength(j);</span>
+            }
+<span class="pc bpc" id="L300" title="1 of 2 branches missed.">            if (count != expected) {</span>
+<span class="nc" id="L301">                throw new IllegalStateException(&quot;Simplified intervals are inconsistent: &quot; + count + &quot; vs. &quot; + expected + &quot; for intervals with index: &quot; + i);</span>
+            }
+        }
+<span class="fc" id="L304">    }</span>
+
+    private static void assertConsistencyOfPathDetails(Map&lt;String, List&lt;PathDetail&gt;&gt; pathDetails) {
+<span class="fc bfc" id="L307" title="All 2 branches covered.">        for (Map.Entry&lt;String, List&lt;PathDetail&gt;&gt; pdEntry : pathDetails.entrySet()) {</span>
+<span class="fc" id="L308">            List&lt;PathDetail&gt; list = pdEntry.getValue();</span>
+<span class="fc bfc" id="L309" title="All 2 branches covered.">            if (list.isEmpty())</span>
+<span class="fc" id="L310">                continue;</span>
+
+<span class="fc" id="L312">            PathDetail prevPD = list.get(0);</span>
+<span class="fc bfc" id="L313" title="All 2 branches covered.">            for (int i = 1; i &lt; list.size(); i++) {</span>
+<span class="pc bpc" id="L314" title="1 of 2 branches missed.">                if (prevPD.getLast() != list.get(i).getFirst())</span>
+<span class="nc" id="L315">                    throw new IllegalStateException(&quot;PathDetail list &quot; + pdEntry.getKey() + &quot; is inconsistent due to entries &quot; + prevPD + &quot; vs. &quot; + list.get(i));</span>
+
+<span class="fc" id="L317">                prevPD = list.get(i);</span>
+            }
+<span class="fc" id="L319">        }</span>
+<span class="fc" id="L320">    }</span>
+
+    private static void assertConsistencyOfInstructions(InstructionList instructions, int numPoints) {
+        // the total length of the instruction intervals must match the length of the point list.
+        // todo: it would be even better to make sure each instruction interval starts where the previous one ended, but
+        // currently instructions do not offer this
+<span class="fc" id="L326">        int expected = numPoints - 1;</span>
+<span class="fc" id="L327">        int count = 0;</span>
+<span class="fc bfc" id="L328" title="All 2 branches covered.">        for (Instruction instruction : instructions) {</span>
+<span class="fc" id="L329">            count += instruction.getLength();</span>
+<span class="fc" id="L330">        }</span>
+<span class="pc bpc" id="L331" title="1 of 2 branches missed.">        if (count != expected) {</span>
+<span class="nc" id="L332">            throw new IllegalArgumentException(&quot;inconsistent instructions, total interval length: &quot; + count + &quot; vs. point list length &quot; + expected);</span>
+        }
+<span class="fc" id="L334">    }</span>
+
+    /**
+     * Represents a partition of a {@link PointList} into consecutive intervals, for example a list with six points
+     * can be partitioned into something like [0,2],[2,2],[2,3][3,5]. Note that intervals with a single point are
+     * allowed, but each interval must start where the previous one ended.
+     */
+    interface Partition {
+        int size();
+
+        // todo: it would be nice to be able to retrieve the actual start and end of each interval to make the
+        // code here more straight-forward, but currently instructions only offer the length of the interval
+        int getIntervalLength(int index);
+
+        void setInterval(int index, int start, int end);
+    }
+
+    public static class Interval {
+        public int start;
+        public int end;
+
+<span class="fc" id="L355">        public Interval(int start, int end) {</span>
+<span class="fc" id="L356">            this.start = start;</span>
+<span class="fc" id="L357">            this.end = end;</span>
+<span class="fc" id="L358">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L362">            return &quot;[&quot; + start + &quot;, &quot; + end + &quot;]&quot;;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ValueExpressionVisitor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting.custom</a> &gt; <span class="el_source">ValueExpressionVisitor.java</span></div><h1>ValueExpressionVisitor.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.weighting.custom;
+
+import com.graphhopper.json.MinMax;
+import com.graphhopper.json.Statement;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.EncodedValue;
+import com.graphhopper.routing.ev.EncodedValueLookup;
+import com.graphhopper.routing.ev.IntEncodedValue;
+import org.codehaus.commons.compiler.CompileException;
+import org.codehaus.janino.*;
+import org.codehaus.janino.Scanner;
+
+import java.io.StringReader;
+import java.util.*;
+
+import static com.graphhopper.json.Statement.Keyword.IF;
+
+/**
+ * Expression visitor for right-hand side value of limit_to or multiply_by.
+ */
+public class ValueExpressionVisitor implements Visitor.AtomVisitor&lt;Boolean, Exception&gt; {
+
+<span class="fc" id="L40">    private static final Set&lt;String&gt; allowedMethodParents = new HashSet&lt;&gt;(Arrays.asList(&quot;Math&quot;));</span>
+<span class="fc" id="L41">    private static final Set&lt;String&gt; allowedMethods = new HashSet&lt;&gt;(Arrays.asList(&quot;sqrt&quot;));</span>
+    private final ParseResult result;
+    private final NameValidator variableValidator;
+    private String invalidMessage;
+
+<span class="fc" id="L46">    public ValueExpressionVisitor(ParseResult result, NameValidator variableValidator) {</span>
+<span class="fc" id="L47">        this.result = result;</span>
+<span class="fc" id="L48">        this.variableValidator = variableValidator;</span>
+<span class="fc" id="L49">    }</span>
+
+    // allow only methods and other identifiers (constants and encoded values)
+    boolean isValidIdentifier(String identifier) {
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        if (variableValidator.isValid(identifier)) {</span>
+<span class="pc bpc" id="L54" title="1 of 2 branches missed.">            if (!Character.isUpperCase(identifier.charAt(0)))</span>
+<span class="fc" id="L55">                result.guessedVariables.add(identifier);</span>
+<span class="fc" id="L56">            return true;</span>
+        }
+<span class="fc" id="L58">        return false;</span>
+    }
+
+    @Override
+    public Boolean visitRvalue(Java.Rvalue rv) throws Exception {
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        if (rv instanceof Java.AmbiguousName) {</span>
+<span class="fc" id="L64">            Java.AmbiguousName n = (Java.AmbiguousName) rv;</span>
+<span class="fc bfc" id="L65" title="All 2 branches covered.">            if (n.identifiers.length == 1) {</span>
+<span class="fc" id="L66">                String arg = n.identifiers[0];</span>
+                // e.g. like road_class
+<span class="fc bfc" id="L68" title="All 2 branches covered.">                if (isValidIdentifier(arg)) return true;</span>
+<span class="fc" id="L69">                invalidMessage = &quot;'&quot; + arg + &quot;' not available&quot;;</span>
+<span class="fc" id="L70">                return false;</span>
+            }
+<span class="fc" id="L72">            invalidMessage = &quot;identifier &quot; + n + &quot; invalid&quot;;</span>
+<span class="fc" id="L73">            return false;</span>
+        }
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (rv instanceof Java.Literal) {</span>
+<span class="fc" id="L76">            return true;</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        } else if (rv instanceof Java.UnaryOperation) {</span>
+<span class="fc" id="L78">            Java.UnaryOperation uop = (Java.UnaryOperation) rv;</span>
+<span class="fc" id="L79">            result.operators.add(uop.operator);</span>
+<span class="pc bpc" id="L80" title="1 of 2 branches missed.">            if (uop.operator.equals(&quot;-&quot;))</span>
+<span class="fc" id="L81">                return uop.operand.accept(this);</span>
+<span class="nc" id="L82">            return false;</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">        } else if (rv instanceof Java.MethodInvocation) {</span>
+<span class="fc" id="L84">            Java.MethodInvocation mi = (Java.MethodInvocation) rv;</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">            if (allowedMethods.contains(mi.methodName)) {</span>
+                // skip methods like this.in()
+<span class="pc bpc" id="L87" title="1 of 2 branches missed.">                if (mi.target != null) {</span>
+                    // edge.getDistance(), Math.sqrt(2) =&gt; check target name (edge or Math)
+<span class="fc" id="L89">                    Java.AmbiguousName n = (Java.AmbiguousName) mi.target.toRvalue();</span>
+<span class="pc bpc" id="L90" title="1 of 2 branches missed.">                    if (n.identifiers.length == 2) {</span>
+<span class="pc bpc" id="L91" title="1 of 2 branches missed.">                        if (allowedMethodParents.contains(n.identifiers[0])) {</span>
+                            // edge.getDistance(), Math.sqrt(x) =&gt; check target name i.e. edge or Math
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">                            if (mi.arguments.length == 0) {</span>
+<span class="nc" id="L94">                                result.guessedVariables.add(n.identifiers[0]); // return &quot;edge&quot;</span>
+<span class="nc" id="L95">                                return true;</span>
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">                            } else if (mi.arguments.length == 1) {</span>
+                                // return &quot;x&quot; but verify before
+<span class="fc" id="L98">                                return mi.arguments[0].accept(this);</span>
+                            }
+                        }
+                        // TODO unlike in ConditionalExpressionVisitor we don't support a call like road_class.ordinal()
+                        //  as this is currently unsupported in FindMinMax
+                    }
+                }
+            }
+<span class="fc" id="L106">            invalidMessage = mi.methodName + &quot; is an illegal method in a value expression&quot;;</span>
+<span class="fc" id="L107">            return false;</span>
+<span class="pc bpc" id="L108" title="1 of 2 branches missed.">        } else if (rv instanceof Java.ParenthesizedExpression) {</span>
+<span class="nc" id="L109">            return ((Java.ParenthesizedExpression) rv).value.accept(this);</span>
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        } else if (rv instanceof Java.BinaryOperation) {</span>
+<span class="fc" id="L111">            Java.BinaryOperation binOp = (Java.BinaryOperation) rv;</span>
+<span class="fc" id="L112">            String op = binOp.operator;</span>
+<span class="fc" id="L113">            result.operators.add(op);</span>
+<span class="fc bfc" id="L114" title="All 6 branches covered.">            if (op.equals(&quot;*&quot;) || op.equals(&quot;+&quot;) || binOp.operator.equals(&quot;-&quot;)) {</span>
+<span class="pc bpc" id="L115" title="1 of 4 branches missed.">                return binOp.lhs.accept(this) &amp;&amp; binOp.rhs.accept(this);</span>
+            }
+<span class="fc" id="L117">            invalidMessage = &quot;invalid operation '&quot; + op + &quot;'&quot;;</span>
+<span class="fc" id="L118">            return false;</span>
+        }
+<span class="fc" id="L120">        return false;</span>
+    }
+
+    @Override
+    public Boolean visitPackage(Java.Package p) {
+<span class="nc" id="L125">        return false;</span>
+    }
+
+    @Override
+    public Boolean visitType(Java.Type t) {
+<span class="nc" id="L130">        return false;</span>
+    }
+
+    @Override
+    public Boolean visitConstructorInvocation(Java.ConstructorInvocation ci) {
+<span class="nc" id="L135">        return false;</span>
+    }
+
+    static ParseResult parse(String expression, NameValidator variableValidator) {
+<span class="fc" id="L139">        ParseResult result = new ParseResult();</span>
+        try {
+<span class="fc" id="L141">            Parser parser = new Parser(new Scanner(&quot;ignore&quot;, new StringReader(expression)));</span>
+<span class="fc" id="L142">            Java.Atom atom = parser.parseConditionalExpression();</span>
+<span class="fc bfc" id="L143" title="All 2 branches covered.">            if (parser.peek().type == TokenType.END_OF_INPUT) {</span>
+<span class="fc" id="L144">                result.guessedVariables = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc" id="L145">                result.operators = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc" id="L146">                ValueExpressionVisitor visitor = new ValueExpressionVisitor(result, variableValidator);</span>
+<span class="fc" id="L147">                result.ok = atom.accept(visitor);</span>
+<span class="fc" id="L148">                result.invalidMessage = visitor.invalidMessage;</span>
+            }
+<span class="fc" id="L150">        } catch (Exception ex) {</span>
+<span class="fc" id="L151">        }</span>
+<span class="fc" id="L152">        return result;</span>
+    }
+
+    static Set&lt;String&gt; findVariables(List&lt;Statement&gt; statements, EncodedValueLookup lookup) {
+<span class="fc" id="L156">        List&lt;List&lt;Statement&gt;&gt; groups = CustomModelParser.splitIntoGroup(statements);</span>
+<span class="fc" id="L157">        Set&lt;String&gt; variables = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L158" title="All 2 branches covered.">        for (List&lt;Statement&gt; group : groups) findVariablesForGroup(variables, group, lookup);</span>
+<span class="fc" id="L159">        return variables;</span>
+    }
+
+    private static void findVariablesForGroup(Set&lt;String&gt; createdObjects, List&lt;Statement&gt; group, EncodedValueLookup lookup) {
+<span class="pc bpc" id="L163" title="2 of 4 branches missed.">        if (group.isEmpty() || !IF.equals(group.get(0).keyword()))</span>
+<span class="nc" id="L164">            throw new IllegalArgumentException(&quot;Every group of statements must start with an if-statement&quot;);</span>
+
+<span class="fc" id="L166">        Statement first = group.get(0);</span>
+<span class="fc bfc" id="L167" title="All 2 branches covered.">        if (first.condition().trim().equals(&quot;true&quot;)) {</span>
+<span class="pc bpc" id="L168" title="1 of 2 branches missed.">            if(first.isBlock()) {</span>
+<span class="nc" id="L169">                List&lt;List&lt;Statement&gt;&gt; groups = CustomModelParser.splitIntoGroup(first.doBlock());</span>
+<span class="nc bnc" id="L170" title="All 2 branches missed.">                for (List&lt;Statement&gt; subGroup : groups) findVariablesForGroup(createdObjects, subGroup, lookup);</span>
+<span class="nc" id="L171">            } else {</span>
+<span class="fc" id="L172">                createdObjects.addAll(ValueExpressionVisitor.findVariables(first.value(), lookup));</span>
+            }
+        } else {
+<span class="fc bfc" id="L175" title="All 2 branches covered.">            for (Statement st : group) {</span>
+<span class="fc bfc" id="L176" title="All 2 branches covered.">                if(st.isBlock()) {</span>
+<span class="fc" id="L177">                    List&lt;List&lt;Statement&gt;&gt; groups = CustomModelParser.splitIntoGroup(st.doBlock());</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">                    for (List&lt;Statement&gt; subGroup : groups) findVariablesForGroup(createdObjects, subGroup, lookup);</span>
+<span class="fc" id="L179">                } else {</span>
+<span class="fc" id="L180">                    createdObjects.addAll(ValueExpressionVisitor.findVariables(st.value(), lookup));</span>
+                }
+<span class="fc" id="L182">            }</span>
+        }
+<span class="fc" id="L184">    }</span>
+
+    static Set&lt;String&gt; findVariables(String valueExpression, EncodedValueLookup lookup) {
+<span class="fc" id="L187">        ParseResult result = parse(valueExpression, lookup::hasEncodedValue);</span>
+<span class="fc bfc" id="L188" title="All 2 branches covered.">        if (!result.ok)</span>
+<span class="fc" id="L189">            throw new IllegalArgumentException(result.invalidMessage);</span>
+<span class="fc bfc" id="L190" title="All 2 branches covered.">        if (result.guessedVariables.size() &gt; 1)</span>
+<span class="fc" id="L191">            throw new IllegalArgumentException(&quot;Currently only a single EncodedValue is allowed on the right-hand side, but was &quot; + result.guessedVariables.size() + &quot;. Value expression: &quot; + valueExpression);</span>
+
+        // TODO Nearly duplicate code as in findMinMax
+        double value;
+        try {
+            // Speed optimization for numbers only as its over 200x faster than ExpressionEvaluator+cook+evaluate!
+            // We still call the parse() method before as it is only ~3x slower and might increase security slightly. Because certain
+            // expressions are accepted from Double.parseDouble but parse() rejects them. With this call order we avoid unexpected security problems.
+<span class="fc" id="L199">            value = Double.parseDouble(valueExpression);</span>
+<span class="fc" id="L200">        } catch (NumberFormatException ex) {</span>
+            try {
+<span class="pc bpc" id="L202" title="1 of 2 branches missed.">                if (result.guessedVariables.isEmpty()) { // without encoded values</span>
+<span class="nc" id="L203">                    NoArgEvaluator ee = new ExpressionEvaluator().createFastEvaluator(valueExpression, NoArgEvaluator.class);</span>
+<span class="nc" id="L204">                    value = ee.evaluate();</span>
+<span class="pc bfc" id="L205" title="All 2 branches covered.">                } else if (lookup.hasEncodedValue(valueExpression)) { // speed up for common case that complete right-hand side is the encoded value</span>
+<span class="fc" id="L206">                    EncodedValue enc = lookup.getEncodedValue(valueExpression, EncodedValue.class);</span>
+<span class="fc" id="L207">                    value = Math.min(getMin(enc), getMax(enc));</span>
+<span class="fc" id="L208">                } else {</span>
+                    // single encoded value
+<span class="fc" id="L210">                    String var = result.guessedVariables.iterator().next();</span>
+<span class="fc" id="L211">                    SingleArgEvaluator ee = new ExpressionEvaluator().createFastEvaluator(valueExpression, SingleArgEvaluator.class, var);</span>
+<span class="fc" id="L212">                    EncodedValue enc = lookup.getEncodedValue(var, EncodedValue.class);</span>
+<span class="fc" id="L213">                    double max = getMax(enc);</span>
+<span class="fc" id="L214">                    double val1 = ee.evaluate(max);</span>
+<span class="fc" id="L215">                    double min = getMin(enc);</span>
+<span class="fc" id="L216">                    double val2 = ee.evaluate(min);</span>
+<span class="fc" id="L217">                    value = Math.min(val1, val2);</span>
+                }
+<span class="nc" id="L219">            } catch (CompileException ex2) {</span>
+<span class="nc" id="L220">                throw new IllegalArgumentException(ex2);</span>
+<span class="fc" id="L221">            }</span>
+<span class="fc" id="L222">        }</span>
+<span class="fc bfc" id="L223" title="All 2 branches covered.">        if (value &lt; 0)</span>
+<span class="fc" id="L224">            throw new IllegalArgumentException(&quot;illegal expression as it can result in a negative weight: &quot; + valueExpression);</span>
+
+<span class="fc" id="L226">        return result.guessedVariables;</span>
+    }
+
+    static MinMax findMinMax(String valueExpression, EncodedValueLookup lookup) {
+<span class="fc" id="L230">        ParseResult result = parse(valueExpression, lookup::hasEncodedValue);</span>
+<span class="fc bfc" id="L231" title="All 2 branches covered.">        if (!result.ok)</span>
+<span class="fc" id="L232">            throw new IllegalArgumentException(result.invalidMessage);</span>
+<span class="fc bfc" id="L233" title="All 2 branches covered.">        if (result.guessedVariables.size() &gt; 1)</span>
+<span class="fc" id="L234">            throw new IllegalArgumentException(&quot;Currently only a single EncodedValue is allowed on the right-hand side, but was &quot; + result.guessedVariables.size() + &quot;. Value expression: &quot; + valueExpression);</span>
+
+        // TODO Nearly duplicate as in findVariables
+        try {
+            // Speed optimization for numbers only as its over 200x faster than ExpressionEvaluator+cook+evaluate!
+            // We still call the parse() method before as it is only ~3x slower and might increase security slightly. Because certain
+            // expressions are accepted from Double.parseDouble but parse() rejects them. With this call order we avoid unexpected security problems.
+<span class="fc" id="L241">            double val = Double.parseDouble(valueExpression);</span>
+<span class="fc" id="L242">            return new MinMax(val, val);</span>
+<span class="fc" id="L243">        } catch (NumberFormatException ex) {</span>
+        }
+
+        try {
+<span class="pc bpc" id="L247" title="1 of 2 branches missed.">            if (result.guessedVariables.isEmpty()) { // without encoded values</span>
+<span class="nc" id="L248">                NoArgEvaluator ee = new ExpressionEvaluator().createFastEvaluator(valueExpression, NoArgEvaluator.class);</span>
+<span class="nc" id="L249">                double val = ee.evaluate();</span>
+<span class="nc" id="L250">                return new MinMax(val, val);</span>
+            }
+
+<span class="fc bfc" id="L253" title="All 2 branches covered.">            if (lookup.hasEncodedValue(valueExpression)) { // speed up for common case that complete right-hand side is the encoded value</span>
+<span class="fc" id="L254">                EncodedValue enc = lookup.getEncodedValue(valueExpression, EncodedValue.class);</span>
+<span class="fc" id="L255">                double min = getMin(enc), max = getMax(enc);</span>
+<span class="fc" id="L256">                return new MinMax(min, max);</span>
+            }
+
+<span class="fc" id="L259">            String var = result.guessedVariables.iterator().next();</span>
+<span class="fc" id="L260">            SingleArgEvaluator ee = new ExpressionEvaluator().createFastEvaluator(valueExpression, SingleArgEvaluator.class, var);</span>
+<span class="fc" id="L261">            EncodedValue enc = lookup.getEncodedValue(var, EncodedValue.class);</span>
+<span class="fc" id="L262">            double max = getMax(enc);</span>
+<span class="fc" id="L263">            double val1 = ee.evaluate(max);</span>
+<span class="fc" id="L264">            double min = getMin(enc);</span>
+<span class="fc" id="L265">            double val2 = ee.evaluate(min);</span>
+<span class="fc" id="L266">            return new MinMax(Math.min(val1, val2), Math.max(val1, val2));</span>
+<span class="nc" id="L267">        } catch (CompileException ex) {</span>
+<span class="nc" id="L268">            throw new IllegalArgumentException(ex);</span>
+        }
+    }
+
+    static double getMin(EncodedValue enc) {
+<span class="fc bfc" id="L273" title="All 2 branches covered.">        if (enc instanceof DecimalEncodedValue) return ((DecimalEncodedValue) enc).getMinStorableDecimal();</span>
+<span class="pc bpc" id="L274" title="1 of 2 branches missed.">        else if (enc instanceof IntEncodedValue) return ((IntEncodedValue) enc).getMinStorableInt();</span>
+<span class="nc" id="L275">        throw new IllegalArgumentException(&quot;Cannot use non-number data '&quot; + enc.getName() + &quot;' in value expression&quot;);</span>
+    }
+
+    static double getMax(EncodedValue enc) {
+<span class="fc bfc" id="L279" title="All 2 branches covered.">        if (enc instanceof DecimalEncodedValue) return ((DecimalEncodedValue) enc).getMaxOrMaxStorableDecimal();</span>
+<span class="pc bpc" id="L280" title="1 of 2 branches missed.">        else if (enc instanceof IntEncodedValue) return ((IntEncodedValue) enc).getMaxOrMaxStorableInt();</span>
+<span class="nc" id="L281">        throw new IllegalArgumentException(&quot;Cannot use non-number data '&quot; + enc.getName() + &quot;' in value expression&quot;);</span>
+    }
+
+    protected interface NoArgEvaluator {
+        double evaluate();
+    }
+
+    protected interface SingleArgEvaluator {
+        double evaluate(double arg);
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

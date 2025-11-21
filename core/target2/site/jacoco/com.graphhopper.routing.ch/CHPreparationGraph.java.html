@@ -1,0 +1,967 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CHPreparationGraph.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ch</a> &gt; <span class="el_source">CHPreparationGraph.java</span></div><h1>CHPreparationGraph.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.ch;
+
+import com.carrotsearch.hppc.*;
+import com.carrotsearch.hppc.sorting.IndirectComparator;
+import com.carrotsearch.hppc.sorting.IndirectSort;
+import com.graphhopper.routing.util.AllEdgesIterator;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.GHUtility;
+
+import static com.graphhopper.util.ArrayUtil.zero;
+
+/**
+ * Graph data structure used for CH preparation. It allows caching weights, and edges that are not needed anymore
+ * (those adjacent to contracted nodes) can be removed (see {@link #disconnect}.
+ *
+ * @author easbar
+ */
+public class CHPreparationGraph {
+    private final int nodes;
+    private final int edges;
+    private final boolean edgeBased;
+    private final TurnCostFunction turnCostFunction;
+    // each edge/shortcut between nodes a/b is represented as a single object and we maintain two linked lists of such
+    // objects for every node (one for outgoing edges and one for incoming edges).
+    private PrepareEdge[] prepareEdgesOut;
+    private PrepareEdge[] prepareEdgesIn;
+    // todo: it should be possible to store the 'skipped node' for each shortcut instead of storing the shortcut for
+    //       each prepare edge. but this is a bit tricky for edge-based, because of our bidir shortcuts for node-based,
+    //       and because basegraph has multi-edges. the advantage of storing the skipped node is that we could just write
+    //       it to one of the skipped edges fields temporarily, so we would not need this array and save memory during
+    //       the preparation.
+    private IntArrayList shortcutsByPrepareEdges;
+    // todo: maybe we can get rid of this
+    private int[] degrees;
+    private IntSet neighborSet;
+    private OrigGraph origGraph;
+    private OrigGraph.Builder origGraphBuilder;
+    private int nextShortcutId;
+    private boolean ready;
+
+    public static CHPreparationGraph nodeBased(int nodes, int edges) {
+<span class="pc" id="L61">        return new CHPreparationGraph(nodes, edges, false, (in, via, out) -&gt; 0);</span>
+    }
+
+    public static CHPreparationGraph edgeBased(int nodes, int edges, TurnCostFunction turnCostFunction) {
+<span class="fc" id="L65">        return new CHPreparationGraph(nodes, edges, true, turnCostFunction);</span>
+    }
+
+    /**
+     * @param nodes (fixed) number of nodes of the graph
+     * @param edges the maximum number of (non-shortcut) edges in this graph. edges-1 is the maximum edge id that may
+     *              be used.
+     */
+<span class="fc" id="L73">    private CHPreparationGraph(int nodes, int edges, boolean edgeBased, TurnCostFunction turnCostFunction) {</span>
+<span class="fc" id="L74">        this.turnCostFunction = turnCostFunction;</span>
+<span class="fc" id="L75">        this.nodes = nodes;</span>
+<span class="fc" id="L76">        this.edges = edges;</span>
+<span class="fc" id="L77">        this.edgeBased = edgeBased;</span>
+<span class="fc" id="L78">        prepareEdgesOut = new PrepareEdge[nodes];</span>
+<span class="fc" id="L79">        prepareEdgesIn = new PrepareEdge[nodes];</span>
+<span class="fc" id="L80">        shortcutsByPrepareEdges = new IntArrayList();</span>
+<span class="fc" id="L81">        degrees = new int[nodes];</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">        origGraphBuilder = edgeBased ? new OrigGraph.Builder() : null;</span>
+<span class="fc" id="L83">        neighborSet = new IntScatterSet();</span>
+<span class="fc" id="L84">        nextShortcutId = edges;</span>
+<span class="fc" id="L85">    }</span>
+
+    public static void buildFromGraph(CHPreparationGraph prepareGraph, Graph graph, Weighting weighting) {
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">        if (graph.getNodes() != prepareGraph.getNodes())</span>
+<span class="nc" id="L89">            throw new IllegalArgumentException(&quot;Cannot initialize from given graph. The number of nodes does not match: &quot; +</span>
+<span class="nc" id="L90">                    graph.getNodes() + &quot; vs. &quot; + prepareGraph.getNodes());</span>
+<span class="pc bpc" id="L91" title="1 of 2 branches missed.">        if (graph.getEdges() != prepareGraph.getOriginalEdges())</span>
+<span class="nc" id="L92">            throw new IllegalArgumentException(&quot;Cannot initialize from given graph. The number of edges does not match: &quot; +</span>
+<span class="nc" id="L93">                    graph.getEdges() + &quot; vs. &quot; + prepareGraph.getOriginalEdges());</span>
+<span class="fc" id="L94">        AllEdgesIterator iter = graph.getAllEdges();</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L96">            double weightFwd = weighting.calcEdgeWeight(iter, false);</span>
+<span class="fc" id="L97">            double weightBwd = weighting.calcEdgeWeight(iter, true);</span>
+<span class="fc" id="L98">            prepareGraph.addEdge(iter.getBaseNode(), iter.getAdjNode(), iter.getEdge(), weightFwd, weightBwd);</span>
+<span class="fc" id="L99">        }</span>
+<span class="fc" id="L100">        prepareGraph.prepareForContraction();</span>
+<span class="fc" id="L101">    }</span>
+
+    public static TurnCostFunction buildTurnCostFunctionFromTurnCostStorage(Graph graph, Weighting weighting) {
+        // At some point we used an optimized version where we copied the turn costs to sorted arrays
+        // temporarily. This seemed to be around 25% faster according to measurements on the Bavaria
+        // map, but for bigger maps the improvement is less, around 10% for planet. See also #2084
+<span class="fc" id="L107">        return weighting::calcTurnWeight;</span>
+    }
+
+    public int getNodes() {
+<span class="fc" id="L111">        return nodes;</span>
+    }
+
+    public int getOriginalEdges() {
+<span class="fc" id="L115">        return edges;</span>
+    }
+
+    public int getDegree(int node) {
+<span class="fc" id="L119">        return degrees[node];</span>
+    }
+
+    public void addEdge(int from, int to, int edge, double weightFwd, double weightBwd) {
+<span class="fc" id="L123">        checkNotReady();</span>
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">        if (from == to)</span>
+<span class="nc" id="L125">            throw new IllegalArgumentException(&quot;Loop edges are no longer supported since #2862&quot;);</span>
+<span class="fc" id="L126">        boolean fwd = Double.isFinite(weightFwd);</span>
+<span class="fc" id="L127">        boolean bwd = Double.isFinite(weightBwd);</span>
+<span class="fc bfc" id="L128" title="All 4 branches covered.">        if (!fwd &amp;&amp; !bwd)</span>
+<span class="fc" id="L129">            return;</span>
+<span class="fc" id="L130">        PrepareBaseEdge prepareEdge = new PrepareBaseEdge(edge, from, to, (float) weightFwd, (float) weightBwd);</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        if (fwd) {</span>
+<span class="fc" id="L132">            addOutEdge(from, prepareEdge);</span>
+<span class="fc" id="L133">            addInEdge(to, prepareEdge);</span>
+        }
+<span class="pc bpc" id="L135" title="1 of 4 branches missed.">        if (bwd &amp;&amp; from != to) {</span>
+<span class="fc" id="L136">            addOutEdge(to, prepareEdge);</span>
+<span class="fc" id="L137">            addInEdge(from, prepareEdge);</span>
+        }
+<span class="fc bfc" id="L139" title="All 2 branches covered.">        if (edgeBased)</span>
+<span class="fc" id="L140">            origGraphBuilder.addEdge(from, to, edge, fwd, bwd);</span>
+<span class="fc" id="L141">    }</span>
+
+    public int addShortcut(int from, int to, int origEdgeKeyFirst, int origEdgeKeyLast, int skipped1,
+                           int skipped2, double weight, int origEdgeCount) {
+<span class="fc" id="L145">        checkReady();</span>
+<span class="fc bfc" id="L146" title="All 2 branches covered.">        PrepareEdge prepareEdge = edgeBased</span>
+<span class="fc" id="L147">                ? new EdgeBasedPrepareShortcut(nextShortcutId, from, to, origEdgeKeyFirst, origEdgeKeyLast, weight, skipped1, skipped2, origEdgeCount)</span>
+<span class="fc" id="L148">                : new PrepareShortcut(nextShortcutId, from, to, weight, skipped1, skipped2, origEdgeCount);</span>
+<span class="fc" id="L149">        addOutEdge(from, prepareEdge);</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (from != to)</span>
+<span class="fc" id="L151">            addInEdge(to, prepareEdge);</span>
+<span class="fc" id="L152">        return nextShortcutId++;</span>
+    }
+
+    public void prepareForContraction() {
+<span class="fc" id="L156">        checkNotReady();</span>
+<span class="fc bfc" id="L157" title="All 2 branches covered.">        origGraph = edgeBased ? origGraphBuilder.build() : null;</span>
+<span class="fc" id="L158">        origGraphBuilder = null;</span>
+<span class="fc" id="L159">        ready = true;</span>
+<span class="fc" id="L160">    }</span>
+
+    public void setShortcutForPrepareEdge(int prepareEdge, int shortcut) {
+<span class="fc" id="L163">        int index = prepareEdge - edges;</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">        if (index &gt;= shortcutsByPrepareEdges.size())</span>
+<span class="fc" id="L165">            shortcutsByPrepareEdges.resize(index + 1);</span>
+<span class="fc" id="L166">        shortcutsByPrepareEdges.set(index, shortcut);</span>
+<span class="fc" id="L167">    }</span>
+
+    public int getShortcutForPrepareEdge(int prepareEdge) {
+<span class="fc bfc" id="L170" title="All 2 branches covered.">        if (prepareEdge &lt; edges)</span>
+<span class="fc" id="L171">            return prepareEdge;</span>
+<span class="fc" id="L172">        int index = prepareEdge - edges;</span>
+<span class="fc" id="L173">        return shortcutsByPrepareEdges.get(index);</span>
+    }
+
+    public PrepareGraphEdgeExplorer createOutEdgeExplorer() {
+<span class="fc" id="L177">        checkReady();</span>
+<span class="fc" id="L178">        return new PrepareGraphEdgeExplorerImpl(prepareEdgesOut, false);</span>
+    }
+
+    public PrepareGraphEdgeExplorer createInEdgeExplorer() {
+<span class="fc" id="L182">        checkReady();</span>
+<span class="fc" id="L183">        return new PrepareGraphEdgeExplorerImpl(prepareEdgesIn, true);</span>
+    }
+
+    public PrepareGraphOrigEdgeExplorer createOutOrigEdgeExplorer() {
+<span class="fc" id="L187">        checkReady();</span>
+<span class="pc bpc" id="L188" title="1 of 2 branches missed.">        if (!edgeBased)</span>
+<span class="nc" id="L189">            throw new IllegalStateException(&quot;orig out explorer is not available for node-based graph&quot;);</span>
+<span class="fc" id="L190">        return origGraph.createOutOrigEdgeExplorer();</span>
+    }
+
+    public PrepareGraphOrigEdgeExplorer createInOrigEdgeExplorer() {
+<span class="fc" id="L194">        checkReady();</span>
+<span class="pc bpc" id="L195" title="1 of 2 branches missed.">        if (!edgeBased)</span>
+<span class="nc" id="L196">            throw new IllegalStateException(&quot;orig in explorer is not available for node-based graph&quot;);</span>
+<span class="fc" id="L197">        return origGraph.createInOrigEdgeExplorer();</span>
+    }
+
+    public double getTurnWeight(int inEdgeKey, int viaNode, int outEdgeKey) {
+<span class="fc" id="L201">        return turnCostFunction.getTurnWeight(GHUtility.getEdgeFromEdgeKey(inEdgeKey), viaNode, GHUtility.getEdgeFromEdgeKey(outEdgeKey));</span>
+    }
+
+    public IntContainer disconnect(int node) {
+<span class="fc" id="L205">        checkReady();</span>
+        // we use this neighbor set to guarantee a deterministic order of the returned
+        // node ids
+<span class="fc" id="L208">        neighborSet.clear();</span>
+<span class="fc" id="L209">        PrepareEdge currOut = prepareEdgesOut[node];</span>
+<span class="fc bfc" id="L210" title="All 2 branches covered.">        while (currOut != null) {</span>
+<span class="fc" id="L211">            int adjNode = currOut.getNodeB();</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">            if (adjNode == node)</span>
+<span class="fc" id="L213">                adjNode = currOut.getNodeA();</span>
+<span class="fc bfc" id="L214" title="All 2 branches covered.">            if (adjNode == node) {</span>
+                // this is a loop
+<span class="fc" id="L216">                currOut = currOut.getNextOut(node);</span>
+<span class="fc" id="L217">                continue;</span>
+            }
+<span class="fc" id="L219">            removeInEdge(adjNode, currOut);</span>
+<span class="fc" id="L220">            neighborSet.add(adjNode);</span>
+<span class="fc" id="L221">            currOut = currOut.getNextOut(node);</span>
+<span class="fc" id="L222">        }</span>
+<span class="fc" id="L223">        PrepareEdge currIn = prepareEdgesIn[node];</span>
+<span class="fc bfc" id="L224" title="All 2 branches covered.">        while (currIn != null) {</span>
+<span class="fc" id="L225">            int adjNode = currIn.getNodeB();</span>
+<span class="fc bfc" id="L226" title="All 2 branches covered.">            if (adjNode == node)</span>
+<span class="fc" id="L227">                adjNode = currIn.getNodeA();</span>
+<span class="pc bpc" id="L228" title="1 of 2 branches missed.">            if (adjNode == node) {</span>
+                // this is a loop
+<span class="nc" id="L230">                currIn = currIn.getNextIn(node);</span>
+<span class="nc" id="L231">                continue;</span>
+            }
+<span class="fc" id="L233">            removeOutEdge(adjNode, currIn);</span>
+<span class="fc" id="L234">            neighborSet.add(adjNode);</span>
+<span class="fc" id="L235">            currIn = currIn.getNextIn(node);</span>
+<span class="fc" id="L236">        }</span>
+<span class="fc" id="L237">        prepareEdgesOut[node] = null;</span>
+<span class="fc" id="L238">        prepareEdgesIn[node] = null;</span>
+<span class="fc" id="L239">        degrees[node] = 0;</span>
+<span class="fc" id="L240">        return neighborSet;</span>
+    }
+
+    private void removeOutEdge(int node, PrepareEdge prepareEdge) {
+<span class="fc" id="L244">        PrepareEdge prevOut = null;</span>
+<span class="fc" id="L245">        PrepareEdge currOut = prepareEdgesOut[node];</span>
+<span class="fc bfc" id="L246" title="All 2 branches covered.">        while (currOut != null) {</span>
+<span class="fc bfc" id="L247" title="All 2 branches covered.">            if (currOut == prepareEdge) {</span>
+<span class="fc bfc" id="L248" title="All 2 branches covered.">                if (prevOut == null) {</span>
+<span class="fc" id="L249">                    prepareEdgesOut[node] = currOut.getNextOut(node);</span>
+                } else {
+<span class="fc" id="L251">                    prevOut.setNextOut(node, currOut.getNextOut(node));</span>
+                }
+<span class="fc" id="L253">                degrees[node]--;</span>
+            } else {
+<span class="fc" id="L255">                prevOut = currOut;</span>
+            }
+<span class="fc" id="L257">            currOut = currOut.getNextOut(node);</span>
+        }
+<span class="fc" id="L259">    }</span>
+
+    private void removeInEdge(int node, PrepareEdge prepareEdge) {
+<span class="fc" id="L262">        PrepareEdge prevIn = null;</span>
+<span class="fc" id="L263">        PrepareEdge currIn = prepareEdgesIn[node];</span>
+<span class="fc bfc" id="L264" title="All 2 branches covered.">        while (currIn != null) {</span>
+<span class="fc bfc" id="L265" title="All 2 branches covered.">            if (currIn == prepareEdge) {</span>
+<span class="fc bfc" id="L266" title="All 2 branches covered.">                if (prevIn == null) {</span>
+<span class="fc" id="L267">                    prepareEdgesIn[node] = currIn.getNextIn(node);</span>
+                } else {
+<span class="fc" id="L269">                    prevIn.setNextIn(node, currIn.getNextIn(node));</span>
+                }
+<span class="fc" id="L271">                degrees[node]--;</span>
+            } else {
+<span class="fc" id="L273">                prevIn = currIn;</span>
+            }
+<span class="fc" id="L275">            currIn = currIn.getNextIn(node);</span>
+        }
+<span class="fc" id="L277">    }</span>
+
+    public void close() {
+<span class="fc" id="L280">        checkReady();</span>
+<span class="fc" id="L281">        prepareEdgesOut = null;</span>
+<span class="fc" id="L282">        prepareEdgesIn = null;</span>
+<span class="fc" id="L283">        shortcutsByPrepareEdges = null;</span>
+<span class="fc" id="L284">        degrees = null;</span>
+<span class="fc" id="L285">        neighborSet = null;</span>
+<span class="fc bfc" id="L286" title="All 2 branches covered.">        if (edgeBased)</span>
+<span class="fc" id="L287">            origGraph = null;</span>
+<span class="fc" id="L288">    }</span>
+
+    private void addOutEdge(int node, PrepareEdge prepareEdge) {
+<span class="fc" id="L291">        prepareEdge.setNextOut(node, prepareEdgesOut[node]);</span>
+<span class="fc" id="L292">        prepareEdgesOut[node] = prepareEdge;</span>
+<span class="fc" id="L293">        degrees[node]++;</span>
+<span class="fc" id="L294">    }</span>
+
+    private void addInEdge(int node, PrepareEdge prepareEdge) {
+<span class="fc" id="L297">        prepareEdge.setNextIn(node, prepareEdgesIn[node]);</span>
+<span class="fc" id="L298">        prepareEdgesIn[node] = prepareEdge;</span>
+<span class="fc" id="L299">        degrees[node]++;</span>
+<span class="fc" id="L300">    }</span>
+
+    private void checkReady() {
+<span class="pc bpc" id="L303" title="1 of 2 branches missed.">        if (!ready)</span>
+<span class="nc" id="L304">            throw new IllegalStateException(&quot;You need to call prepareForContraction() before calling this method&quot;);</span>
+<span class="fc" id="L305">    }</span>
+
+    private void checkNotReady() {
+<span class="pc bpc" id="L308" title="1 of 2 branches missed.">        if (ready)</span>
+<span class="nc" id="L309">            throw new IllegalStateException(&quot;You cannot call this method after calling prepareForContraction()&quot;);</span>
+<span class="fc" id="L310">    }</span>
+
+    @FunctionalInterface
+    public interface TurnCostFunction {
+        double getTurnWeight(int inEdge, int viaNode, int outEdge);
+    }
+
+<span class="fc" id="L317">    private static class PrepareGraphEdgeExplorerImpl implements PrepareGraphEdgeExplorer, PrepareGraphEdgeIterator {</span>
+        private final PrepareEdge[] prepareEdges;
+        private final boolean reverse;
+<span class="fc" id="L320">        private int node = -1;</span>
+        private PrepareEdge currEdge;
+        private PrepareEdge nextEdge;
+
+<span class="fc" id="L324">        PrepareGraphEdgeExplorerImpl(PrepareEdge[] prepareEdges, boolean reverse) {</span>
+<span class="fc" id="L325">            this.prepareEdges = prepareEdges;</span>
+<span class="fc" id="L326">            this.reverse = reverse;</span>
+<span class="fc" id="L327">        }</span>
+
+        @Override
+        public PrepareGraphEdgeIterator setBaseNode(int node) {
+<span class="fc" id="L331">            this.node = node;</span>
+<span class="fc" id="L332">            currEdge = null;</span>
+<span class="fc" id="L333">            nextEdge = prepareEdges[node];</span>
+<span class="fc" id="L334">            return this;</span>
+        }
+
+        @Override
+        public boolean next() {
+<span class="fc" id="L339">            currEdge = nextEdge;</span>
+<span class="fc bfc" id="L340" title="All 2 branches covered.">            if (currEdge == null)</span>
+<span class="fc" id="L341">                return false;</span>
+<span class="fc bfc" id="L342" title="All 2 branches covered.">            nextEdge = reverse ? currEdge.getNextIn(node) : currEdge.getNextOut(node);</span>
+<span class="fc" id="L343">            return true;</span>
+        }
+
+        @Override
+        public int getBaseNode() {
+<span class="fc" id="L348">            return node;</span>
+        }
+
+        @Override
+        public int getAdjNode() {
+<span class="fc bfc" id="L353" title="All 2 branches covered.">            return nodeAisBase() ? currEdge.getNodeB() : currEdge.getNodeA();</span>
+        }
+
+        @Override
+        public int getPrepareEdge() {
+<span class="fc" id="L358">            return currEdge.getPrepareEdge();</span>
+        }
+
+        @Override
+        public boolean isShortcut() {
+<span class="fc" id="L363">            return currEdge.isShortcut();</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyFirst() {
+<span class="fc bfc" id="L368" title="All 2 branches covered.">            return nodeAisBase() ? currEdge.getOrigEdgeKeyFirstAB() : currEdge.getOrigEdgeKeyFirstBA();</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLast() {
+<span class="fc bfc" id="L373" title="All 2 branches covered.">            return nodeAisBase() ? currEdge.getOrigEdgeKeyLastAB() : currEdge.getOrigEdgeKeyLastBA();</span>
+        }
+
+        @Override
+        public int getSkipped1() {
+<span class="fc" id="L378">            return currEdge.getSkipped1();</span>
+        }
+
+        @Override
+        public int getSkipped2() {
+<span class="fc" id="L383">            return currEdge.getSkipped2();</span>
+        }
+
+        @Override
+        public double getWeight() {
+<span class="fc bfc" id="L388" title="All 2 branches covered.">            if (nodeAisBase()) {</span>
+<span class="fc bfc" id="L389" title="All 2 branches covered.">                return reverse ? currEdge.getWeightBA() : currEdge.getWeightAB();</span>
+            } else {
+<span class="fc bfc" id="L391" title="All 2 branches covered.">                return reverse ? currEdge.getWeightAB() : currEdge.getWeightBA();</span>
+            }
+        }
+
+        @Override
+        public int getOrigEdgeCount() {
+<span class="fc" id="L397">            return currEdge.getOrigEdgeCount();</span>
+        }
+
+        @Override
+        public void setSkippedEdges(int skipped1, int skipped2) {
+<span class="fc" id="L402">            currEdge.setSkipped1(skipped1);</span>
+<span class="fc" id="L403">            currEdge.setSkipped2(skipped2);</span>
+<span class="fc" id="L404">        }</span>
+
+        @Override
+        public void setWeight(double weight) {
+<span class="pc bpc" id="L408" title="1 of 2 branches missed.">            assert Double.isFinite(weight);</span>
+<span class="fc" id="L409">            currEdge.setWeight(weight);</span>
+<span class="fc" id="L410">        }</span>
+
+        @Override
+        public void setOrigEdgeCount(int origEdgeCount) {
+<span class="fc" id="L414">            currEdge.setOrigEdgeCount(origEdgeCount);</span>
+<span class="fc" id="L415">        }</span>
+
+        @Override
+        public String toString() {
+<span class="pc bpc" id="L419" title="1 of 2 branches missed.">            return currEdge == null ? &quot;not_started&quot; : currEdge.toString();</span>
+        }
+
+        private boolean nodeAisBase() {
+            // in some cases we need to determine which direction of the (bidirectional) edge we want
+<span class="fc bfc" id="L424" title="All 2 branches covered.">            return currEdge.getNodeA() == node;</span>
+        }
+    }
+
+    interface PrepareEdge {
+        boolean isShortcut();
+
+        int getPrepareEdge();
+
+        int getNodeA();
+
+        int getNodeB();
+
+        double getWeightAB();
+
+        double getWeightBA();
+
+        int getOrigEdgeKeyFirstAB();
+
+        int getOrigEdgeKeyFirstBA();
+
+        int getOrigEdgeKeyLastAB();
+
+        int getOrigEdgeKeyLastBA();
+
+        int getSkipped1();
+
+        int getSkipped2();
+
+        int getOrigEdgeCount();
+
+        void setSkipped1(int skipped1);
+
+        void setSkipped2(int skipped2);
+
+        void setWeight(double weight);
+
+        void setOrigEdgeCount(int origEdgeCount);
+
+        PrepareEdge getNextOut(int base);
+
+        void setNextOut(int base, PrepareEdge prepareEdge);
+
+        PrepareEdge getNextIn(int base);
+
+        void setNextIn(int base, PrepareEdge prepareEdge);
+
+    }
+
+    public static class PrepareBaseEdge implements PrepareEdge {
+        private final int prepareEdge;
+        private final int nodeA;
+        private final int nodeB;
+        private final float weightAB;
+        private final float weightBA;
+        private PrepareEdge nextOutA;
+        private PrepareEdge nextOutB;
+        private PrepareEdge nextInA;
+        private PrepareEdge nextInB;
+
+<span class="fc" id="L484">        public PrepareBaseEdge(int prepareEdge, int nodeA, int nodeB, float weightAB, float weightBA) {</span>
+<span class="fc" id="L485">            this.prepareEdge = prepareEdge;</span>
+<span class="fc" id="L486">            this.nodeA = nodeA;</span>
+<span class="fc" id="L487">            this.nodeB = nodeB;</span>
+<span class="fc" id="L488">            this.weightAB = weightAB;</span>
+<span class="fc" id="L489">            this.weightBA = weightBA;</span>
+<span class="fc" id="L490">        }</span>
+
+        @Override
+        public boolean isShortcut() {
+<span class="fc" id="L494">            return false;</span>
+        }
+
+        @Override
+        public int getPrepareEdge() {
+<span class="fc" id="L499">            return prepareEdge;</span>
+        }
+
+        @Override
+        public int getNodeA() {
+<span class="fc" id="L504">            return nodeA;</span>
+        }
+
+        @Override
+        public int getNodeB() {
+<span class="fc" id="L509">            return nodeB;</span>
+        }
+
+        @Override
+        public double getWeightAB() {
+<span class="fc" id="L514">            return weightAB;</span>
+        }
+
+        @Override
+        public double getWeightBA() {
+<span class="fc" id="L519">            return weightBA;</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyFirstAB() {
+<span class="fc" id="L524">            return GHUtility.createEdgeKey(prepareEdge, false);</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyFirstBA() {
+<span class="fc" id="L529">            return GHUtility.createEdgeKey(prepareEdge, true);</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLastAB() {
+<span class="fc" id="L534">            return getOrigEdgeKeyFirstAB();</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLastBA() {
+<span class="fc" id="L539">            return getOrigEdgeKeyFirstBA();</span>
+        }
+
+        @Override
+        public int getSkipped1() {
+<span class="nc" id="L544">            throw new UnsupportedOperationException();</span>
+        }
+
+        @Override
+        public int getSkipped2() {
+<span class="nc" id="L549">            throw new UnsupportedOperationException();</span>
+        }
+
+        @Override
+        public int getOrigEdgeCount() {
+<span class="fc" id="L554">            return 1;</span>
+        }
+
+        @Override
+        public void setSkipped1(int skipped1) {
+<span class="nc" id="L559">            throw new UnsupportedOperationException();</span>
+        }
+
+        @Override
+        public void setSkipped2(int skipped2) {
+<span class="nc" id="L564">            throw new UnsupportedOperationException();</span>
+        }
+
+        @Override
+        public void setWeight(double weight) {
+<span class="nc" id="L569">            throw new UnsupportedOperationException();</span>
+        }
+
+        @Override
+        public void setOrigEdgeCount(int origEdgeCount) {
+<span class="nc" id="L574">            throw new UnsupportedOperationException();</span>
+        }
+
+        @Override
+        public PrepareEdge getNextOut(int base) {
+<span class="fc bfc" id="L579" title="All 2 branches covered.">            if (base == nodeA)</span>
+<span class="fc" id="L580">                return nextOutA;</span>
+<span class="pc bpc" id="L581" title="1 of 2 branches missed.">            else if (base == nodeB)</span>
+<span class="fc" id="L582">                return nextOutB;</span>
+            else
+<span class="nc" id="L584">                throw new IllegalStateException(&quot;Cannot get next out edge as the given base &quot; + base + &quot; is not adjacent to the current edge&quot;);</span>
+        }
+
+        @Override
+        public void setNextOut(int base, PrepareEdge prepareEdge) {
+<span class="fc bfc" id="L589" title="All 2 branches covered.">            if (base == nodeA)</span>
+<span class="fc" id="L590">                nextOutA = prepareEdge;</span>
+<span class="pc bpc" id="L591" title="1 of 2 branches missed.">            else if (base == nodeB)</span>
+<span class="fc" id="L592">                nextOutB = prepareEdge;</span>
+            else
+<span class="nc" id="L594">                throw new IllegalStateException(&quot;Cannot set next out edge as the given base &quot; + base + &quot; is not adjacent to the current edge&quot;);</span>
+<span class="fc" id="L595">        }</span>
+
+        @Override
+        public PrepareEdge getNextIn(int base) {
+<span class="fc bfc" id="L599" title="All 2 branches covered.">            if (base == nodeA)</span>
+<span class="fc" id="L600">                return nextInA;</span>
+<span class="pc bpc" id="L601" title="1 of 2 branches missed.">            else if (base == nodeB)</span>
+<span class="fc" id="L602">                return nextInB;</span>
+            else
+<span class="nc" id="L604">                throw new IllegalStateException(&quot;Cannot get next in edge as the given base &quot; + base + &quot; is not adjacent to the current edge&quot;);</span>
+        }
+
+        @Override
+        public void setNextIn(int base, PrepareEdge prepareEdge) {
+<span class="fc bfc" id="L609" title="All 2 branches covered.">            if (base == nodeA)</span>
+<span class="fc" id="L610">                nextInA = prepareEdge;</span>
+<span class="pc bpc" id="L611" title="1 of 2 branches missed.">            else if (base == nodeB)</span>
+<span class="fc" id="L612">                nextInB = prepareEdge;</span>
+            else
+<span class="nc" id="L614">                throw new IllegalStateException(&quot;Cannot set next in edge as the given base &quot; + base + &quot; is not adjacent to the current edge&quot;);</span>
+<span class="fc" id="L615">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L619">            return nodeA + &quot;-&quot; + nodeB + &quot; (&quot; + prepareEdge + &quot;) &quot; + weightAB + &quot; &quot; + weightBA;</span>
+        }
+    }
+
+<span class="fc" id="L623">    private static class PrepareShortcut implements PrepareEdge {</span>
+        private final int prepareEdge;
+        private final int from;
+        private final int to;
+        private double weight;
+        private int skipped1;
+        private int skipped2;
+        private int origEdgeCount;
+        private PrepareEdge nextOut;
+        private PrepareEdge nextIn;
+
+<span class="fc" id="L634">        private PrepareShortcut(int prepareEdge, int from, int to, double weight, int skipped1, int skipped2, int origEdgeCount) {</span>
+<span class="fc" id="L635">            this.prepareEdge = prepareEdge;</span>
+<span class="fc" id="L636">            this.from = from;</span>
+<span class="fc" id="L637">            this.to = to;</span>
+<span class="pc bpc" id="L638" title="1 of 2 branches missed.">            assert Double.isFinite(weight);</span>
+<span class="fc" id="L639">            this.weight = weight;</span>
+<span class="fc" id="L640">            this.skipped1 = skipped1;</span>
+<span class="fc" id="L641">            this.skipped2 = skipped2;</span>
+<span class="fc" id="L642">            this.origEdgeCount = origEdgeCount;</span>
+<span class="fc" id="L643">        }</span>
+
+        @Override
+        public boolean isShortcut() {
+<span class="fc" id="L647">            return true;</span>
+        }
+
+        @Override
+        public int getPrepareEdge() {
+<span class="fc" id="L652">            return prepareEdge;</span>
+        }
+
+        @Override
+        public int getNodeA() {
+<span class="fc" id="L657">            return from;</span>
+        }
+
+        @Override
+        public int getNodeB() {
+<span class="fc" id="L662">            return to;</span>
+        }
+
+        @Override
+        public double getWeightAB() {
+<span class="fc" id="L667">            return weight;</span>
+        }
+
+        @Override
+        public double getWeightBA() {
+<span class="nc" id="L672">            return weight;</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyFirstAB() {
+<span class="nc" id="L677">            throw new IllegalStateException(&quot;Not supported for node-based shortcuts&quot;);</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyFirstBA() {
+<span class="nc" id="L682">            throw new IllegalStateException(&quot;Not supported for node-based shortcuts&quot;);</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLastAB() {
+<span class="nc" id="L687">            throw new IllegalStateException(&quot;Not supported for node-based shortcuts&quot;);</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLastBA() {
+<span class="nc" id="L692">            throw new IllegalStateException(&quot;Not supported for node-based shortcuts&quot;);</span>
+        }
+
+        @Override
+        public int getSkipped1() {
+<span class="fc" id="L697">            return skipped1;</span>
+        }
+
+        @Override
+        public int getSkipped2() {
+<span class="fc" id="L702">            return skipped2;</span>
+        }
+
+        @Override
+        public int getOrigEdgeCount() {
+<span class="fc" id="L707">            return origEdgeCount;</span>
+        }
+
+        @Override
+        public void setSkipped1(int skipped1) {
+<span class="fc" id="L712">            this.skipped1 = skipped1;</span>
+<span class="fc" id="L713">        }</span>
+
+        @Override
+        public void setSkipped2(int skipped2) {
+<span class="fc" id="L717">            this.skipped2 = skipped2;</span>
+<span class="fc" id="L718">        }</span>
+
+        @Override
+        public void setWeight(double weight) {
+<span class="fc" id="L722">            this.weight = weight;</span>
+<span class="fc" id="L723">        }</span>
+
+        @Override
+        public void setOrigEdgeCount(int origEdgeCount) {
+<span class="fc" id="L727">            this.origEdgeCount = origEdgeCount;</span>
+<span class="fc" id="L728">        }</span>
+
+        @Override
+        public PrepareEdge getNextOut(int base) {
+<span class="fc" id="L732">            return nextOut;</span>
+        }
+
+        @Override
+        public void setNextOut(int base, PrepareEdge prepareEdge) {
+<span class="fc" id="L737">            this.nextOut = prepareEdge;</span>
+<span class="fc" id="L738">        }</span>
+
+        @Override
+        public PrepareEdge getNextIn(int base) {
+<span class="fc" id="L742">            return nextIn;</span>
+        }
+
+        @Override
+        public void setNextIn(int base, PrepareEdge prepareEdge) {
+<span class="fc" id="L747">            this.nextIn = prepareEdge;</span>
+<span class="fc" id="L748">        }</span>
+
+        @Override
+        public String toString() {
+<span class="fc" id="L752">            return from + &quot;-&quot; + to + &quot; &quot; + weight;</span>
+        }
+    }
+
+    private static class EdgeBasedPrepareShortcut extends PrepareShortcut {
+        // we use this subclass to save some memory for node-based where these are not needed
+        private final int origEdgeKeyFirst;
+        private final int origEdgeKeyLast;
+
+        public EdgeBasedPrepareShortcut(int prepareEdge, int from, int to, int origEdgeKeyFirst, int origEdgeKeyLast,
+                                        double weight, int skipped1, int skipped2, int origEdgeCount) {
+<span class="fc" id="L763">            super(prepareEdge, from, to, weight, skipped1, skipped2, origEdgeCount);</span>
+<span class="fc" id="L764">            this.origEdgeKeyFirst = origEdgeKeyFirst;</span>
+<span class="fc" id="L765">            this.origEdgeKeyLast = origEdgeKeyLast;</span>
+<span class="fc" id="L766">        }</span>
+
+        @Override
+        public int getOrigEdgeKeyFirstAB() {
+<span class="fc" id="L770">            return origEdgeKeyFirst;</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyFirstBA() {
+<span class="fc" id="L775">            return origEdgeKeyFirst;</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLastAB() {
+<span class="fc" id="L780">            return origEdgeKeyLast;</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLastBA() {
+<span class="fc" id="L785">            return origEdgeKeyLast;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L790">            return getNodeA() + &quot;-&quot; + getNodeB() + &quot; (&quot; + origEdgeKeyFirst + &quot;, &quot; + origEdgeKeyLast + &quot;) &quot; + getWeightAB();</span>
+        }
+    }
+
+    /**
+     * This helper graph can be used to quickly obtain the edge-keys of the edges of a node. It is only used for
+     * edge-based CH. In principle, we could use base graph for this, but it turned out it is faster to use this
+     * graph (because it does not need to read all the edge flags to determine the access flags).
+     */
+    static class OrigGraph {
+        // we store a list of 'edges' in the format: adjNode|fwdAccess|edgeKey|bwdAccess, we use two ints for each edge
+        private final IntArrayList adjNodesAndFwdFlags;
+        private final IntArrayList keysAndBwdFlags;
+        // for each node we store the index at which the edges for this node begin in the above edge list
+        private final IntArrayList firstEdgesByNode;
+
+<span class="fc" id="L806">        private OrigGraph(IntArrayList firstEdgesByNode, IntArrayList adjNodesAndFwdFlags, IntArrayList keysAndBwdFlags) {</span>
+<span class="fc" id="L807">            this.firstEdgesByNode = firstEdgesByNode;</span>
+<span class="fc" id="L808">            this.adjNodesAndFwdFlags = adjNodesAndFwdFlags;</span>
+<span class="fc" id="L809">            this.keysAndBwdFlags = keysAndBwdFlags;</span>
+<span class="fc" id="L810">        }</span>
+
+        PrepareGraphOrigEdgeExplorer createOutOrigEdgeExplorer() {
+<span class="fc" id="L813">            return new OrigEdgeIteratorImpl(this, false);</span>
+        }
+
+        PrepareGraphOrigEdgeExplorer createInOrigEdgeExplorer() {
+<span class="fc" id="L817">            return new OrigEdgeIteratorImpl(this, true);</span>
+        }
+
+<span class="fc" id="L820">        static class Builder {</span>
+<span class="fc" id="L821">            private final IntArrayList fromNodes = new IntArrayList();</span>
+<span class="fc" id="L822">            private final IntArrayList toNodesAndFwdFlags = new IntArrayList();</span>
+<span class="fc" id="L823">            private final IntArrayList keysAndBwdFlags = new IntArrayList();</span>
+<span class="fc" id="L824">            private int maxFrom = -1;</span>
+<span class="fc" id="L825">            private int maxTo = -1;</span>
+
+            void addEdge(int from, int to, int edge, boolean fwd, boolean bwd) {
+<span class="fc" id="L828">                fromNodes.add(from);</span>
+<span class="fc" id="L829">                toNodesAndFwdFlags.add(getIntWithFlag(to, fwd));</span>
+<span class="fc" id="L830">                keysAndBwdFlags.add(getIntWithFlag(GHUtility.createEdgeKey(edge, false), bwd));</span>
+<span class="fc" id="L831">                maxFrom = Math.max(maxFrom, from);</span>
+<span class="fc" id="L832">                maxTo = Math.max(maxTo, to);</span>
+
+<span class="fc" id="L834">                fromNodes.add(to);</span>
+<span class="fc" id="L835">                toNodesAndFwdFlags.add(getIntWithFlag(from, bwd));</span>
+<span class="fc" id="L836">                keysAndBwdFlags.add(getIntWithFlag(GHUtility.createEdgeKey(edge, true), fwd));</span>
+<span class="fc" id="L837">                maxFrom = Math.max(maxFrom, to);</span>
+<span class="fc" id="L838">                maxTo = Math.max(maxTo, from);</span>
+<span class="fc" id="L839">            }</span>
+
+            OrigGraph build() {
+<span class="fc" id="L842">                int[] sortOrder = IndirectSort.mergesort(0, fromNodes.elementsCount, new IndirectComparator.AscendingIntComparator(fromNodes.buffer));</span>
+<span class="fc" id="L843">                sortAndTrim(fromNodes, sortOrder);</span>
+<span class="fc" id="L844">                sortAndTrim(toNodesAndFwdFlags, sortOrder);</span>
+<span class="fc" id="L845">                sortAndTrim(keysAndBwdFlags, sortOrder);</span>
+<span class="fc" id="L846">                return new OrigGraph(buildFirstEdgesByNode(), toNodesAndFwdFlags, keysAndBwdFlags);</span>
+            }
+
+            private static int getIntWithFlag(int val, boolean access) {
+                // we use only 31 bits for the val and store an access flag along with the same int
+                // this allows for a maximum of 1073mio edges (and 2147mio nodes) in base graph
+                // which is still enough for planet-wide OSM, but if we exceed this limit we need to
+                // move the access bits somewhere else or store the edge instead of the val as we
+                // did before #2567 (only here)
+<span class="fc bfc" id="L855" title="All 2 branches covered.">                if (val &lt; 0)</span>
+<span class="fc" id="L856">                    throw new IllegalArgumentException(&quot;Maximum node or edge key exceeded: &quot; + val + &quot;, max: &quot; + Integer.MAX_VALUE);</span>
+<span class="fc" id="L857">                val &lt;&lt;= 1;</span>
+<span class="fc bfc" id="L858" title="All 2 branches covered.">                if (access)</span>
+<span class="fc" id="L859">                    val++;</span>
+<span class="fc" id="L860">                return val;</span>
+            }
+
+            private IntArrayList buildFirstEdgesByNode() {
+                // it is assumed the edges have been sorted already
+<span class="fc" id="L865">                final int numFroms = maxFrom + 1;</span>
+<span class="fc" id="L866">                final int numEdges = fromNodes.size();</span>
+
+<span class="fc" id="L868">                IntArrayList firstEdgesByNode = zero(numFroms + 1);</span>
+<span class="fc bfc" id="L869" title="All 2 branches covered.">                if (numFroms == 0) {</span>
+<span class="fc" id="L870">                    firstEdgesByNode.set(0, numEdges);</span>
+<span class="fc" id="L871">                    return firstEdgesByNode;</span>
+                }
+<span class="fc" id="L873">                int edgeIndex = 0;</span>
+<span class="fc bfc" id="L874" title="All 2 branches covered.">                for (int from = 0; from &lt; numFroms; from++) {</span>
+<span class="pc bpc" id="L875" title="1 of 4 branches missed.">                    while (edgeIndex &lt; numEdges &amp;&amp; fromNodes.get(edgeIndex) &lt; from) {</span>
+<span class="fc" id="L876">                        edgeIndex++;</span>
+                    }
+<span class="fc" id="L878">                    firstEdgesByNode.set(from, edgeIndex);</span>
+                }
+<span class="fc" id="L880">                firstEdgesByNode.set(numFroms, numEdges);</span>
+<span class="fc" id="L881">                return firstEdgesByNode;</span>
+            }
+
+        }
+    }
+
+    private static class OrigEdgeIteratorImpl implements PrepareGraphOrigEdgeExplorer, PrepareGraphOrigEdgeIterator {
+        private final OrigGraph graph;
+        private final boolean reverse;
+        private int node;
+        private int endEdge;
+        private int index;
+
+<span class="fc" id="L894">        public OrigEdgeIteratorImpl(OrigGraph graph, boolean reverse) {</span>
+<span class="fc" id="L895">            this.graph = graph;</span>
+<span class="fc" id="L896">            this.reverse = reverse;</span>
+<span class="fc" id="L897">        }</span>
+
+        @Override
+        public PrepareGraphOrigEdgeIterator setBaseNode(int node) {
+<span class="fc" id="L901">            this.node = node;</span>
+<span class="fc" id="L902">            index = graph.firstEdgesByNode.get(node) - 1;</span>
+<span class="fc" id="L903">            endEdge = graph.firstEdgesByNode.get(node + 1);</span>
+<span class="fc" id="L904">            return this;</span>
+        }
+
+        @Override
+        public boolean next() {
+            while (true) {
+<span class="fc" id="L910">                index++;</span>
+<span class="fc bfc" id="L911" title="All 2 branches covered.">                if (index &gt;= endEdge)</span>
+<span class="fc" id="L912">                    return false;</span>
+<span class="fc bfc" id="L913" title="All 2 branches covered.">                if (hasAccess())</span>
+<span class="fc" id="L914">                    return true;</span>
+            }
+        }
+
+        @Override
+        public int getBaseNode() {
+<span class="nc" id="L920">            return node;</span>
+        }
+
+        @Override
+        public int getAdjNode() {
+<span class="nc" id="L925">            return graph.adjNodesAndFwdFlags.get(index) &gt;&gt;&gt; 1;</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyFirst() {
+<span class="fc" id="L930">            return graph.keysAndBwdFlags.get(index) &gt;&gt;&gt; 1;</span>
+        }
+
+        @Override
+        public int getOrigEdgeKeyLast() {
+<span class="fc" id="L935">            return getOrigEdgeKeyFirst();</span>
+        }
+
+        private boolean hasAccess() {
+<span class="fc bfc" id="L939" title="All 2 branches covered.">            int e = reverse</span>
+<span class="fc" id="L940">                    ? graph.keysAndBwdFlags.get(index)</span>
+<span class="fc" id="L941">                    : graph.adjNodesAndFwdFlags.get(index);</span>
+<span class="fc bfc" id="L942" title="All 2 branches covered.">            return (e &amp; 0b01) == 0b01;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L947">            return getBaseNode() + &quot;-&quot; + getAdjNode() + &quot;(&quot; + getOrigEdgeKeyFirst() + &quot;)&quot;;</span>
+        }
+    }
+
+    private static void sortAndTrim(IntArrayList arr, int[] sortOrder) {
+<span class="fc" id="L952">        arr.buffer = applySortOrder(sortOrder, arr.buffer);</span>
+<span class="fc" id="L953">        arr.elementsCount = arr.buffer.length;</span>
+<span class="fc" id="L954">    }</span>
+
+    private static int[] applySortOrder(int[] sortOrder, int[] arr) {
+<span class="pc bpc" id="L957" title="1 of 2 branches missed.">        if (sortOrder.length &gt; arr.length) {</span>
+<span class="nc" id="L958">            throw new IllegalArgumentException(&quot;sort order must not be shorter than array&quot;);</span>
+        }
+<span class="fc" id="L960">        int[] result = new int[sortOrder.length];</span>
+<span class="fc bfc" id="L961" title="All 2 branches covered.">        for (int i = 0; i &lt; result.length; i++) {</span>
+<span class="fc" id="L962">            result[i] = arr[sortOrder[i]];</span>
+        }
+<span class="fc" id="L964">        return result;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IntEncodedValueImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">IntEncodedValueImpl.java</span></div><h1>IntEncodedValueImpl.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ev;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import javax.lang.model.SourceVersion;
+
+/**
+ * Implementation of the IntEncodedValue via a certain number of bits (that determines the maximum value) and
+ * a minimum value (default is 0).
+ * With storeTwoDirections = true it can store separate values for forward and reverse edge direction e.g. for one speed
+ * value per direction of an edge.
+ * With negateReverseDirection = true it supports negating the value for the reverse direction without storing a separate
+ * value e.g. to store an elevation slope which is negative for the reverse direction but has otherwise the same value
+ * and is used to save storage space.
+ */
+<span class="fc" id="L34">public class IntEncodedValueImpl implements IntEncodedValue {</span>
+    private final String name;
+    private final boolean storeTwoDirections;
+    final int bits;
+    final boolean negateReverseDirection;
+    final int minStorableValue;
+    final int maxStorableValue;
+    int maxValue;
+
+    /**
+     * There are multiple int values possible per edge. Here we specify the index into this integer array.
+     */
+    private int fwdDataIndex;
+    private int bwdDataIndex;
+<span class="fc" id="L48">    int fwdShift = -1;</span>
+<span class="fc" id="L49">    int bwdShift = -1;</span>
+    int fwdMask;
+    int bwdMask;
+
+    /**
+     * @see #IntEncodedValueImpl(String, int, int, boolean, boolean)
+     */
+    public IntEncodedValueImpl(String name, int bits, boolean storeTwoDirections) {
+<span class="fc" id="L57">        this(name, bits, 0, false, storeTwoDirections);</span>
+<span class="fc" id="L58">    }</span>
+
+    /**
+     * This creates an EncodedValue to store an integer value with up to the specified bits.
+     *
+     * @param name                   the key to identify this EncodedValue
+     * @param bits                   the bits that should be reserved for storing the value. This determines the
+     *                               maximum value.
+     * @param minStorableValue       the minimum value. Use e.g. 0 if no negative values are needed.
+     * @param negateReverseDirection true if the reverse direction should be always negative of the forward direction.
+     *                               This is used to reduce space and store the value only once. If this option is used
+     *                               you cannot use storeTwoDirections or a minValue different to 0.
+     * @param storeTwoDirections     true if forward and backward direction of the edge should get two independent values.
+     */
+<span class="fc" id="L72">    public IntEncodedValueImpl(String name, int bits, int minStorableValue, boolean negateReverseDirection, boolean storeTwoDirections) {</span>
+<span class="pc bpc" id="L73" title="1 of 2 branches missed.">        if (!isValidEncodedValue(name))</span>
+<span class="nc" id="L74">            throw new IllegalArgumentException(&quot;EncodedValue name wasn't valid: &quot; + name + &quot;. Use lower case letters, underscore and numbers only.&quot;);</span>
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (bits &lt;= 0)</span>
+<span class="nc" id="L76">            throw new IllegalArgumentException(name + &quot;: bits cannot be zero or negative&quot;);</span>
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">        if (bits &gt; 31)</span>
+<span class="nc" id="L78">            throw new IllegalArgumentException(name + &quot;: at the moment the number of reserved bits cannot be more than 31&quot;);</span>
+<span class="pc bpc" id="L79" title="2 of 6 branches missed.">        if (negateReverseDirection &amp;&amp; (minStorableValue != 0 || storeTwoDirections))</span>
+<span class="nc" id="L80">            throw new IllegalArgumentException(name + &quot;: negating value for reverse direction only works for minValue == 0 &quot; +</span>
+                    &quot;and !storeTwoDirections but was minValue=&quot; + minStorableValue + &quot;, storeTwoDirections=&quot; + storeTwoDirections);
+<span class="fc" id="L82">        this.name = name;</span>
+<span class="fc" id="L83">        this.storeTwoDirections = storeTwoDirections;</span>
+<span class="fc" id="L84">        int max = (1 &lt;&lt; bits) - 1;</span>
+        // negateReverseDirection: store the negative value only once, but for that we need the same range as maxValue for negative values
+<span class="fc bfc" id="L86" title="All 2 branches covered.">        this.minStorableValue = negateReverseDirection ? -max : minStorableValue;</span>
+<span class="fc" id="L87">        this.maxStorableValue = max + minStorableValue;</span>
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">        if (minStorableValue == Integer.MIN_VALUE)</span>
+            // we do not allow this because we use this value to represent maxValue = untouched, i.e. no value has been set yet
+<span class="nc" id="L90">            throw new IllegalArgumentException(Integer.MIN_VALUE + &quot; is not allowed for minValue&quot;);</span>
+<span class="fc" id="L91">        this.maxValue = Integer.MIN_VALUE;</span>
+        // negateReverseDirection: we need twice the integer range, i.e. 1 more bit
+<span class="fc bfc" id="L93" title="All 2 branches covered.">        this.bits = negateReverseDirection ? bits + 1 : bits;</span>
+<span class="fc" id="L94">        this.negateReverseDirection = negateReverseDirection;</span>
+<span class="fc" id="L95">    }</span>
+
+    @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
+    IntEncodedValueImpl(@JsonProperty(&quot;name&quot;) String name,
+                        @JsonProperty(&quot;bits&quot;) int bits,
+                        @JsonProperty(&quot;min_storable_value&quot;) int minStorableValue,
+                        @JsonProperty(&quot;max_storable_value&quot;) int maxStorableValue,
+                        @JsonProperty(&quot;max_value&quot;) int maxValue,
+                        @JsonProperty(&quot;negate_reverse_direction&quot;) boolean negateReverseDirection,
+                        @JsonProperty(&quot;store_two_directions&quot;) boolean storeTwoDirections,
+                        @JsonProperty(&quot;fwd_data_index&quot;) int fwdDataIndex,
+                        @JsonProperty(&quot;bwd_data_index&quot;) int bwdDataIndex,
+                        @JsonProperty(&quot;fwd_shift&quot;) int fwdShift,
+                        @JsonProperty(&quot;bwd_shift&quot;) int bwdShift,
+                        @JsonProperty(&quot;fwd_mask&quot;) int fwdMask,
+                        @JsonProperty(&quot;bwd_mask&quot;) int bwdMask
+<span class="fc" id="L111">    ) {</span>
+        // we need this constructor for Jackson
+<span class="fc" id="L113">        this.name = name;</span>
+<span class="fc" id="L114">        this.storeTwoDirections = storeTwoDirections;</span>
+<span class="fc" id="L115">        this.bits = bits;</span>
+<span class="fc" id="L116">        this.negateReverseDirection = negateReverseDirection;</span>
+<span class="fc" id="L117">        this.minStorableValue = minStorableValue;</span>
+<span class="fc" id="L118">        this.maxStorableValue = maxStorableValue;</span>
+<span class="fc" id="L119">        this.maxValue = maxValue;</span>
+<span class="fc" id="L120">        this.fwdDataIndex = fwdDataIndex;</span>
+<span class="fc" id="L121">        this.bwdDataIndex = bwdDataIndex;</span>
+<span class="fc" id="L122">        this.fwdShift = fwdShift;</span>
+<span class="fc" id="L123">        this.bwdShift = bwdShift;</span>
+<span class="fc" id="L124">        this.fwdMask = fwdMask;</span>
+<span class="fc" id="L125">        this.bwdMask = bwdMask;</span>
+<span class="fc" id="L126">    }</span>
+
+    @Override
+    public final int init(EncodedValue.InitializerConfig init) {
+<span class="fc bfc" id="L130" title="All 2 branches covered.">        if (isInitialized())</span>
+<span class="fc" id="L131">            throw new IllegalStateException(&quot;Cannot call init multiple times&quot;);</span>
+
+<span class="fc" id="L133">        init.next(bits);</span>
+<span class="fc" id="L134">        this.fwdMask = init.bitMask;</span>
+<span class="fc" id="L135">        this.fwdDataIndex = init.dataIndex;</span>
+<span class="fc" id="L136">        this.fwdShift = init.shift;</span>
+<span class="fc bfc" id="L137" title="All 2 branches covered.">        if (storeTwoDirections) {</span>
+<span class="fc" id="L138">            init.next(bits);</span>
+<span class="fc" id="L139">            this.bwdMask = init.bitMask;</span>
+<span class="fc" id="L140">            this.bwdDataIndex = init.dataIndex;</span>
+<span class="fc" id="L141">            this.bwdShift = init.shift;</span>
+        }
+
+<span class="fc bfc" id="L144" title="All 2 branches covered.">        return storeTwoDirections ? 2 * bits : bits;</span>
+    }
+
+    boolean isInitialized() {
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        return fwdMask != 0;</span>
+    }
+
+    @Override
+    public final void setInt(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess, int value) {
+<span class="fc" id="L153">        checkValue(value);</span>
+<span class="fc" id="L154">        uncheckedSet(reverse, edgeId, edgeIntAccess, value);</span>
+<span class="fc" id="L155">    }</span>
+
+    private void checkValue(int value) {
+<span class="pc bpc" id="L158" title="1 of 2 branches missed.">        if (!isInitialized())</span>
+<span class="nc" id="L159">            throw new IllegalStateException(&quot;EncodedValue &quot; + getName() + &quot; not initialized&quot;);</span>
+<span class="fc bfc" id="L160" title="All 2 branches covered.">        if (value &gt; maxStorableValue)</span>
+<span class="fc" id="L161">            throw new IllegalArgumentException(name + &quot; value too large for encoding: &quot; + value + &quot;, maxValue:&quot; + maxStorableValue);</span>
+<span class="fc bfc" id="L162" title="All 2 branches covered.">        if (value &lt; minStorableValue)</span>
+<span class="fc" id="L163">            throw new IllegalArgumentException(name + &quot; value too small for encoding &quot; + value + &quot;, minValue:&quot; + minStorableValue);</span>
+<span class="fc" id="L164">    }</span>
+
+    final void uncheckedSet(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess, int value) {
+<span class="fc bfc" id="L167" title="All 2 branches covered.">        if (negateReverseDirection) {</span>
+<span class="fc bfc" id="L168" title="All 2 branches covered.">            if (reverse) {</span>
+<span class="fc" id="L169">                reverse = false;</span>
+<span class="fc" id="L170">                value = -value;</span>
+            }
+<span class="pc bpc" id="L172" title="1 of 4 branches missed.">        } else if (reverse &amp;&amp; !storeTwoDirections)</span>
+<span class="nc" id="L173">            throw new IllegalArgumentException(getName() + &quot;: value for reverse direction would overwrite forward direction. Enable storeTwoDirections for this EncodedValue or don't use setReverse&quot;);</span>
+
+<span class="fc" id="L175">        maxValue = Math.max(maxValue, value);</span>
+
+<span class="fc" id="L177">        value -= minStorableValue;</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">        if (reverse) {</span>
+<span class="fc" id="L179">            int flags = edgeIntAccess.getInt(edgeId, bwdDataIndex);</span>
+            // clear value bits
+<span class="fc" id="L181">            flags &amp;= ~bwdMask;</span>
+<span class="fc" id="L182">            edgeIntAccess.setInt(edgeId, bwdDataIndex, flags | (value &lt;&lt; bwdShift));</span>
+<span class="fc" id="L183">        } else {</span>
+<span class="fc" id="L184">            int flags = edgeIntAccess.getInt(edgeId, fwdDataIndex);</span>
+<span class="fc" id="L185">            flags &amp;= ~fwdMask;</span>
+<span class="fc" id="L186">            edgeIntAccess.setInt(edgeId, fwdDataIndex, flags | (value &lt;&lt; fwdShift));</span>
+        }
+<span class="fc" id="L188">    }</span>
+
+    @Override
+    public final int getInt(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess) {
+<span class="pc bpc" id="L192" title="1 of 2 branches missed.">        assert fwdShift &gt;= 0 : &quot;incorrect shift &quot; + fwdShift + &quot; for &quot; + getName();</span>
+<span class="pc bpc" id="L193" title="1 of 2 branches missed.">        assert bits &gt; 0 : &quot;incorrect bits &quot; + bits + &quot; for &quot; + getName();</span>
+
+        int flags;
+        // if we do not store both directions ignore reverse == true for convenient reading
+<span class="fc bfc" id="L197" title="All 4 branches covered.">        if (storeTwoDirections &amp;&amp; reverse) {</span>
+<span class="fc" id="L198">            flags = edgeIntAccess.getInt(edgeId, bwdDataIndex);</span>
+<span class="fc" id="L199">            return minStorableValue + ((flags &amp; bwdMask) &gt;&gt;&gt; bwdShift);</span>
+        } else {
+<span class="fc" id="L201">            flags = edgeIntAccess.getInt(edgeId, fwdDataIndex);</span>
+<span class="fc bfc" id="L202" title="All 4 branches covered.">            if (negateReverseDirection &amp;&amp; reverse)</span>
+<span class="fc" id="L203">                return -(minStorableValue + ((flags &amp; fwdMask) &gt;&gt;&gt; fwdShift));</span>
+<span class="fc" id="L204">            return minStorableValue + ((flags &amp; fwdMask) &gt;&gt;&gt; fwdShift);</span>
+        }
+    }
+
+    @Override
+    public int getMaxStorableInt() {
+<span class="fc" id="L210">        return maxStorableValue;</span>
+    }
+
+    @Override
+    public int getMinStorableInt() {
+<span class="fc" id="L215">        return minStorableValue;</span>
+    }
+
+    @Override
+    public int getMaxOrMaxStorableInt() {
+<span class="fc bfc" id="L220" title="All 2 branches covered.">        return maxValue == Integer.MIN_VALUE ? getMaxStorableInt() : maxValue;</span>
+    }
+
+    @Override
+    public final boolean isStoreTwoDirections() {
+<span class="fc" id="L225">        return storeTwoDirections;</span>
+    }
+
+    @Override
+    public final String getName() {
+<span class="fc" id="L230">        return name;</span>
+    }
+
+    @Override
+    public final String toString() {
+<span class="nc" id="L235">        return getName();</span>
+    }
+
+    static boolean isValidEncodedValue(String name) {
+<span class="pc bpc" id="L239" title="3 of 6 branches missed.">        if (name.length() &lt; 2 || name.startsWith(&quot;in_&quot;) || name.startsWith(&quot;backward_&quot;)</span>
+<span class="fc bfc" id="L240" title="All 4 branches covered.">                || !isLowerLetter(name.charAt(0)) || SourceVersion.isKeyword(name))</span>
+<span class="fc" id="L241">            return false;</span>
+
+<span class="fc" id="L243">        int underscoreCount = 0;</span>
+<span class="fc bfc" id="L244" title="All 2 branches covered.">        for (int i = 1; i &lt; name.length(); i++) {</span>
+<span class="fc" id="L245">            char c = name.charAt(i);</span>
+<span class="fc bfc" id="L246" title="All 2 branches covered.">            if (c == '_') {</span>
+<span class="fc bfc" id="L247" title="All 2 branches covered.">                if (underscoreCount &gt; 0) return false;</span>
+<span class="fc" id="L248">                underscoreCount++;</span>
+<span class="fc bfc" id="L249" title="All 4 branches covered.">            } else if (!isLowerLetter(c) &amp;&amp; !Character.isDigit(c)) {</span>
+<span class="fc" id="L250">                return false;</span>
+            } else {
+<span class="fc" id="L252">                underscoreCount = 0;</span>
+            }
+        }
+<span class="fc" id="L255">        return true;</span>
+    }
+
+    private static boolean isLowerLetter(char c) {
+<span class="fc bfc" id="L259" title="All 4 branches covered.">        return c &gt;= 'a' &amp;&amp; c &lt;= 'z';</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

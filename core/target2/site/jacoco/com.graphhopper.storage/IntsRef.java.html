@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IntsRef.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">IntsRef.java</span></div><h1>IntsRef.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import java.util.Arrays;
+
+/**
+ * Idea and most of the code is from Lucene. But the variables are final, except for the array content.
+ */
+public final class IntsRef implements Comparable&lt;IntsRef&gt; {
+    /**
+     * An IntsRef with an array of size 0.
+     */
+<span class="fc" id="L28">    public static final IntsRef EMPTY = new IntsRef(0, false);</span>
+    /**
+     * The contents of the IntsRef. Cannot be {@code null}.
+     */
+    public final int[] ints;
+    /**
+     * Offset of first valid integer.
+     */
+    public final int offset;
+    /**
+     * Length of used ints.
+     */
+    public final int length;
+
+    /**
+     * Create a IntsRef pointing to a new int array of size &lt;code&gt;capacity&lt;/code&gt; leading to capacity*32 bits.
+     * Offset will be zero and length will be the capacity.
+     */
+    public IntsRef(int capacity) {
+<span class="fc" id="L47">        this(capacity, true);</span>
+<span class="fc" id="L48">    }</span>
+
+<span class="fc" id="L50">    private IntsRef(int capacity, boolean checked) {</span>
+<span class="pc bpc" id="L51" title="1 of 4 branches missed.">        if (checked &amp;&amp; capacity == 0)</span>
+<span class="nc" id="L52">            throw new IllegalArgumentException(&quot;Use instance EMPTY instead of capacity 0&quot;);</span>
+<span class="fc" id="L53">        ints = new int[capacity];</span>
+<span class="fc" id="L54">        length = capacity;</span>
+<span class="fc" id="L55">        offset = 0;</span>
+<span class="fc" id="L56">    }</span>
+
+    /**
+     * This instance will directly reference ints w/o making a copy.
+     * ints should not be null.
+     */
+<span class="fc" id="L62">    public IntsRef(int[] ints, int offset, int length) {</span>
+<span class="fc" id="L63">        this.ints = ints;</span>
+<span class="fc" id="L64">        this.offset = offset;</span>
+<span class="fc" id="L65">        this.length = length;</span>
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">        assert isValid();</span>
+<span class="fc" id="L67">    }</span>
+
+    @Override
+    public int hashCode() {
+<span class="nc" id="L71">        final int prime = 31;</span>
+<span class="nc" id="L72">        int result = 0;</span>
+<span class="nc" id="L73">        final int end = offset + length;</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">        for (int i = offset; i &lt; end; i++) {</span>
+<span class="nc" id="L75">            result = prime * result + ints[i];</span>
+        }
+<span class="nc" id="L77">        return result;</span>
+    }
+
+    @Override
+    public boolean equals(Object other) {
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">        if (other == null) {</span>
+<span class="nc" id="L83">            return false;</span>
+        }
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">        if (other instanceof IntsRef) {</span>
+<span class="fc" id="L86">            return this.intsEquals((IntsRef) other);</span>
+        }
+<span class="nc" id="L88">        return false;</span>
+    }
+
+    public boolean intsEquals(IntsRef other) {
+<span class="pc bpc" id="L92" title="1 of 2 branches missed.">        if (length == other.length) {</span>
+<span class="fc" id="L93">            int otherUpto = other.offset;</span>
+<span class="fc" id="L94">            final int[] otherInts = other.ints;</span>
+<span class="fc" id="L95">            final int end = offset + length;</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">            for (int upto = offset; upto &lt; end; upto++, otherUpto++) {</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">                if (ints[upto] != otherInts[otherUpto]) {</span>
+<span class="fc" id="L98">                    return false;</span>
+                }
+            }
+<span class="fc" id="L101">            return true;</span>
+        } else {
+<span class="nc" id="L103">            return false;</span>
+        }
+    }
+
+    /**
+     * Signed int order comparison
+     */
+    @Override
+    public int compareTo(IntsRef other) {
+<span class="nc bnc" id="L112" title="All 2 branches missed.">        if (this == other) return 0;</span>
+<span class="nc" id="L113">        final int[] aInts = this.ints;</span>
+<span class="nc" id="L114">        int aUpto = this.offset;</span>
+<span class="nc" id="L115">        final int[] bInts = other.ints;</span>
+<span class="nc" id="L116">        int bUpto = other.offset;</span>
+<span class="nc" id="L117">        final int aStop = aUpto + Math.min(this.length, other.length);</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">        while (aUpto &lt; aStop) {</span>
+<span class="nc" id="L119">            int aInt = aInts[aUpto++];</span>
+<span class="nc" id="L120">            int bInt = bInts[bUpto++];</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">            if (aInt &gt; bInt) {</span>
+<span class="nc" id="L122">                return 1;</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">            } else if (aInt &lt; bInt) {</span>
+<span class="nc" id="L124">                return -1;</span>
+            }
+<span class="nc" id="L126">        }</span>
+        // One is a prefix of the other, or, they are equal:
+<span class="nc" id="L128">        return this.length - other.length;</span>
+    }
+
+    /**
+     * Creates a new IntsRef that points to a copy of the ints from
+     * &lt;code&gt;other&lt;/code&gt;
+     * &lt;p&gt;
+     * The returned IntsRef will have a length of other.length
+     * and an offset of zero.
+     */
+    public static IntsRef deepCopyOf(IntsRef other) {
+<span class="fc" id="L139">        return new IntsRef(Arrays.copyOfRange(other.ints, other.offset, other.offset + other.length), 0, other.length);</span>
+    }
+
+    /**
+     * Performs internal consistency checks.
+     * Always returns true (or throws IllegalStateException)
+     */
+    public boolean isValid() {
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">        if (ints == null) {</span>
+<span class="nc" id="L148">            throw new IllegalStateException(&quot;ints is null&quot;);</span>
+        }
+<span class="pc bpc" id="L150" title="1 of 2 branches missed.">        if (length &lt; 0) {</span>
+<span class="nc" id="L151">            throw new IllegalStateException(&quot;length is negative: &quot; + length);</span>
+        }
+<span class="pc bpc" id="L153" title="1 of 2 branches missed.">        if (length &gt; ints.length) {</span>
+<span class="nc" id="L154">            throw new IllegalStateException(&quot;length is out of bounds: &quot; + length + &quot;,ints.length=&quot; + ints.length);</span>
+        }
+<span class="pc bpc" id="L156" title="1 of 2 branches missed.">        if (offset &lt; 0) {</span>
+<span class="nc" id="L157">            throw new IllegalStateException(&quot;offset is negative: &quot; + offset);</span>
+        }
+<span class="pc bpc" id="L159" title="1 of 2 branches missed.">        if (offset &gt; ints.length) {</span>
+<span class="nc" id="L160">            throw new IllegalStateException(&quot;offset out of bounds: &quot; + offset + &quot;,ints.length=&quot; + ints.length);</span>
+        }
+<span class="pc bpc" id="L162" title="1 of 2 branches missed.">        if (offset + length &lt; 0) {</span>
+<span class="nc" id="L163">            throw new IllegalStateException(&quot;offset+length is negative: offset=&quot; + offset + &quot;,length=&quot; + length);</span>
+        }
+<span class="pc bpc" id="L165" title="1 of 2 branches missed.">        if (offset + length &gt; ints.length) {</span>
+<span class="nc" id="L166">            throw new IllegalStateException(&quot;offset+length out of bounds: offset=&quot; + offset + &quot;,length=&quot; + length + &quot;,ints.length=&quot; + ints.length);</span>
+        }
+<span class="fc" id="L168">        return true;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L173">        StringBuilder sb = new StringBuilder();</span>
+<span class="nc" id="L174">        sb.append('[');</span>
+<span class="nc" id="L175">        final int end = offset + length;</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">        for (int i = offset; i &lt; end; i++) {</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">            if (i &gt; offset) {</span>
+<span class="nc" id="L178">                sb.append(' ');</span>
+            }
+<span class="nc" id="L180">            sb.append(Integer.toHexString(ints[i]));</span>
+        }
+<span class="nc" id="L182">        sb.append(']');</span>
+<span class="nc" id="L183">        return sb.toString();</span>
+    }
+
+    public boolean isEmpty() {
+<span class="nc bnc" id="L187" title="All 2 branches missed.">        for (int i = 0; i &lt; ints.length; i++) {</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">            if (ints[i] != 0)</span>
+<span class="nc" id="L189">                return false;</span>
+        }
+<span class="nc" id="L191">        return true;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

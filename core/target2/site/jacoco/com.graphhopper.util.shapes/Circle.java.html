@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Circle.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util.shapes</a> &gt; <span class="el_source">Circle.java</span></div><h1>Circle.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util.shapes;
+
+import com.graphhopper.util.DistanceCalc;
+import com.graphhopper.util.DistanceCalcEarth;
+import com.graphhopper.util.NumHelper;
+import com.graphhopper.util.PointList;
+
+/**
+ * @author Peter Karich
+ */
+public class Circle implements Shape {
+    public final double radiusInMeter;
+    private final double lat;
+    private final double lon;
+    private final double normedDist;
+    private final BBox bbox;
+    private DistanceCalc calc;
+
+    public Circle(double lat, double lon, double radiusInMeter) {
+<span class="fc" id="L37">        this(lat, lon, radiusInMeter, DistanceCalcEarth.DIST_EARTH);</span>
+<span class="fc" id="L38">    }</span>
+
+<span class="fc" id="L40">    public Circle(double lat, double lon, double radiusInMeter, DistanceCalc calc) {</span>
+<span class="fc" id="L41">        this.calc = calc;</span>
+<span class="fc" id="L42">        this.lat = lat;</span>
+<span class="fc" id="L43">        this.lon = lon;</span>
+<span class="fc" id="L44">        this.radiusInMeter = radiusInMeter;</span>
+<span class="fc" id="L45">        this.normedDist = calc.calcNormalizedDist(radiusInMeter);</span>
+<span class="fc" id="L46">        bbox = calc.createBBox(lat, lon, radiusInMeter);</span>
+<span class="fc" id="L47">    }</span>
+
+    public double getLat() {
+<span class="nc" id="L50">        return lat;</span>
+    }
+
+    public double getLon() {
+<span class="nc" id="L54">        return lon;</span>
+    }
+
+    @Override
+    public boolean contains(double lat1, double lon1) {
+<span class="pc bpc" id="L59" title="1 of 2 branches missed.">        return normDist(lat1, lon1) &lt;= normedDist;</span>
+    }
+
+    @Override
+    public BBox getBounds() {
+<span class="nc" id="L64">        return bbox;</span>
+    }
+
+    private double normDist(double lat1, double lon1) {
+<span class="fc" id="L68">        return calc.calcNormalizedDist(lat, lon, lat1, lon1);</span>
+    }
+
+    @Override
+    public boolean intersects(PointList pointList) {
+        // similar code to LocationIndexTree.checkAdjacent
+<span class="fc" id="L74">        int len = pointList.size();</span>
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (len == 0)</span>
+<span class="nc" id="L76">            throw new IllegalArgumentException(&quot;PointList must not be empty&quot;);</span>
+
+<span class="fc" id="L78">        double tmpLat = pointList.getLat(0);</span>
+<span class="fc" id="L79">        double tmpLon = pointList.getLon(0);</span>
+<span class="pc bpc" id="L80" title="1 of 2 branches missed.">        if (len == 1)</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">            return calc.calcNormalizedDist(lat, lon, tmpLat, tmpLon) &lt;= normedDist;</span>
+
+<span class="fc bfc" id="L83" title="All 2 branches covered.">        for (int pointIndex = 1; pointIndex &lt; len; pointIndex++) {</span>
+<span class="fc" id="L84">            double wayLat = pointList.getLat(pointIndex);</span>
+<span class="fc" id="L85">            double wayLon = pointList.getLon(pointIndex);</span>
+
+<span class="fc bfc" id="L87" title="All 2 branches covered.">            if (calc.validEdgeDistance(lat, lon, tmpLat, tmpLon, wayLat, wayLon)) {</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">                if (calc.calcNormalizedEdgeDistance(lat, lon, tmpLat, tmpLon, wayLat, wayLon) &lt;= normedDist)</span>
+<span class="fc" id="L89">                    return true;</span>
+            } else {
+<span class="pc bpc" id="L91" title="2 of 4 branches missed.">                if (calc.calcNormalizedDist(lat, lon, tmpLat, tmpLon) &lt;= normedDist</span>
+<span class="pc bpc" id="L92" title="1 of 2 branches missed.">                        || pointIndex + 1 == len &amp;&amp; calc.calcNormalizedDist(lat, lon, wayLat, wayLon) &lt;= normedDist)</span>
+<span class="fc" id="L93">                    return true;</span>
+            }
+<span class="fc" id="L95">            tmpLat = wayLat;</span>
+<span class="fc" id="L96">            tmpLon = wayLon;</span>
+        }
+<span class="fc" id="L98">        return false;</span>
+    }
+
+    public boolean intersects(BBox b) {
+        // test top intersects
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        if (lat &gt; b.maxLat) {</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">            if (lon &lt; b.minLon) {</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">                return normDist(b.maxLat, b.minLon) &lt;= normedDist;</span>
+            }
+<span class="fc bfc" id="L107" title="All 2 branches covered.">            if (lon &gt; b.maxLon) {</span>
+<span class="pc bpc" id="L108" title="1 of 2 branches missed.">                return normDist(b.maxLat, b.maxLon) &lt;= normedDist;</span>
+            }
+<span class="fc bfc" id="L110" title="All 2 branches covered.">            return b.maxLat - bbox.minLat &gt; 0;</span>
+        }
+
+        // test bottom intersects
+<span class="fc bfc" id="L114" title="All 2 branches covered.">        if (lat &lt; b.minLat) {</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">            if (lon &lt; b.minLon) {</span>
+<span class="fc bfc" id="L116" title="All 2 branches covered.">                return normDist(b.minLat, b.minLon) &lt;= normedDist;</span>
+            }
+<span class="fc bfc" id="L118" title="All 2 branches covered.">            if (lon &gt; b.maxLon) {</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">                return normDist(b.minLat, b.maxLon) &lt;= normedDist;</span>
+            }
+<span class="pc bpc" id="L121" title="1 of 2 branches missed.">            return bbox.maxLat - b.minLat &gt; 0;</span>
+        }
+
+        // test middle intersects
+<span class="fc bfc" id="L125" title="All 2 branches covered.">        if (lon &lt; b.minLon) {</span>
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">            return bbox.maxLon - b.minLon &gt; 0;</span>
+        }
+<span class="fc bfc" id="L128" title="All 2 branches covered.">        if (lon &gt; b.maxLon) {</span>
+<span class="pc bpc" id="L129" title="1 of 2 branches missed.">            return b.maxLon - bbox.minLon &gt; 0;</span>
+        }
+<span class="fc" id="L131">        return true;</span>
+    }
+
+    public boolean contains(BBox b) {
+<span class="fc bfc" id="L135" title="All 2 branches covered.">        if (bbox.contains(b)) {</span>
+<span class="pc bpc" id="L136" title="2 of 4 branches missed.">            return contains(b.maxLat, b.minLon) &amp;&amp; contains(b.minLat, b.minLon)</span>
+<span class="pc bpc" id="L137" title="2 of 4 branches missed.">                    &amp;&amp; contains(b.maxLat, b.maxLon) &amp;&amp; contains(b.minLat, b.maxLon);</span>
+        }
+
+<span class="fc" id="L140">        return false;</span>
+    }
+
+    public boolean contains(Circle c) {
+<span class="fc" id="L144">        double res = radiusInMeter - c.radiusInMeter;</span>
+<span class="pc bpc" id="L145" title="1 of 2 branches missed.">        if (res &lt; 0) {</span>
+<span class="nc" id="L146">            return false;</span>
+        }
+
+<span class="fc bfc" id="L149" title="All 2 branches covered.">        return calc.calcDist(lat, lon, c.lat, c.lon) &lt;= res;</span>
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+<span class="nc bnc" id="L154" title="All 2 branches missed.">        if (obj == null)</span>
+<span class="nc" id="L155">            return false;</span>
+
+<span class="nc" id="L157">        Circle b = (Circle) obj;</span>
+        // equals within a very small range
+<span class="nc bnc" id="L159" title="All 6 branches missed.">        return NumHelper.equalsEps(lat, b.lat) &amp;&amp; NumHelper.equalsEps(lon, b.lon) &amp;&amp; NumHelper.equalsEps(radiusInMeter, b.radiusInMeter);</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc" id="L164">        int hash = 3;</span>
+<span class="nc" id="L165">        hash = 17 * hash + (int) (Double.doubleToLongBits(this.lat) ^ (Double.doubleToLongBits(this.lat) &gt;&gt;&gt; 32));</span>
+<span class="nc" id="L166">        hash = 17 * hash + (int) (Double.doubleToLongBits(this.lon) ^ (Double.doubleToLongBits(this.lon) &gt;&gt;&gt; 32));</span>
+<span class="nc" id="L167">        hash = 17 * hash + (int) (Double.doubleToLongBits(this.radiusInMeter) ^ (Double.doubleToLongBits(this.radiusInMeter) &gt;&gt;&gt; 32));</span>
+<span class="nc" id="L168">        return hash;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L173">        return lat + &quot;,&quot; + lon + &quot;, radius:&quot; + radiusInMeter;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

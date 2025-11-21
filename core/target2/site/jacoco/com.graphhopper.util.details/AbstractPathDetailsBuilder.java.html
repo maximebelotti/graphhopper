@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractPathDetailsBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util.details</a> &gt; <span class="el_source">AbstractPathDetailsBuilder.java</span></div><h1>AbstractPathDetailsBuilder.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util.details;
+
+import com.graphhopper.coll.MapEntry;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Builds a PathDetail list, from values and intervals of a Path.
+ *
+ * @author Robin Boldt
+ */
+public abstract class AbstractPathDetailsBuilder implements PathDetailsBuilder {
+
+    private final String name;
+<span class="fc" id="L34">    private boolean isOpen = false;</span>
+    private PathDetail currentDetail;
+<span class="fc" id="L36">    private final List&lt;PathDetail&gt; pathDetails = new ArrayList&lt;&gt;();</span>
+
+<span class="fc" id="L38">    public AbstractPathDetailsBuilder(String name) {</span>
+<span class="fc" id="L39">        this.name = name;</span>
+<span class="fc" id="L40">    }</span>
+
+
+    /**
+     * The value of the Path at this moment, that should be stored in the PathDetail when calling startInterval
+     */
+    protected abstract Object getCurrentValue();
+
+    /**
+     * It is only possible to open one interval at a time. Calling &lt;code&gt;startInterval&lt;/code&gt; when
+     * the interval is already open results in an Exception.
+     *
+     * @param firstIndex the index the PathDetail starts
+     */
+    public void startInterval(int firstIndex) {
+<span class="fc" id="L55">        Object value = getCurrentValue();</span>
+<span class="pc bpc" id="L56" title="1 of 2 branches missed.">        if (isOpen)</span>
+<span class="nc" id="L57">            throw new IllegalStateException(&quot;PathDetailsBuilder is already in an open state with value: &quot; + currentDetail.getValue()</span>
+                    + &quot; trying to open a new one with value: &quot; + value);
+
+<span class="fc" id="L60">        currentDetail = new PathDetail(value);</span>
+<span class="fc" id="L61">        currentDetail.setFirst(firstIndex);</span>
+<span class="fc" id="L62">        isOpen = true;</span>
+<span class="fc" id="L63">    }</span>
+
+    /**
+     * Ending intervals multiple times is safe, we only write the interval if it was open and not empty.
+     * Writes the interval to the pathDetails
+     *
+     * @param lastIndex the index the PathDetail ends
+     */
+    public void endInterval(int lastIndex) {
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        if (isOpen) {</span>
+<span class="fc" id="L73">            currentDetail.setLast(lastIndex);</span>
+<span class="fc" id="L74">            pathDetails.add(currentDetail);</span>
+        }
+<span class="fc" id="L76">        isOpen = false;</span>
+<span class="fc" id="L77">    }</span>
+
+    public Map.Entry&lt;String, List&lt;PathDetail&gt;&gt; build() {
+<span class="fc" id="L80">        return new MapEntry&lt;&gt;(getName(), pathDetails);</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="fc" id="L85">        return name;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L90">        return getName();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

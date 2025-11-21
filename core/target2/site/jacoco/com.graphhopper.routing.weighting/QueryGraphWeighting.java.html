@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QueryGraphWeighting.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting</a> &gt; <span class="el_source">QueryGraphWeighting.java</span></div><h1>QueryGraphWeighting.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.weighting;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.graphhopper.routing.querygraph.QueryGraph;
+import com.graphhopper.storage.BaseGraph;
+import com.graphhopper.util.EdgeExplorer;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.EdgeIteratorState;
+
+/**
+ * Whenever a {@link QueryGraph} is used for shortest path calculations including turn costs we need to wrap the
+ * {@link Weighting} we want to use with this class. Otherwise turn costs at virtual nodes and/or including virtual
+ * edges will not be calculated correctly.
+ */
+public class QueryGraphWeighting implements Weighting {
+    private final BaseGraph graph;
+    private final Weighting weighting;
+    private final int firstVirtualNodeId;
+    private final int firstVirtualEdgeId;
+    private final IntArrayList closestEdges;
+
+<span class="fc" id="L40">    public QueryGraphWeighting(BaseGraph graph, Weighting weighting, IntArrayList closestEdges) {</span>
+<span class="fc" id="L41">        this.graph = graph;</span>
+<span class="fc" id="L42">        this.weighting = weighting;</span>
+<span class="fc" id="L43">        this.firstVirtualNodeId = graph.getNodes();</span>
+<span class="fc" id="L44">        this.firstVirtualEdgeId = graph.getEdges();</span>
+<span class="fc" id="L45">        this.closestEdges = closestEdges;</span>
+<span class="fc" id="L46">    }</span>
+
+    @Override
+    public double calcMinWeightPerDistance() {
+<span class="fc" id="L50">        return weighting.calcMinWeightPerDistance();</span>
+    }
+
+    @Override
+    public double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse) {
+<span class="fc" id="L55">        return weighting.calcEdgeWeight(edgeState, reverse);</span>
+    }
+
+    @Override
+    public double calcTurnWeight(int inEdge, int viaNode, int outEdge) {
+<span class="fc bfc" id="L60" title="All 4 branches covered.">        if (!EdgeIterator.Edge.isValid(inEdge) || !EdgeIterator.Edge.isValid(outEdge)) {</span>
+<span class="fc" id="L61">            return 0;</span>
+        }
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        if (isVirtualNode(viaNode)) {</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">            if (isUTurn(inEdge, outEdge)) {</span>
+                // do not allow u-turns at virtual nodes, otherwise the route depends on whether or not there are
+                // virtual via nodes, see #1672. note since we are turning between virtual edges here we need to compare
+                // the *virtual* edge ids (the orig edge would always be the same for all virtual edges at a virtual
+                // node), see #1593
+<span class="fc" id="L69">                return Double.POSITIVE_INFINITY;</span>
+            } else {
+<span class="fc" id="L71">                return 0;</span>
+            }
+        }
+<span class="fc" id="L74">        return getMinWeightAndOriginalEdges(inEdge, viaNode, outEdge).minTurnWeight;</span>
+    }
+
+    private Result getMinWeightAndOriginalEdges(int inEdge, int viaNode, int outEdge) {
+        // to calculate the actual turn costs or detect u-turns we need to look at the original edge of each virtual
+        // edge, see #1593
+<span class="fc" id="L80">        Result result = new Result();</span>
+<span class="fc bfc" id="L81" title="All 4 branches covered.">        if (isVirtualEdge(inEdge) &amp;&amp; isVirtualEdge(outEdge)) {</span>
+<span class="fc" id="L82">            EdgeExplorer innerExplorer = graph.createEdgeExplorer();</span>
+<span class="fc" id="L83">            graph.forEdgeAndCopiesOfEdge(graph.createEdgeExplorer(), viaNode, getOriginalEdge(inEdge), p -&gt; {</span>
+<span class="fc" id="L84">                graph.forEdgeAndCopiesOfEdge(innerExplorer, viaNode, getOriginalEdge(outEdge), q -&gt; {</span>
+<span class="fc" id="L85">                    double w = weighting.calcTurnWeight(p, viaNode, q);</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">                    if (w &lt; result.minTurnWeight) {</span>
+<span class="fc" id="L87">                        result.origInEdge = p;</span>
+<span class="fc" id="L88">                        result.origOutEdge = q;</span>
+<span class="fc" id="L89">                        result.minTurnWeight = w;</span>
+                    }
+<span class="fc" id="L91">                });</span>
+<span class="fc" id="L92">            });</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">        } else if (isVirtualEdge(inEdge)) {</span>
+<span class="fc" id="L94">            graph.forEdgeAndCopiesOfEdge(graph.createEdgeExplorer(), viaNode, getOriginalEdge(inEdge), e -&gt; {</span>
+<span class="fc" id="L95">                double w = weighting.calcTurnWeight(e, viaNode, outEdge);</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">                if (w &lt; result.minTurnWeight) {</span>
+<span class="fc" id="L97">                    result.origInEdge = e;</span>
+<span class="fc" id="L98">                    result.origOutEdge = outEdge;</span>
+<span class="fc" id="L99">                    result.minTurnWeight = w;</span>
+                }
+<span class="fc" id="L101">            });</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        } else if (isVirtualEdge(outEdge)) {</span>
+<span class="fc" id="L103">            graph.forEdgeAndCopiesOfEdge(graph.createEdgeExplorer(), viaNode, getOriginalEdge(outEdge), e -&gt; {</span>
+<span class="fc" id="L104">                double w = weighting.calcTurnWeight(inEdge, viaNode, e);</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">                if (w &lt; result.minTurnWeight) {</span>
+<span class="fc" id="L106">                    result.origInEdge = inEdge;</span>
+<span class="fc" id="L107">                    result.origOutEdge = e;</span>
+<span class="fc" id="L108">                    result.minTurnWeight = w;</span>
+                }
+<span class="fc" id="L110">            });</span>
+        } else {
+<span class="fc" id="L112">            result.origInEdge = inEdge;</span>
+<span class="fc" id="L113">            result.origOutEdge = outEdge;</span>
+<span class="fc" id="L114">            result.minTurnWeight = weighting.calcTurnWeight(inEdge, viaNode, outEdge);</span>
+        }
+<span class="fc" id="L116">        return result;</span>
+    }
+
+    private boolean isUTurn(int inEdge, int outEdge) {
+<span class="fc bfc" id="L120" title="All 2 branches covered.">        return inEdge == outEdge;</span>
+    }
+
+    @Override
+    public long calcEdgeMillis(EdgeIteratorState edgeState, boolean reverse) {
+<span class="fc" id="L125">        return weighting.calcEdgeMillis(edgeState, reverse);</span>
+    }
+
+    @Override
+    public long calcTurnMillis(int inEdge, int viaNode, int outEdge) {
+<span class="fc bfc" id="L130" title="All 2 branches covered.">        if (isVirtualNode(viaNode))</span>
+            // see calcTurnWeight
+<span class="fc" id="L132">            return 0;</span>
+        else {
+            // we want the turn time given by the actual weighting for the edges with minimum weight
+            // (the same ones that would be selected when routing)
+<span class="fc" id="L136">            Result result = getMinWeightAndOriginalEdges(inEdge, viaNode, outEdge);</span>
+<span class="fc" id="L137">            return weighting.calcTurnMillis(result.origInEdge, viaNode, result.origOutEdge);</span>
+        }
+    }
+
+    @Override
+    public boolean hasTurnCosts() {
+<span class="fc" id="L143">        return weighting.hasTurnCosts();</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="nc" id="L148">        return weighting.getName();</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L153">        return getName();</span>
+    }
+
+    private int getOriginalEdge(int edge) {
+<span class="fc" id="L157">        return closestEdges.get((edge - firstVirtualEdgeId) / 2);</span>
+    }
+
+    private boolean isVirtualNode(int node) {
+<span class="fc bfc" id="L161" title="All 2 branches covered.">        return node &gt;= firstVirtualNodeId;</span>
+    }
+
+    private boolean isVirtualEdge(int edge) {
+<span class="fc bfc" id="L165" title="All 2 branches covered.">        return edge &gt;= firstVirtualEdgeId;</span>
+    }
+
+<span class="fc" id="L168">    private static class Result {</span>
+<span class="fc" id="L169">        int origInEdge = -1;</span>
+<span class="fc" id="L170">        int origOutEdge = -1;</span>
+<span class="fc" id="L171">        double minTurnWeight = Double.POSITIVE_INFINITY;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

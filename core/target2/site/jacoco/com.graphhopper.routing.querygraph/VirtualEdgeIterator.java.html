@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>VirtualEdgeIterator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.querygraph</a> &gt; <span class="el_source">VirtualEdgeIterator.java</span></div><h1>VirtualEdgeIterator.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.querygraph;
+
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.search.KVStorage;
+import com.graphhopper.storage.IntsRef;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.FetchMode;
+import com.graphhopper.util.PointList;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * @author Peter Karich
+ */
+class VirtualEdgeIterator implements EdgeIterator {
+    private final EdgeFilter edgeFilter;
+    private List&lt;EdgeIteratorState&gt; edges;
+    private int current;
+
+<span class="fc" id="L40">    VirtualEdgeIterator(EdgeFilter edgeFilter, List&lt;EdgeIteratorState&gt; edges) {</span>
+<span class="fc" id="L41">        this.edges = edges;</span>
+<span class="fc" id="L42">        this.current = -1;</span>
+<span class="fc" id="L43">        this.edgeFilter = edgeFilter;</span>
+<span class="fc" id="L44">    }</span>
+
+    EdgeIterator reset(List&lt;EdgeIteratorState&gt; edges) {
+<span class="fc" id="L47">        this.edges = edges;</span>
+<span class="fc" id="L48">        current = -1;</span>
+<span class="fc" id="L49">        return this;</span>
+    }
+
+    @Override
+    public boolean next() {
+<span class="fc" id="L54">        current++;</span>
+<span class="fc bfc" id="L55" title="All 4 branches covered.">        while (current &lt; edges.size() &amp;&amp; !edgeFilter.accept(edges.get(current))) {</span>
+<span class="fc" id="L56">            current++;</span>
+        }
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        return current &lt; edges.size();</span>
+    }
+
+    @Override
+    public EdgeIteratorState detach(boolean reverse) {
+<span class="pc bpc" id="L63" title="1 of 2 branches missed.">        if (reverse)</span>
+<span class="nc" id="L64">            throw new IllegalStateException(&quot;Not yet supported&quot;);</span>
+<span class="fc" id="L65">        return getCurrentEdge();</span>
+    }
+
+    @Override
+    public int getEdge() {
+<span class="fc" id="L70">        return getCurrentEdge().getEdge();</span>
+    }
+
+    @Override
+    public int getEdgeKey() {
+<span class="fc" id="L75">        return getCurrentEdge().getEdgeKey();</span>
+    }
+
+    @Override
+    public int getReverseEdgeKey() {
+<span class="fc" id="L80">        return getCurrentEdge().getReverseEdgeKey();</span>
+    }
+
+    @Override
+    public int getBaseNode() {
+<span class="fc" id="L85">        return getCurrentEdge().getBaseNode();</span>
+    }
+
+    @Override
+    public int getAdjNode() {
+<span class="fc" id="L90">        return getCurrentEdge().getAdjNode();</span>
+    }
+
+    @Override
+    public PointList fetchWayGeometry(FetchMode mode) {
+<span class="fc" id="L95">        return getCurrentEdge().fetchWayGeometry(mode);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setWayGeometry(PointList list) {
+<span class="nc" id="L100">        return getCurrentEdge().setWayGeometry(list);</span>
+    }
+
+    @Override
+    public double getDistance() {
+<span class="fc" id="L105">        return getCurrentEdge().getDistance();</span>
+    }
+
+    @Override
+    public EdgeIteratorState setDistance(double dist) {
+<span class="nc" id="L110">        return getCurrentEdge().setDistance(dist);</span>
+    }
+
+    @Override
+    public IntsRef getFlags() {
+<span class="nc" id="L115">        return getCurrentEdge().getFlags();</span>
+    }
+
+    @Override
+    public EdgeIteratorState setFlags(IntsRef flags) {
+<span class="nc" id="L120">        return getCurrentEdge().setFlags(flags);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(BooleanEncodedValue property, boolean value) {
+<span class="nc" id="L125">        getCurrentEdge().set(property, value);</span>
+<span class="nc" id="L126">        return this;</span>
+    }
+
+    @Override
+    public boolean get(BooleanEncodedValue property) {
+<span class="fc" id="L131">        return getCurrentEdge().get(property);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setReverse(BooleanEncodedValue property, boolean value) {
+<span class="nc" id="L136">        getCurrentEdge().setReverse(property, value);</span>
+<span class="nc" id="L137">        return this;</span>
+    }
+
+    @Override
+    public boolean getReverse(BooleanEncodedValue property) {
+<span class="fc" id="L142">        return getCurrentEdge().getReverse(property);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(BooleanEncodedValue property, boolean fwd, boolean bwd) {
+<span class="nc" id="L147">        getCurrentEdge().set(property, fwd, bwd);</span>
+<span class="nc" id="L148">        return this;</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(IntEncodedValue property, int value) {
+<span class="nc" id="L153">        getCurrentEdge().set(property, value);</span>
+<span class="nc" id="L154">        return this;</span>
+    }
+
+    @Override
+    public int get(IntEncodedValue property) {
+<span class="fc" id="L159">        return getCurrentEdge().get(property);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setReverse(IntEncodedValue property, int value) {
+<span class="nc" id="L164">        getCurrentEdge().setReverse(property, value);</span>
+<span class="nc" id="L165">        return this;</span>
+    }
+
+    @Override
+    public int getReverse(IntEncodedValue property) {
+<span class="fc" id="L170">        return getCurrentEdge().getReverse(property);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(IntEncodedValue property, int fwd, int bwd) {
+<span class="nc" id="L175">        getCurrentEdge().set(property, fwd, bwd);</span>
+<span class="nc" id="L176">        return this;</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(DecimalEncodedValue property, double value) {
+<span class="nc" id="L181">        getCurrentEdge().set(property, value);</span>
+<span class="nc" id="L182">        return this;</span>
+    }
+
+    @Override
+    public double get(DecimalEncodedValue property) {
+<span class="fc" id="L187">        return getCurrentEdge().get(property);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setReverse(DecimalEncodedValue property, double value) {
+<span class="nc" id="L192">        getCurrentEdge().setReverse(property, value);</span>
+<span class="nc" id="L193">        return this;</span>
+    }
+
+    @Override
+    public double getReverse(DecimalEncodedValue property) {
+<span class="fc" id="L198">        return getCurrentEdge().getReverse(property);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(DecimalEncodedValue property, double fwd, double bwd) {
+<span class="nc" id="L203">        getCurrentEdge().set(property, fwd, bwd);</span>
+<span class="nc" id="L204">        return this;</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; EdgeIteratorState set(EnumEncodedValue&lt;T&gt; property, T value) {
+<span class="nc" id="L209">        getCurrentEdge().set(property, value);</span>
+<span class="nc" id="L210">        return this;</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; T get(EnumEncodedValue&lt;T&gt; property) {
+<span class="fc" id="L215">        return getCurrentEdge().get(property);</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; EdgeIteratorState setReverse(EnumEncodedValue&lt;T&gt; property, T value) {
+<span class="nc" id="L220">        getCurrentEdge().setReverse(property, value);</span>
+<span class="nc" id="L221">        return this;</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; T getReverse(EnumEncodedValue&lt;T&gt; property) {
+<span class="fc" id="L226">        return getCurrentEdge().getReverse(property);</span>
+    }
+
+    @Override
+    public &lt;T extends Enum&lt;?&gt;&gt; EdgeIteratorState set(EnumEncodedValue&lt;T&gt; property, T fwd, T bwd) {
+<span class="nc" id="L231">        getCurrentEdge().set(property, fwd, bwd);</span>
+<span class="nc" id="L232">        return this;</span>
+    }
+
+    @Override
+    public String get(StringEncodedValue property) {
+<span class="nc" id="L237">        return getCurrentEdge().get(property);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(StringEncodedValue property, String value) {
+<span class="nc" id="L242">        return getCurrentEdge().set(property, value);</span>
+    }
+
+    @Override
+    public String getReverse(StringEncodedValue property) {
+<span class="nc" id="L247">        return getCurrentEdge().getReverse(property);</span>
+    }
+
+    @Override
+    public EdgeIteratorState setReverse(StringEncodedValue property, String value) {
+<span class="nc" id="L252">        return getCurrentEdge().setReverse(property, value);</span>
+    }
+
+    @Override
+    public EdgeIteratorState set(StringEncodedValue property, String fwd, String bwd) {
+<span class="nc" id="L257">        return getCurrentEdge().set(property, fwd, bwd);</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="nc" id="L262">        return getCurrentEdge().getName();</span>
+    }
+
+    @Override
+    public Map&lt;String, KVStorage.KValue&gt; getKeyValues() {
+<span class="nc" id="L267">        return getCurrentEdge().getKeyValues();</span>
+    }
+
+    @Override
+    public EdgeIteratorState setKeyValues(Map&lt;String, KVStorage.KValue&gt; list) {
+<span class="nc" id="L272">        return getCurrentEdge().setKeyValues(list);</span>
+    }
+
+    @Override
+    public Object getValue(String key) {
+<span class="nc" id="L277">        return getCurrentEdge().getValue(key);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc bnc" id="L282" title="All 4 branches missed.">        if (current &gt;= 0 &amp;&amp; current &lt; edges.size()) {</span>
+<span class="nc" id="L283">            return &quot;virtual edge: &quot; + getCurrentEdge() + &quot;, all: &quot; + edges.toString();</span>
+        } else {
+<span class="nc" id="L285">            return &quot;virtual edge: (invalid)&quot; + &quot;, all: &quot; + edges.toString();</span>
+        }
+    }
+
+    @Override
+    public EdgeIteratorState copyPropertiesFrom(EdgeIteratorState edge) {
+<span class="nc" id="L291">        return getCurrentEdge().copyPropertiesFrom(edge);</span>
+    }
+
+    private EdgeIteratorState getCurrentEdge() {
+<span class="fc" id="L295">        return edges.get(current);</span>
+    }
+
+    public List&lt;EdgeIteratorState&gt; getEdges() {
+<span class="fc" id="L299">        return edges;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

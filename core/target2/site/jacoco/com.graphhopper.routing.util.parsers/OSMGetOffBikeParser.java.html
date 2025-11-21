@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OSMGetOffBikeParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">OSMGetOffBikeParser.java</span></div><h1>OSMGetOffBikeParser.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.storage.IntsRef;
+
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+
+/**
+ * This parser scans different OSM tags to identify ways where a cyclist has to get off her bike. Like on footway but
+ * also in reverse oneway direction.
+ */
+public class OSMGetOffBikeParser implements TagParser {
+
+<span class="fc" id="L18">    private final List&lt;String&gt; INTENDED = Arrays.asList(&quot;designated&quot;, &quot;yes&quot;, &quot;official&quot;, &quot;permissive&quot;);</span>
+    // steps -&gt; special handling, path -&gt; see #2777
+<span class="fc" id="L20">    private final HashSet&lt;String&gt; GET_OFF_BIKE = new HashSet&lt;&gt;(Arrays.asList(&quot;footway&quot;, &quot;pedestrian&quot;, &quot;platform&quot;));</span>
+    private final BooleanEncodedValue getOffBikeEnc;
+    private final BooleanEncodedValue bikeAccessEnc;
+
+    /**
+     * @param bikeAccessEnc used to find out if way is oneway and so it does not matter which bike type is used.
+     */
+<span class="fc" id="L27">    public OSMGetOffBikeParser(BooleanEncodedValue getOffBikeEnc, BooleanEncodedValue bikeAccessEnc) {</span>
+<span class="fc" id="L28">        this.getOffBikeEnc = getOffBikeEnc;</span>
+<span class="fc" id="L29">        this.bikeAccessEnc = bikeAccessEnc;</span>
+<span class="fc" id="L30">    }</span>
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
+<span class="fc" id="L34">        String highway = way.getTag(&quot;highway&quot;);</span>
+<span class="fc" id="L35">        String vehicle = way.getTag(&quot;vehicle&quot;, &quot;&quot;);</span>
+<span class="fc bfc" id="L36" title="All 2 branches covered.">        boolean notIntended = !way.hasTag(&quot;bicycle&quot;, INTENDED) &amp;&amp;</span>
+<span class="fc bfc" id="L37" title="All 2 branches covered.">                (GET_OFF_BIKE.contains(highway)</span>
+<span class="fc bfc" id="L38" title="All 2 branches covered.">                        || way.hasTag(&quot;railway&quot;, &quot;platform&quot;)</span>
+<span class="fc bfc" id="L39" title="All 4 branches covered.">                        || !&quot;cycleway&quot;.equals(highway) &amp;&amp; way.hasTag(&quot;vehicle&quot;, &quot;no&quot;)</span>
+<span class="fc bfc" id="L40" title="All 2 branches covered.">                        || vehicle.contains(&quot;forestry&quot;)</span>
+<span class="pc bpc" id="L41" title="1 of 2 branches missed.">                        || vehicle.contains(&quot;agricultural&quot;)</span>
+<span class="pc bpc" id="L42" title="1 of 6 branches missed.">                        || &quot;path&quot;.equals(highway) &amp;&amp; way.hasTag(&quot;foot&quot;, &quot;designated&quot;) &amp;&amp; !way.hasTag(&quot;segregated&quot;, &quot;yes&quot;));</span>
+<span class="fc bfc" id="L43" title="All 6 branches covered.">        if (&quot;steps&quot;.equals(highway) || way.hasTag(&quot;bicycle&quot;, &quot;dismount&quot;) || notIntended) {</span>
+<span class="fc" id="L44">            getOffBikeEnc.setBool(false, edgeId, edgeIntAccess, true);</span>
+<span class="fc" id="L45">            getOffBikeEnc.setBool(true, edgeId, edgeIntAccess, true);</span>
+        }
+<span class="fc" id="L47">        boolean fwd = bikeAccessEnc.getBool(false, edgeId, edgeIntAccess);</span>
+<span class="fc" id="L48">        boolean bwd = bikeAccessEnc.getBool(true, edgeId, edgeIntAccess);</span>
+        // get off bike for reverse oneways
+<span class="fc bfc" id="L50" title="All 2 branches covered.">        if (fwd != bwd) {</span>
+<span class="pc bpc" id="L51" title="1 of 2 branches missed.">            if (!fwd) getOffBikeEnc.setBool(false, edgeId, edgeIntAccess, true);</span>
+<span class="pc bpc" id="L52" title="1 of 2 branches missed.">            if (!bwd) getOffBikeEnc.setBool(true, edgeId, edgeIntAccess, true);</span>
+        }
+<span class="fc" id="L54">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

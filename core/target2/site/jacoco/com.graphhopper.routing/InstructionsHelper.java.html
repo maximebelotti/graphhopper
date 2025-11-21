@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InstructionsHelper.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">InstructionsHelper.java</span></div><h1>InstructionsHelper.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.ev.RoadEnvironment;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.GHPoint;
+
+/**
+ * Simple helper class used during the instruction generation
+ */
+<span class="nc" id="L28">class InstructionsHelper {</span>
+
+    static double calculateOrientationDelta(double prevLatitude, double prevLongitude, double latitude, double longitude, double prevOrientation) {
+<span class="fc" id="L31">        double orientation = AngleCalc.ANGLE_CALC.calcOrientation(prevLatitude, prevLongitude, latitude, longitude, false);</span>
+<span class="fc" id="L32">        orientation = AngleCalc.ANGLE_CALC.alignOrientation(prevOrientation, orientation);</span>
+<span class="fc" id="L33">        return orientation - prevOrientation;</span>
+    }
+
+    static int calculateSign(double prevLatitude, double prevLongitude, double latitude, double longitude, double prevOrientation) {
+<span class="fc" id="L37">        double delta = calculateOrientationDelta(prevLatitude, prevLongitude, latitude, longitude, prevOrientation);</span>
+<span class="fc" id="L38">        double absDelta = Math.abs(delta);</span>
+
+<span class="fc bfc" id="L40" title="All 2 branches covered.">        if (absDelta &lt; 0.2) {</span>
+            // 0.2 ~= 11°
+<span class="fc" id="L42">            return Instruction.CONTINUE_ON_STREET;</span>
+
+<span class="fc bfc" id="L44" title="All 2 branches covered.">        } else if (absDelta &lt; 0.8) {</span>
+            // 0.8 ~= 40°
+<span class="fc bfc" id="L46" title="All 2 branches covered.">            if (delta &gt; 0)</span>
+<span class="fc" id="L47">                return Instruction.TURN_SLIGHT_LEFT;</span>
+            else
+<span class="fc" id="L49">                return Instruction.TURN_SLIGHT_RIGHT;</span>
+
+<span class="fc bfc" id="L51" title="All 2 branches covered.">        } else if (absDelta &lt; 1.8) {</span>
+            // 1.8 ~= 103°
+<span class="fc bfc" id="L53" title="All 2 branches covered.">            if (delta &gt; 0)</span>
+<span class="fc" id="L54">                return Instruction.TURN_LEFT;</span>
+            else
+<span class="fc" id="L56">                return Instruction.TURN_RIGHT;</span>
+
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        } else if (delta &gt; 0)</span>
+<span class="fc" id="L59">            return Instruction.TURN_SHARP_LEFT;</span>
+        else
+<span class="fc" id="L61">            return Instruction.TURN_SHARP_RIGHT;</span>
+    }
+
+    static boolean isSameName(String name1, String name2) {
+        // We don't want two empty names to be similar (they usually don't have names if they are random tracks)
+<span class="fc bfc" id="L66" title="All 8 branches covered.">        if (name1 == null || name2 == null || name1.isEmpty() || name2.isEmpty())</span>
+<span class="fc" id="L67">            return false;</span>
+<span class="fc" id="L68">        return name1.equals(name2);</span>
+    }
+
+    static GHPoint getPointForOrientationCalculation(EdgeIteratorState edgeIteratorState, NodeAccess nodeAccess) {
+        double tmpLat;
+        double tmpLon;
+<span class="fc" id="L74">        PointList tmpWayGeo = edgeIteratorState.fetchWayGeometry(FetchMode.ALL);</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (tmpWayGeo.size() &lt;= 2) {</span>
+<span class="fc" id="L76">            tmpLat = nodeAccess.getLat(edgeIteratorState.getAdjNode());</span>
+<span class="fc" id="L77">            tmpLon = nodeAccess.getLon(edgeIteratorState.getAdjNode());</span>
+        } else {
+<span class="fc" id="L79">            tmpLat = tmpWayGeo.getLat(1);</span>
+<span class="fc" id="L80">            tmpLon = tmpWayGeo.getLon(1);</span>
+        }
+<span class="fc" id="L82">        return new GHPoint(tmpLat, tmpLon);</span>
+    }
+
+    static boolean isToFerry(RoadEnvironment re, RoadEnvironment prev) {
+<span class="pc bpc" id="L86" title="1 of 4 branches missed.">        return (re == RoadEnvironment.FERRY) &amp;&amp; re != prev;</span>
+    }
+
+    static boolean isFromFerry(RoadEnvironment re, RoadEnvironment prev) {
+<span class="pc bpc" id="L90" title="1 of 4 branches missed.">        return (prev == RoadEnvironment.FERRY) &amp;&amp; re != prev;</span>
+    }
+
+    static String createFerryInfo(RoadEnvironment re, RoadEnvironment prev) {
+<span class="fc bfc" id="L94" title="All 2 branches covered.">        if (re == prev) return null;</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        if (re == RoadEnvironment.FERRY) return &quot;board_ferry&quot;;</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">        if (prev == RoadEnvironment.FERRY) return &quot;leave_ferry&quot;;</span>
+<span class="fc" id="L97">        return null;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

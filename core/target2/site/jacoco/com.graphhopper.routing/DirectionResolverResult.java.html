@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DirectionResolverResult.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">DirectionResolverResult.java</span></div><h1>DirectionResolverResult.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import java.util.Objects;
+
+import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
+import static com.graphhopper.util.EdgeIterator.NO_EDGE;
+import static com.graphhopper.util.Parameters.Curbsides.*;
+import static com.graphhopper.util.Parameters.Routing.CURBSIDE;
+
+public class DirectionResolverResult {
+<span class="fc" id="L28">    private static final DirectionResolverResult UNRESTRICTED = new DirectionResolverResult(ANY_EDGE, ANY_EDGE, ANY_EDGE, ANY_EDGE);</span>
+<span class="fc" id="L29">    private static final DirectionResolverResult IMPOSSIBLE = new DirectionResolverResult(NO_EDGE, NO_EDGE, NO_EDGE, NO_EDGE);</span>
+
+    private final int inEdgeRight;
+    private final int outEdgeRight;
+    private final int inEdgeLeft;
+    private final int outEdgeLeft;
+
+    public static DirectionResolverResult onlyLeft(int inEdge, int outEdge) {
+<span class="fc" id="L37">        return new DirectionResolverResult(NO_EDGE, NO_EDGE, inEdge, outEdge);</span>
+    }
+
+    public static DirectionResolverResult onlyRight(int inEdge, int outEdge) {
+<span class="fc" id="L41">        return new DirectionResolverResult(inEdge, outEdge, NO_EDGE, NO_EDGE);</span>
+    }
+
+    public static DirectionResolverResult restricted(int inEdgeRight, int outEdgeRight, int inEdgeLeft, int outEdgeLeft) {
+<span class="fc" id="L45">        return new DirectionResolverResult(inEdgeRight, outEdgeRight, inEdgeLeft, outEdgeLeft);</span>
+    }
+
+    public static DirectionResolverResult unrestricted() {
+<span class="fc" id="L49">        return UNRESTRICTED;</span>
+    }
+
+    public static DirectionResolverResult impossible() {
+<span class="fc" id="L53">        return IMPOSSIBLE;</span>
+    }
+
+<span class="fc" id="L56">    private DirectionResolverResult(int inEdgeRight, int outEdgeRight, int inEdgeLeft, int outEdgeLeft) {</span>
+<span class="fc" id="L57">        this.inEdgeRight = inEdgeRight;</span>
+<span class="fc" id="L58">        this.outEdgeRight = outEdgeRight;</span>
+<span class="fc" id="L59">        this.inEdgeLeft = inEdgeLeft;</span>
+<span class="fc" id="L60">        this.outEdgeLeft = outEdgeLeft;</span>
+<span class="fc" id="L61">    }</span>
+
+    public static int getOutEdge(DirectionResolverResult directionResolverResult, String curbside) {
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        if (curbside.trim().isEmpty()) {</span>
+<span class="fc" id="L65">            curbside = CURBSIDE_ANY;</span>
+        }
+<span class="pc bpc" id="L67" title="1 of 4 branches missed.">        switch (curbside) {</span>
+            case CURBSIDE_RIGHT:
+<span class="fc" id="L69">                return directionResolverResult.getOutEdgeRight();</span>
+            case CURBSIDE_LEFT:
+<span class="fc" id="L71">                return directionResolverResult.getOutEdgeLeft();</span>
+            case CURBSIDE_ANY:
+<span class="fc" id="L73">                return ANY_EDGE;</span>
+            default:
+<span class="nc" id="L75">                throw new IllegalArgumentException(&quot;Unknown value for &quot; + CURBSIDE + &quot; : '&quot; + curbside + &quot;'. allowed: &quot; + CURBSIDE_LEFT + &quot;, &quot; + CURBSIDE_RIGHT + &quot;, &quot; + CURBSIDE_ANY);</span>
+        }
+    }
+
+    public static int getInEdge(DirectionResolverResult directionResolverResult, String curbside) {
+<span class="fc bfc" id="L80" title="All 2 branches covered.">        if (curbside.trim().isEmpty()) {</span>
+<span class="fc" id="L81">            curbside = CURBSIDE_ANY;</span>
+        }
+<span class="pc bpc" id="L83" title="1 of 4 branches missed.">        switch (curbside) {</span>
+            case CURBSIDE_RIGHT:
+<span class="fc" id="L85">                return directionResolverResult.getInEdgeRight();</span>
+            case CURBSIDE_LEFT:
+<span class="fc" id="L87">                return directionResolverResult.getInEdgeLeft();</span>
+            case CURBSIDE_ANY:
+<span class="fc" id="L89">                return ANY_EDGE;</span>
+            default:
+<span class="nc" id="L91">                throw new IllegalArgumentException(&quot;Unknown value for '&quot; + CURBSIDE + &quot; : &quot; + curbside + &quot;'. allowed: &quot; + CURBSIDE_LEFT + &quot;, &quot; + CURBSIDE_RIGHT + &quot;, &quot; + CURBSIDE_ANY);</span>
+        }
+    }
+
+    public int getInEdgeRight() {
+<span class="fc" id="L96">        return inEdgeRight;</span>
+    }
+
+    public int getOutEdgeRight() {
+<span class="fc" id="L100">        return outEdgeRight;</span>
+    }
+
+    public int getInEdgeLeft() {
+<span class="fc" id="L104">        return inEdgeLeft;</span>
+    }
+
+    public int getOutEdgeLeft() {
+<span class="fc" id="L108">        return outEdgeLeft;</span>
+    }
+
+    public boolean isRestricted() {
+<span class="nc bnc" id="L112" title="All 2 branches missed.">        return !equals(UNRESTRICTED);</span>
+    }
+
+    public boolean isImpossible() {
+<span class="nc" id="L116">        return equals(IMPOSSIBLE);</span>
+    }
+
+    @Override
+    public boolean equals(Object o) {
+<span class="fc bfc" id="L121" title="All 2 branches covered.">        if (this == o) return true;</span>
+<span class="pc bpc" id="L122" title="2 of 4 branches missed.">        if (o == null || getClass() != o.getClass()) return false;</span>
+<span class="fc" id="L123">        DirectionResolverResult that = (DirectionResolverResult) o;</span>
+<span class="pc bpc" id="L124" title="4 of 8 branches missed.">        return inEdgeRight == that.inEdgeRight &amp;&amp;</span>
+                outEdgeRight == that.outEdgeRight &amp;&amp;
+                inEdgeLeft == that.inEdgeLeft &amp;&amp;
+                outEdgeLeft == that.outEdgeLeft;
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc" id="L132">        return Objects.hash(inEdgeRight, outEdgeRight, inEdgeLeft, outEdgeLeft);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc bnc" id="L137" title="All 2 branches missed.">        if (!isRestricted()) {</span>
+<span class="nc" id="L138">            return &quot;unrestricted&quot;;</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">        } else if (isImpossible()) {</span>
+<span class="nc" id="L140">            return &quot;impossible&quot;;</span>
+        } else {
+<span class="nc" id="L142">            return &quot;in-edge-right: &quot; + pretty(inEdgeRight) + &quot;, out-edge-right: &quot; + pretty(outEdgeRight) + &quot;, in-edge-left: &quot; + pretty(inEdgeLeft) + &quot;, out-edge-left: &quot; + pretty(outEdgeLeft);</span>
+        }
+    }
+
+    private String pretty(int edgeId) {
+<span class="nc bnc" id="L147" title="All 2 branches missed.">        if (edgeId == NO_EDGE) {</span>
+<span class="nc" id="L148">            return &quot;NO_EDGE&quot;;</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">        } else if (edgeId == ANY_EDGE) {</span>
+<span class="nc" id="L150">            return &quot;ANY_EDGE&quot;;</span>
+        } else {
+<span class="nc" id="L152">            return edgeId + &quot;&quot;;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

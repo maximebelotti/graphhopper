@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractBidirCHAlgo.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AbstractBidirCHAlgo.java</span></div><h1>AbstractBidirCHAlgo.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.IntObjectMap;
+import com.graphhopper.routing.ch.NodeBasedCHBidirPathExtractor;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.storage.*;
+import com.graphhopper.util.GHUtility;
+
+import java.util.PriorityQueue;
+import java.util.function.Supplier;
+
+import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
+
+/**
+ * Common subclass for bidirectional CH algorithms.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ * @author easbar
+ * @see AbstractNonCHBidirAlgo for non-CH bidirectional algorithms
+ */
+public abstract class AbstractBidirCHAlgo extends AbstractBidirAlgo implements EdgeToEdgeRoutingAlgorithm {
+    protected final RoutingCHGraph graph;
+    protected final NodeAccess nodeAccess;
+    protected RoutingCHEdgeExplorer inEdgeExplorer;
+    protected RoutingCHEdgeExplorer outEdgeExplorer;
+    protected CHEdgeFilter levelEdgeFilter;
+    private Supplier&lt;BidirPathExtractor&gt; pathExtractorSupplier;
+
+    public AbstractBidirCHAlgo(RoutingCHGraph graph, TraversalMode tMode) {
+<span class="fc" id="L48">        super(tMode);</span>
+<span class="fc" id="L49">        this.graph = graph;</span>
+<span class="pc bpc" id="L50" title="1 of 4 branches missed.">        if (graph.hasTurnCosts() &amp;&amp; !tMode.isEdgeBased())</span>
+<span class="nc" id="L51">            throw new IllegalStateException(&quot;Weightings supporting turn costs cannot be used with node-based traversal mode&quot;);</span>
+<span class="fc" id="L52">        this.nodeAccess = graph.getBaseGraph().getNodeAccess();</span>
+<span class="fc" id="L53">        outEdgeExplorer = graph.createOutEdgeExplorer();</span>
+<span class="fc" id="L54">        inEdgeExplorer = graph.createInEdgeExplorer();</span>
+<span class="fc" id="L55">        levelEdgeFilter = new CHLevelEdgeFilter(graph);</span>
+<span class="fc" id="L56">        pathExtractorSupplier = () -&gt; new NodeBasedCHBidirPathExtractor(graph);</span>
+<span class="fc" id="L57">        int size = Math.min(Math.max(200, graph.getNodes() / 10), 150_000);</span>
+<span class="fc" id="L58">        initCollections(size);</span>
+<span class="fc" id="L59">    }</span>
+
+    @Override
+    protected void initCollections(int size) {
+<span class="fc" id="L63">        super.initCollections(Math.min(size, 2000));</span>
+<span class="fc" id="L64">    }</span>
+
+    /**
+     * Creates a new entry of the shortest path tree (a {@link SPTEntry} or one of its subclasses) during a dijkstra
+     * expansion.
+     *
+     * @param edge    the id of the edge that is currently processed for the expansion
+     * @param adjNode the adjacent node of the edge
+     * @param incEdge the id of the edge that is incoming to the node the edge is pointed at. usually this is the same as
+     *                edge, but for edge-based CH and in case edge corresponds to a shortcut incEdge is the original edge
+     *                that is incoming to the node
+     * @param weight  the weight the shortest path three entry should carry
+     * @param parent  the parent entry of in the shortest path tree
+     * @param reverse true if we are currently looking at the backward search, false otherwise
+     */
+    protected abstract SPTEntry createEntry(int edge, int adjNode, int incEdge, double weight, SPTEntry parent, boolean reverse);
+
+    @Override
+    protected void postInitFrom() {
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">        if (fromOutEdge == ANY_EDGE) {</span>
+<span class="fc" id="L84">            fillEdgesFromUsingFilter(levelEdgeFilter);</span>
+        } else {
+            // need to use a local reference here, because levelEdgeFilter is modified when calling fillEdgesFromUsingFilter
+<span class="nc" id="L87">            final CHEdgeFilter tmpFilter = levelEdgeFilter;</span>
+<span class="nc bnc" id="L88" title="All 6 branches missed.">            fillEdgesFromUsingFilter(edgeState -&gt; (tmpFilter == null || tmpFilter.accept(edgeState)) &amp;&amp; GHUtility.getEdgeFromEdgeKey(edgeState.getOrigEdgeKeyFirst()) == fromOutEdge);</span>
+        }
+<span class="fc" id="L90">    }</span>
+
+    @Override
+    protected void postInitTo() {
+<span class="pc bpc" id="L94" title="1 of 2 branches missed.">        if (toInEdge == ANY_EDGE) {</span>
+<span class="fc" id="L95">            fillEdgesToUsingFilter(levelEdgeFilter);</span>
+        } else {
+<span class="nc" id="L97">            final CHEdgeFilter tmpFilter = levelEdgeFilter;</span>
+<span class="nc bnc" id="L98" title="All 6 branches missed.">            fillEdgesToUsingFilter(edgeState -&gt; (tmpFilter == null || tmpFilter.accept(edgeState)) &amp;&amp; GHUtility.getEdgeFromEdgeKey(edgeState.getOrigEdgeKeyLast()) == toInEdge);</span>
+        }
+<span class="fc" id="L100">    }</span>
+
+    /**
+     * @param edgeFilter edge filter used to fill edges. the {@link #levelEdgeFilter} reference will be set to
+     *                   edgeFilter by this method, so make sure edgeFilter does not use it directly.
+     */
+    protected void fillEdgesFromUsingFilter(CHEdgeFilter edgeFilter) {
+        // we temporarily ignore the additionalEdgeFilter
+<span class="fc" id="L108">        CHEdgeFilter tmpFilter = levelEdgeFilter;</span>
+<span class="fc" id="L109">        levelEdgeFilter = edgeFilter;</span>
+<span class="pc bpc" id="L110" title="1 of 2 branches missed.">        finishedFrom = !fillEdgesFrom();</span>
+<span class="fc" id="L111">        levelEdgeFilter = tmpFilter;</span>
+<span class="fc" id="L112">    }</span>
+
+    /**
+     * @see #fillEdgesFromUsingFilter(CHEdgeFilter)
+     */
+    protected void fillEdgesToUsingFilter(CHEdgeFilter edgeFilter) {
+        // we temporarily ignore the additionalEdgeFilter
+<span class="fc" id="L119">        CHEdgeFilter tmpFilter = levelEdgeFilter;</span>
+<span class="fc" id="L120">        levelEdgeFilter = edgeFilter;</span>
+<span class="pc bpc" id="L121" title="1 of 2 branches missed.">        finishedTo = !fillEdgesTo();</span>
+<span class="fc" id="L122">        levelEdgeFilter = tmpFilter;</span>
+<span class="fc" id="L123">    }</span>
+
+    @Override
+    public boolean finished() {
+        // we need to finish BOTH searches for CH!
+<span class="fc bfc" id="L128" title="All 4 branches covered.">        if (finishedFrom &amp;&amp; finishedTo)</span>
+<span class="fc" id="L129">            return true;</span>
+
+        // changed also the final finish condition for CH
+<span class="fc bfc" id="L132" title="All 4 branches covered.">        return currFrom.weight &gt;= bestWeight &amp;&amp; currTo.weight &gt;= bestWeight;</span>
+    }
+
+    @Override
+    boolean fillEdgesFrom() {
+        while (true) {
+<span class="fc bfc" id="L138" title="All 2 branches covered.">            if (pqOpenSetFrom.isEmpty())</span>
+<span class="fc" id="L139">                return false;</span>
+<span class="fc" id="L140">            currFrom = pqOpenSetFrom.poll();</span>
+<span class="fc bfc" id="L141" title="All 2 branches covered.">            if (!currFrom.isDeleted())</span>
+<span class="fc" id="L142">                break;</span>
+        }
+<span class="fc" id="L144">        visitedCountFrom++;</span>
+<span class="fc bfc" id="L145" title="All 2 branches covered.">        if (fromEntryCanBeSkipped()) {</span>
+<span class="fc" id="L146">            return true;</span>
+        }
+<span class="pc bpc" id="L148" title="1 of 2 branches missed.">        if (fwdSearchCanBeStopped()) {</span>
+<span class="nc" id="L149">            return false;</span>
+        }
+<span class="fc" id="L151">        bestWeightMapOther = bestWeightMapTo;</span>
+<span class="fc" id="L152">        fillEdges(currFrom, pqOpenSetFrom, bestWeightMapFrom, outEdgeExplorer, false);</span>
+<span class="fc" id="L153">        return true;</span>
+    }
+
+    @Override
+    boolean fillEdgesTo() {
+        while (true) {
+<span class="fc bfc" id="L159" title="All 2 branches covered.">            if (pqOpenSetTo.isEmpty())</span>
+<span class="fc" id="L160">                return false;</span>
+<span class="fc" id="L161">            currTo = pqOpenSetTo.poll();</span>
+<span class="fc bfc" id="L162" title="All 2 branches covered.">            if (!currTo.isDeleted())</span>
+<span class="fc" id="L163">                break;</span>
+        }
+<span class="fc" id="L165">        visitedCountTo++;</span>
+<span class="fc bfc" id="L166" title="All 2 branches covered.">        if (toEntryCanBeSkipped()) {</span>
+<span class="fc" id="L167">            return true;</span>
+        }
+<span class="pc bpc" id="L169" title="1 of 2 branches missed.">        if (bwdSearchCanBeStopped()) {</span>
+<span class="nc" id="L170">            return false;</span>
+        }
+<span class="fc" id="L172">        bestWeightMapOther = bestWeightMapFrom;</span>
+<span class="fc" id="L173">        fillEdges(currTo, pqOpenSetTo, bestWeightMapTo, inEdgeExplorer, true);</span>
+<span class="fc" id="L174">        return true;</span>
+    }
+
+    private void fillEdges(SPTEntry currEdge, PriorityQueue&lt;SPTEntry&gt; prioQueue,
+                           IntObjectMap&lt;SPTEntry&gt; bestWeightMap, RoutingCHEdgeExplorer explorer, boolean reverse) {
+<span class="fc" id="L179">        RoutingCHEdgeIterator iter = explorer.setBaseNode(currEdge.adjNode);</span>
+<span class="fc bfc" id="L180" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc bfc" id="L181" title="All 2 branches covered.">            if (!accept(iter, currEdge, reverse))</span>
+<span class="fc" id="L182">                continue;</span>
+
+<span class="fc" id="L184">            final double weight = calcWeight(iter, currEdge, reverse);</span>
+<span class="fc bfc" id="L185" title="All 2 branches covered.">            if (Double.isInfinite(weight)) {</span>
+<span class="fc" id="L186">                continue;</span>
+            }
+<span class="fc bfc" id="L188" title="All 2 branches covered.">            final int origEdgeId = GHUtility.getEdgeFromEdgeKey(reverse ? iter.getOrigEdgeKeyFirst() : iter.getOrigEdgeKeyLast());</span>
+<span class="fc" id="L189">            final int traversalId = traversalMode.createTraversalId(iter, reverse);</span>
+<span class="fc" id="L190">            SPTEntry entry = bestWeightMap.get(traversalId);</span>
+<span class="fc bfc" id="L191" title="All 2 branches covered.">            if (entry == null) {</span>
+<span class="fc" id="L192">                entry = createEntry(iter.getEdge(), iter.getAdjNode(), origEdgeId, weight, currEdge, reverse);</span>
+<span class="fc" id="L193">                bestWeightMap.put(traversalId, entry);</span>
+<span class="fc" id="L194">                prioQueue.add(entry);</span>
+<span class="fc bfc" id="L195" title="All 2 branches covered.">            } else if (entry.getWeightOfVisitedPath() &gt; weight) {</span>
+                // flagging this entry, so it will be ignored when it is polled the next time
+                // this is faster than removing the entry from the queue and adding again, but for CH it does not really
+                // make a difference overall.
+<span class="fc" id="L199">                entry.setDeleted();</span>
+<span class="fc bfc" id="L200" title="All 6 branches covered.">                boolean isBestEntry = reverse ? (entry == bestBwdEntry) : (entry == bestFwdEntry);</span>
+<span class="fc" id="L201">                entry = createEntry(iter.getEdge(), iter.getAdjNode(), origEdgeId, weight, currEdge, reverse);</span>
+<span class="fc" id="L202">                bestWeightMap.put(traversalId, entry);</span>
+<span class="fc" id="L203">                prioQueue.add(entry);</span>
+                // if this is the best entry we need to update the best reference as well
+<span class="fc bfc" id="L205" title="All 2 branches covered.">                if (isBestEntry)</span>
+<span class="fc bfc" id="L206" title="All 2 branches covered.">                    if (reverse)</span>
+<span class="fc" id="L207">                        bestBwdEntry = entry;</span>
+                    else
+<span class="fc" id="L209">                        bestFwdEntry = entry;</span>
+            } else
+                continue;
+
+<span class="pc bpc" id="L213" title="1 of 2 branches missed.">            if (updateBestPath) {</span>
+                // use dummy value for edge weight as it is used for neither node- nor edge-based CH
+<span class="fc" id="L215">                updateBestPath(Double.POSITIVE_INFINITY, entry, origEdgeId, traversalId, reverse);</span>
+            }
+<span class="fc" id="L217">        }</span>
+<span class="fc" id="L218">    }</span>
+
+    protected double calcWeight(RoutingCHEdgeIteratorState edgeState, boolean reverse, int prevOrNextEdgeId) {
+<span class="fc" id="L221">        double edgeWeight = edgeState.getWeight(reverse);</span>
+<span class="fc bfc" id="L222" title="All 2 branches covered.">        final int origEdgeId = GHUtility.getEdgeFromEdgeKey(reverse ? edgeState.getOrigEdgeKeyLast() : edgeState.getOrigEdgeKeyFirst());</span>
+<span class="fc bfc" id="L223" title="All 2 branches covered.">        double turnCosts = reverse</span>
+<span class="fc" id="L224">                ? graph.getTurnWeight(origEdgeId, edgeState.getBaseNode(), prevOrNextEdgeId)</span>
+<span class="fc" id="L225">                : graph.getTurnWeight(prevOrNextEdgeId, edgeState.getBaseNode(), origEdgeId);</span>
+<span class="fc" id="L226">        return edgeWeight + turnCosts;</span>
+    }
+
+    protected void updateEntry(SPTEntry entry, int edge, int adjNode, int incEdge, double weight, SPTEntry parent, boolean reverse) {
+<span class="nc" id="L230">        entry.edge = edge;</span>
+<span class="nc" id="L231">        entry.weight = weight;</span>
+<span class="nc" id="L232">        entry.parent = parent;</span>
+<span class="nc" id="L233">    }</span>
+
+    protected boolean accept(RoutingCHEdgeIteratorState edge, SPTEntry currEdge, boolean reverse) {
+        // for edge-based traversal we leave it for TurnWeighting to decide whether or not a u-turn is acceptable,
+        // but for node-based traversal we exclude such a turn for performance reasons already here
+<span class="pc bpc" id="L238" title="1 of 4 branches missed.">        if (!traversalMode.isEdgeBased() &amp;&amp; edge.getEdge() == getIncomingEdge(currEdge))</span>
+<span class="fc" id="L239">            return false;</span>
+
+<span class="pc bpc" id="L241" title="1 of 4 branches missed.">        return levelEdgeFilter == null || levelEdgeFilter.accept(edge);</span>
+    }
+
+    protected double calcWeight(RoutingCHEdgeIteratorState iter, SPTEntry currEdge, boolean reverse) {
+<span class="fc" id="L245">        return calcWeight(iter, reverse, getIncomingEdge(currEdge)) + currEdge.getWeightOfVisitedPath();</span>
+    }
+
+    @Override
+    protected double getInEdgeWeight(SPTEntry entry) {
+<span class="nc" id="L250">        throw new UnsupportedOperationException();</span>
+    }
+
+    @Override
+    protected Path extractPath() {
+<span class="fc bfc" id="L255" title="All 2 branches covered.">        if (finished())</span>
+<span class="fc" id="L256">            return createPathExtractor().extract(bestFwdEntry, bestBwdEntry, bestWeight);</span>
+
+<span class="fc" id="L258">        return createEmptyPath();</span>
+    }
+
+    public void setPathExtractorSupplier(Supplier&lt;BidirPathExtractor&gt; pathExtractorSupplier) {
+<span class="fc" id="L262">        this.pathExtractorSupplier = pathExtractorSupplier;</span>
+<span class="fc" id="L263">    }</span>
+
+    BidirPathExtractor createPathExtractor() {
+<span class="fc" id="L266">        return pathExtractorSupplier.get();</span>
+    }
+
+    protected Path createEmptyPath() {
+<span class="fc" id="L270">        return new Path(graph.getBaseGraph());</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L275">        return getName() + &quot;|&quot; + graph.getWeighting();</span>
+    }
+
+    private static class CHLevelEdgeFilter implements CHEdgeFilter {
+        private final RoutingCHGraph graph;
+        private final int maxNodes;
+
+<span class="fc" id="L282">        public CHLevelEdgeFilter(RoutingCHGraph graph) {</span>
+<span class="fc" id="L283">            this.graph = graph;</span>
+<span class="fc" id="L284">            maxNodes = graph.getBaseGraph().getBaseGraph().getNodes();</span>
+<span class="fc" id="L285">        }</span>
+
+        @Override
+        public boolean accept(RoutingCHEdgeIteratorState edgeState) {
+<span class="fc" id="L289">            int base = edgeState.getBaseNode();</span>
+<span class="fc" id="L290">            int adj = edgeState.getAdjNode();</span>
+            // always accept virtual edges, see #288
+<span class="fc bfc" id="L292" title="All 4 branches covered.">            if (base &gt;= maxNodes || adj &gt;= maxNodes)</span>
+<span class="fc" id="L293">                return true;</span>
+
+<span class="fc bfc" id="L295" title="All 2 branches covered.">            return graph.getLevel(base) &lt;= graph.getLevel(adj);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

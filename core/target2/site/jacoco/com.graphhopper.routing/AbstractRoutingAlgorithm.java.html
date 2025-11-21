@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractRoutingAlgorithm.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AbstractRoutingAlgorithm.java</span></div><h1>AbstractRoutingAlgorithm.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.util.EdgeExplorer;
+import com.graphhopper.util.EdgeIteratorState;
+
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * @author Peter Karich
+ */
+public abstract class AbstractRoutingAlgorithm implements RoutingAlgorithm {
+    protected final Graph graph;
+    protected final Weighting weighting;
+    protected final TraversalMode traversalMode;
+    protected final NodeAccess nodeAccess;
+    protected final EdgeExplorer edgeExplorer;
+<span class="fc" id="L39">    protected int maxVisitedNodes = Integer.MAX_VALUE;</span>
+<span class="fc" id="L40">    protected long timeoutMillis = Long.MAX_VALUE;</span>
+<span class="fc" id="L41">    private long finishTimeMillis = Long.MAX_VALUE;</span>
+    private boolean alreadyRun;
+
+    /**
+     * @param graph         specifies the graph where this algorithm will run on
+     * @param weighting     set the used weight calculation (e.g. fastest, shortest).
+     * @param traversalMode how the graph is traversed e.g. if via nodes or edges.
+     */
+<span class="fc" id="L49">    public AbstractRoutingAlgorithm(Graph graph, Weighting weighting, TraversalMode traversalMode) {</span>
+<span class="pc bpc" id="L50" title="1 of 4 branches missed.">        if (weighting.hasTurnCosts() &amp;&amp; !traversalMode.isEdgeBased())</span>
+<span class="nc" id="L51">            throw new IllegalStateException(&quot;Weightings supporting turn costs cannot be used with node-based traversal mode&quot;);</span>
+<span class="fc" id="L52">        this.weighting = weighting;</span>
+<span class="fc" id="L53">        this.traversalMode = traversalMode;</span>
+<span class="fc" id="L54">        this.graph = graph;</span>
+<span class="fc" id="L55">        this.nodeAccess = graph.getNodeAccess();</span>
+<span class="fc" id="L56">        edgeExplorer = graph.createEdgeExplorer();</span>
+<span class="fc" id="L57">    }</span>
+
+    @Override
+    public void setMaxVisitedNodes(int numberOfNodes) {
+<span class="fc" id="L61">        this.maxVisitedNodes = numberOfNodes;</span>
+<span class="fc" id="L62">    }</span>
+
+    @Override
+    public void setTimeoutMillis(long timeoutMillis) {
+<span class="fc" id="L66">        this.timeoutMillis = timeoutMillis;</span>
+<span class="fc" id="L67">    }</span>
+
+    protected boolean accept(EdgeIteratorState iter, int prevOrNextEdgeId) {
+        // for edge-based traversal we leave it for TurnWeighting to decide whether or not a u-turn is acceptable,
+        // but for node-based traversal we exclude such a turn for performance reasons already here
+<span class="fc bfc" id="L72" title="All 4 branches covered.">        return traversalMode.isEdgeBased() || iter.getEdge() != prevOrNextEdgeId;</span>
+    }
+
+    protected void checkAlreadyRun() {
+<span class="pc bpc" id="L76" title="1 of 2 branches missed.">        if (alreadyRun)</span>
+<span class="nc" id="L77">            throw new IllegalStateException(&quot;Create a new instance per call&quot;);</span>
+
+<span class="fc" id="L79">        alreadyRun = true;</span>
+<span class="fc" id="L80">    }</span>
+
+    protected void setupFinishTime() {
+        try {
+<span class="fc" id="L84">            this.finishTimeMillis = Math.addExact(System.currentTimeMillis(), timeoutMillis);</span>
+<span class="fc" id="L85">        } catch (ArithmeticException e) {</span>
+<span class="fc" id="L86">            this.finishTimeMillis = Long.MAX_VALUE;</span>
+<span class="fc" id="L87">        }</span>
+<span class="fc" id="L88">    }</span>
+
+    @Override
+    public List&lt;Path&gt; calcPaths(int from, int to) {
+<span class="fc" id="L92">        return Collections.singletonList(calcPath(from, to));</span>
+    }
+
+    protected Path createEmptyPath() {
+<span class="fc" id="L96">        return new Path(graph);</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="nc" id="L101">        return getClass().getSimpleName();</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L106">        return getName() + &quot;|&quot; + weighting;</span>
+    }
+
+    protected boolean isMaxVisitedNodesExceeded() {
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        return maxVisitedNodes &lt; getVisitedNodes();</span>
+    }
+
+    protected boolean isTimeoutExceeded() {
+<span class="pc bpc" id="L114" title="1 of 4 branches missed.">        return finishTimeMillis &lt; Long.MAX_VALUE &amp;&amp; System.currentTimeMillis() &gt; finishTimeMillis;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PrepareRoutingSubnetworks.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.subnetwork</a> &gt; <span class="el_source">PrepareRoutingSubnetworks.java</span></div><h1>PrepareRoutingSubnetworks.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.subnetwork;
+
+import com.carrotsearch.hppc.BitSet;
+import com.carrotsearch.hppc.BitSetIterator;
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.cursors.IntCursor;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.util.AllEdgesIterator;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.BaseGraph;
+import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.Helper;
+import com.graphhopper.util.StopWatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+
+import static com.graphhopper.util.GHUtility.getEdgeFromEdgeKey;
+
+/**
+ * Detects and marks 'subnetworks' with a dedicated subnetwork encoded value. Subnetworks are parts of the road network
+ * that are not connected to the rest of the network and that are below a certain size. These can be isolated nodes with
+ * no edges at all, but also small subnetworks which could be bugs in OSM data or 'islands' that are separated from
+ * the rest of the network because of some missing link, barrier or some closed road for example.
+ * &lt;p&gt;
+ * Sometimes there are also subnetworks that can be reached from the main network but not the other way around (or the
+ * opposite). For example this can be parking lots that can only be accessed by a single one-way road (a mapping error).
+ * These are called 'one-way subnetworks' and are marked using the same subnetwork encoded value, see #86. To find such
+ * one-way subnetworks it is important to search for strongly connected components on the directed graph and not do a
+ * simple connectivity check for one direction.
+ * &lt;p&gt;
+ * Note that it depends on the weighting whether or not edges belong to a subnetwork or not. For example if a weighting
+ * 'closes' a bridge to an island the island might become a subnetwork, but if the bridge was open it would belong to
+ * the main network. There can even be subnetworks that are due to turn restrictions.
+ * &lt;p&gt;
+ * We always run an edge-based connected component search, because this way we retrieve the edges (not the nodes) that
+ * belong to each component and can include turn restrictions as well. Node-based component search is faster, but since
+ * the subnetwork search goes relatively fast anyway using it has no real benefit.
+ *
+ * @author Peter Karich
+ * @author easbar
+ */
+public class PrepareRoutingSubnetworks {
+<span class="fc" id="L66">    private final Logger logger = LoggerFactory.getLogger(getClass());</span>
+    private final BaseGraph graph;
+    private final List&lt;PrepareJob&gt; prepareJobs;
+<span class="fc" id="L69">    private int minNetworkSize = 200;</span>
+<span class="fc" id="L70">    private int threads = 1;</span>
+
+<span class="fc" id="L72">    public PrepareRoutingSubnetworks(BaseGraph graph, List&lt;PrepareJob&gt; prepareJobs) {</span>
+<span class="fc" id="L73">        this.graph = graph;</span>
+<span class="fc" id="L74">        this.prepareJobs = prepareJobs;</span>
+<span class="fc" id="L75">    }</span>
+
+    /**
+     * All components of the graph with less than 2*{@link #minNetworkSize} directed edges (edge keys) will be marked
+     * as subnetworks. The biggest component will never be marked as subnetwork, even when it is below this size.
+     */
+    public PrepareRoutingSubnetworks setMinNetworkSize(int minNetworkSize) {
+<span class="fc" id="L82">        this.minNetworkSize = minNetworkSize;</span>
+<span class="fc" id="L83">        return this;</span>
+    }
+
+    public PrepareRoutingSubnetworks setThreads(int threads) {
+<span class="fc" id="L87">        this.threads = threads;</span>
+<span class="fc" id="L88">        return this;</span>
+    }
+
+    /**
+     * Finds and marks all subnetworks according to {@link #setMinNetworkSize(int)}
+     *
+     * @return the total number of marked edges
+     */
+    public int doWork() {
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (minNetworkSize &lt;= 0) {</span>
+<span class="fc" id="L98">            logger.info(&quot;Skipping subnetwork search: prepare.min_network_size: &quot; + minNetworkSize);</span>
+<span class="fc" id="L99">            return 0;</span>
+        }
+<span class="fc" id="L101">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L102">        logger.info(&quot;Start marking subnetworks, prepare.min_network_size: &quot; + minNetworkSize + &quot;, threads: &quot; + threads + &quot;, nodes: &quot; +</span>
+<span class="fc" id="L103">                Helper.nf(graph.getNodes()) + &quot;, edges: &quot; + Helper.nf(graph.getEdges()) + &quot;, jobs: &quot; + prepareJobs + &quot;, &quot; + Helper.getMemInfo());</span>
+<span class="fc" id="L104">        AtomicInteger total = new AtomicInteger(0);</span>
+<span class="fc" id="L105">        List&lt;BitSet&gt; flags = Stream.generate(() -&gt; new BitSet(graph.getEdges())).limit(prepareJobs.size()).collect(Collectors.toList());</span>
+<span class="fc" id="L106">        Stream&lt;Runnable&gt; runnables = IntStream.range(0, prepareJobs.size()).mapToObj(i -&gt; () -&gt; {</span>
+<span class="fc" id="L107">            PrepareJob job = prepareJobs.get(i);</span>
+<span class="fc" id="L108">            total.addAndGet(setSubnetworks(job.weighting, job.subnetworkEnc.getName().replaceAll(&quot;_subnetwork&quot;, &quot;&quot;), flags.get(i)));</span>
+<span class="fc" id="L109">        });</span>
+<span class="fc" id="L110">        GHUtility.runConcurrently(runnables, threads);</span>
+<span class="fc" id="L111">        AllEdgesIterator iter = graph.getAllEdges();</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc bfc" id="L113" title="All 2 branches covered.">            for (int i = 0; i &lt; prepareJobs.size(); i++) {</span>
+<span class="fc" id="L114">                PrepareJob prepareJob = prepareJobs.get(i);</span>
+<span class="fc" id="L115">                iter.set(prepareJob.subnetworkEnc, flags.get(i).get(iter.getEdge()));</span>
+            }
+        }
+<span class="fc" id="L118">        logger.info(&quot;Finished finding and marking subnetworks for &quot; + prepareJobs.size() + &quot; jobs, took: &quot; + sw.stop().getSeconds() + &quot;s, &quot; + Helper.getMemInfo());</span>
+<span class="fc" id="L119">        return total.get();</span>
+    }
+
+    private int setSubnetworks(Weighting weighting, String jobName, BitSet subnetworkFlags) {
+        // partition graph into strongly connected components using Tarjan's algorithm
+<span class="fc" id="L124">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L125">        EdgeBasedTarjanSCC.ConnectedComponents ccs = EdgeBasedTarjanSCC.findComponents(graph,</span>
+<span class="fc" id="L126">                (prev, edge) -&gt; Double.isFinite(GHUtility.calcWeightWithTurnWeight(weighting, edge, false, prev)),</span>
+                false);
+<span class="fc" id="L128">        List&lt;IntArrayList&gt; components = ccs.getComponents();</span>
+<span class="fc" id="L129">        BitSet singleEdgeComponents = ccs.getSingleEdgeComponents();</span>
+<span class="fc" id="L130">        long numSingleEdgeComponents = singleEdgeComponents.cardinality();</span>
+<span class="fc" id="L131">        logger.info(jobName + &quot; - Found &quot; + ccs.getTotalComponents() + &quot; subnetworks (&quot; + numSingleEdgeComponents + &quot; single edges and &quot;</span>
+<span class="fc" id="L132">                + components.size() + &quot; components with more than one edge, total nodes: &quot; + ccs.getEdgeKeys() + &quot;), took: &quot; + sw.stop().getSeconds() + &quot;s&quot;);</span>
+
+<span class="fc" id="L134">        final int minNetworkSizeEdgeKeys = 2 * minNetworkSize;</span>
+
+        // make all small components subnetworks, but keep the biggest (even when its smaller than the given min_network_size)
+<span class="fc" id="L137">        sw = new StopWatch().start();</span>
+<span class="fc" id="L138">        int subnetworks = 0;</span>
+<span class="fc" id="L139">        int markedEdges = 0;</span>
+<span class="fc" id="L140">        int smallestNonSubnetwork = ccs.getBiggestComponent().size();</span>
+<span class="fc" id="L141">        int biggestSubnetwork = 0;</span>
+
+<span class="fc bfc" id="L143" title="All 2 branches covered.">        for (IntArrayList component : components) {</span>
+<span class="fc bfc" id="L144" title="All 2 branches covered.">            if (component == ccs.getBiggestComponent())</span>
+<span class="fc" id="L145">                continue;</span>
+
+<span class="fc bfc" id="L147" title="All 2 branches covered.">            if (component.size() &lt; minNetworkSizeEdgeKeys) {</span>
+<span class="fc bfc" id="L148" title="All 2 branches covered.">                for (IntCursor cursor : component)</span>
+<span class="fc" id="L149">                    markedEdges += setSubnetworkEdge(cursor.value, weighting, subnetworkFlags);</span>
+<span class="fc" id="L150">                subnetworks++;</span>
+<span class="fc" id="L151">                biggestSubnetwork = Math.max(biggestSubnetwork, component.size());</span>
+            } else {
+<span class="fc" id="L153">                smallestNonSubnetwork = Math.min(smallestNonSubnetwork, component.size());</span>
+            }
+<span class="fc" id="L155">        }</span>
+
+<span class="pc bpc" id="L157" title="1 of 2 branches missed.">        if (minNetworkSizeEdgeKeys &gt; 0) {</span>
+<span class="fc" id="L158">            BitSetIterator iter = singleEdgeComponents.iterator();</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">            for (int edgeKey = iter.nextSetBit(); edgeKey &gt;= 0; edgeKey = iter.nextSetBit()) {</span>
+<span class="fc" id="L160">                markedEdges += setSubnetworkEdge(edgeKey, weighting, subnetworkFlags);</span>
+<span class="fc" id="L161">                subnetworks++;</span>
+<span class="fc" id="L162">                biggestSubnetwork = Math.max(biggestSubnetwork, 1);</span>
+            }
+<span class="pc bnc" id="L164" title="All 2 branches missed.">        } else if (numSingleEdgeComponents &gt; 0) {</span>
+<span class="nc" id="L165">            smallestNonSubnetwork = Math.min(smallestNonSubnetwork, 1);</span>
+        }
+
+<span class="fc" id="L168">        int allowedMarked = graph.getEdges() / 2;</span>
+<span class="pc bpc" id="L169" title="1 of 2 branches missed.">        if (markedEdges / 2 &gt; allowedMarked)</span>
+<span class="nc" id="L170">            throw new IllegalStateException(&quot;Too many total (directed) edges were marked as subnetwork edges: &quot; + markedEdges + &quot; out of &quot; + (2 * graph.getEdges()) + &quot;\n&quot; +</span>
+                    &quot;The maximum number of subnetwork edges is: &quot; + (2 * allowedMarked));
+
+<span class="fc" id="L173">        logger.info(jobName + &quot; - Marked &quot; + subnetworks + &quot; subnetworks (biggest: &quot; + biggestSubnetwork + &quot; edges) -&gt; &quot; +</span>
+<span class="fc" id="L174">                (ccs.getTotalComponents() - subnetworks) + &quot; components(s) remain (smallest: &quot; + smallestNonSubnetwork + &quot;, biggest: &quot; + ccs.getBiggestComponent().size() + &quot; edges)&quot;</span>
+<span class="fc" id="L175">                + &quot;, total marked edges: &quot; + markedEdges + &quot;, took: &quot; + sw.stop().getSeconds() + &quot;s&quot;);</span>
+<span class="fc" id="L176">        return markedEdges;</span>
+    }
+
+    private int setSubnetworkEdge(int edgeKey, Weighting weighting, BitSet subnetworkFlags) {
+        // edges that are not accessible anyway are not marked as subnetworks additionally
+<span class="fc bfc" id="L181" title="All 2 branches covered.">        if (!Double.isFinite(weighting.calcEdgeWeight(graph.getEdgeIteratorStateForKey(edgeKey), false)))</span>
+<span class="fc" id="L182">            return 0;</span>
+
+        // now get edge again but in stored direction so that subnetwork EV is not overwritten (as it is unidirectional)
+<span class="fc" id="L185">        int edge = getEdgeFromEdgeKey(edgeKey);</span>
+<span class="fc bfc" id="L186" title="All 2 branches covered.">        if (!subnetworkFlags.get(edge)) {</span>
+<span class="fc" id="L187">            subnetworkFlags.set(edge);</span>
+<span class="fc" id="L188">            return 1;</span>
+        } else {
+<span class="fc" id="L190">            return 0;</span>
+        }
+    }
+
+    public static class PrepareJob {
+        private final BooleanEncodedValue subnetworkEnc;
+        private final Weighting weighting;
+
+<span class="fc" id="L198">        public PrepareJob(BooleanEncodedValue subnetworkEnc, Weighting weighting) {</span>
+<span class="fc" id="L199">            this.weighting = weighting;</span>
+<span class="fc" id="L200">            this.subnetworkEnc = subnetworkEnc;</span>
+<span class="fc" id="L201">        }</span>
+
+        @Override
+        public String toString() {
+<span class="fc" id="L205">            return subnetworkEnc.getName() + &quot;|&quot; + weighting;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

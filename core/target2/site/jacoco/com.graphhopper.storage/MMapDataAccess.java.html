@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MMapDataAccess.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">MMapDataAccess.java</span></div><h1>MMapDataAccess.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import com.graphhopper.util.Helper;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * A DataAccess implementation using a memory-mapped file, i.e. a facility of the
+ * operating system to access a file like an area of RAM.
+ * &lt;p&gt;
+ * Java presents the mapped memory as a ByteBuffer, and ByteBuffer is not
+ * thread-safe, which means that access to a ByteBuffer must be externally
+ * synchronized.
+ * &lt;p&gt;
+ * This class itself is intended to be as thread-safe as other DataAccess
+ * implementations are.
+ * &lt;p&gt;
+ * The exact behavior of memory-mapping is reported to be wildly platform-dependent.
+ *
+ * @author Peter Karich
+ * @author Michael Zilske
+ */
+<span class="fc" id="L49">public final class MMapDataAccess extends AbstractDataAccess {</span>
+
+    private final boolean allowWrites;
+    private RandomAccessFile raFile;
+<span class="fc" id="L53">    private final List&lt;MappedByteBuffer&gt; segments = new ArrayList&lt;&gt;();</span>
+
+    MMapDataAccess(String name, String location, boolean allowWrites, int segmentSize) {
+<span class="fc" id="L56">        super(name, location, segmentSize);</span>
+<span class="fc" id="L57">        this.allowWrites = allowWrites;</span>
+<span class="fc" id="L58">    }</span>
+
+    public static void cleanMappedByteBuffer(final ByteBuffer buffer) {
+        // TODO avoid reflection on every call
+        try {
+            // &gt;=JDK9 class sun.misc.Unsafe { void invokeCleaner(ByteBuffer buf) }
+<span class="fc" id="L64">            final Class&lt;?&gt; unsafeClass = Class.forName(&quot;sun.misc.Unsafe&quot;);</span>
+            // fetch the unsafe instance and bind it to the virtual MethodHandle
+<span class="fc" id="L66">            final Field f = unsafeClass.getDeclaredField(&quot;theUnsafe&quot;);</span>
+<span class="fc" id="L67">            f.setAccessible(true);</span>
+<span class="fc" id="L68">            final Object theUnsafe = f.get(null);</span>
+<span class="fc" id="L69">            final Method method = unsafeClass.getDeclaredMethod(&quot;invokeCleaner&quot;, ByteBuffer.class);</span>
+            try {
+<span class="fc" id="L71">                method.invoke(theUnsafe, buffer);</span>
+<span class="nc" id="L72">            } catch (Throwable t) {</span>
+<span class="nc" id="L73">                throw new RuntimeException(t);</span>
+<span class="fc" id="L74">            }</span>
+<span class="nc" id="L75">        } catch (Exception ex) {</span>
+<span class="nc" id="L76">            throw new RuntimeException(&quot;Unable to unmap the mapped buffer&quot;, ex);</span>
+<span class="fc" id="L77">        }</span>
+<span class="fc" id="L78">    }</span>
+
+    private void initRandomAccessFile() {
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">        if (raFile != null)</span>
+<span class="nc" id="L82">            return;</span>
+
+        try {
+            // raFile necessary for loadExisting and create
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">            raFile = new RandomAccessFile(getFullName(), allowWrites ? &quot;rw&quot; : &quot;r&quot;);</span>
+<span class="nc" id="L87">        } catch (IOException ex) {</span>
+<span class="nc" id="L88">            throw new RuntimeException(ex);</span>
+<span class="fc" id="L89">        }</span>
+<span class="fc" id="L90">    }</span>
+
+    @Override
+    public MMapDataAccess create(long bytes) {
+<span class="pc bpc" id="L94" title="1 of 2 branches missed.">        if (!segments.isEmpty()) {</span>
+<span class="nc" id="L95">            throw new IllegalThreadStateException(&quot;already created&quot;);</span>
+        }
+<span class="fc" id="L97">        initRandomAccessFile();</span>
+<span class="fc" id="L98">        bytes = Math.max(10 * 4, bytes);</span>
+<span class="fc" id="L99">        ensureCapacity(bytes);</span>
+<span class="fc" id="L100">        return this;</span>
+    }
+
+    @Override
+    public boolean ensureCapacity(long bytes) {
+<span class="fc" id="L105">        return mapIt(HEADER_OFFSET, bytes);</span>
+    }
+
+    private boolean mapIt(long offset, long byteCount) {
+<span class="pc bpc" id="L109" title="1 of 2 branches missed.">        if (byteCount &lt; 0)</span>
+<span class="nc" id="L110">            throw new IllegalArgumentException(&quot;new capacity has to be strictly positive&quot;);</span>
+
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        if (byteCount &lt;= getCapacity())</span>
+<span class="fc" id="L113">            return false;</span>
+
+<span class="fc" id="L115">        long longSegmentSize = segmentSizeInBytes;</span>
+<span class="fc" id="L116">        int segmentsToMap = (int) (byteCount / longSegmentSize);</span>
+<span class="pc bpc" id="L117" title="1 of 2 branches missed.">        if (segmentsToMap &lt; 0)</span>
+<span class="nc" id="L118">            throw new IllegalStateException(&quot;Too many segments needs to be allocated. Increase segmentSize.&quot;);</span>
+
+<span class="fc bfc" id="L120" title="All 2 branches covered.">        if (byteCount % longSegmentSize != 0)</span>
+<span class="fc" id="L121">            segmentsToMap++;</span>
+
+<span class="pc bpc" id="L123" title="1 of 2 branches missed.">        if (segmentsToMap == 0)</span>
+<span class="nc" id="L124">            throw new IllegalStateException(&quot;0 segments are not allowed.&quot;);</span>
+
+<span class="fc" id="L126">        long bufferStart = offset;</span>
+        int newSegments;
+<span class="fc" id="L128">        int i = 0;</span>
+<span class="fc" id="L129">        long newFileLength = offset + segmentsToMap * longSegmentSize;</span>
+        try {
+            // ugly remapping
+            // http://stackoverflow.com/q/14011919/194609
+            // This approach is probably problematic but a bit faster if done often.
+            // Here we rely on the OS+file system that increasing the file
+            // size has no effect on the old mappings!
+<span class="fc" id="L136">            bufferStart += segments.size() * longSegmentSize;</span>
+<span class="fc" id="L137">            newSegments = segmentsToMap - segments.size();</span>
+            // rely on automatically increasing when mapping
+            // raFile.setLength(newFileLength);
+<span class="fc bfc" id="L140" title="All 2 branches covered.">            for (; i &lt; newSegments; i++) {</span>
+<span class="fc" id="L141">                segments.add(newByteBuffer(bufferStart, longSegmentSize));</span>
+<span class="fc" id="L142">                bufferStart += longSegmentSize;</span>
+            }
+<span class="fc" id="L144">            return true;</span>
+<span class="nc" id="L145">        } catch (IOException ex) {</span>
+            // we could get an exception here if buffer is too small and area too large
+            // e.g. I got an exception for the 65421th buffer (probably around 2**16 == 65536)
+<span class="nc" id="L148">            throw new RuntimeException(&quot;Couldn't map buffer &quot; + i + &quot; of &quot; + segmentsToMap + &quot; with &quot; + longSegmentSize</span>
+                    + &quot; for &quot; + name + &quot; at position &quot; + bufferStart + &quot; for &quot; + byteCount + &quot; bytes with offset &quot; + offset
+<span class="nc" id="L150">                    + &quot;, new fileLength:&quot; + newFileLength + &quot;, &quot; + Helper.getMemInfo(), ex);</span>
+        }
+    }
+
+    private MappedByteBuffer newByteBuffer(long offset, long byteCount) throws IOException {
+        // If we request a buffer larger than the file length, it will automatically increase the file length!
+        // Will this cause problems? http://stackoverflow.com/q/14011919/194609
+        // For trimTo we need to reset the file length later to reduce that size
+<span class="fc" id="L158">        MappedByteBuffer buf = null;</span>
+<span class="fc" id="L159">        IOException ioex = null;</span>
+        // One retry if it fails. It could fail e.g. if previously buffer wasn't yet unmapped from the jvm
+<span class="pc bpc" id="L161" title="1 of 2 branches missed.">        for (int trial = 0; trial &lt; 1; ) {</span>
+            try {
+<span class="fc" id="L163">                buf = raFile.getChannel().map(</span>
+<span class="pc bpc" id="L164" title="1 of 2 branches missed.">                        allowWrites ? FileChannel.MapMode.READ_WRITE : FileChannel.MapMode.READ_ONLY, offset, byteCount);</span>
+<span class="fc" id="L165">                break;</span>
+<span class="nc" id="L166">            } catch (IOException tmpex) {</span>
+<span class="nc" id="L167">                ioex = tmpex;</span>
+<span class="nc" id="L168">                trial++;</span>
+                try {
+                    // mini sleep to let JVM do unmapping
+<span class="nc" id="L171">                    Thread.sleep(5);</span>
+<span class="nc" id="L172">                } catch (InterruptedException iex) {</span>
+<span class="nc" id="L173">                    throw new IOException(iex);</span>
+<span class="nc" id="L174">                }</span>
+<span class="nc" id="L175">            }</span>
+        }
+<span class="pc bpc" id="L177" title="1 of 2 branches missed.">        if (buf == null) {</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">            if (ioex == null) {</span>
+<span class="nc" id="L179">                throw new AssertionError(&quot;internal problem as the exception 'ioex' shouldn't be null&quot;);</span>
+            }
+<span class="nc" id="L181">            throw ioex;</span>
+        }
+
+<span class="fc" id="L184">        buf.order(byteOrder);</span>
+<span class="fc" id="L185">        return buf;</span>
+    }
+
+    @Override
+    public boolean loadExisting() {
+<span class="pc bpc" id="L190" title="1 of 2 branches missed.">        if (segments.size() &gt; 0)</span>
+<span class="nc" id="L191">            throw new IllegalStateException(&quot;already initialized&quot;);</span>
+
+<span class="fc bfc" id="L193" title="All 2 branches covered.">        if (isClosed())</span>
+<span class="fc" id="L194">            throw new IllegalStateException(&quot;already closed&quot;);</span>
+
+<span class="fc" id="L196">        File file = new File(getFullName());</span>
+<span class="pc bpc" id="L197" title="1 of 4 branches missed.">        if (!file.exists() || file.length() == 0)</span>
+<span class="fc" id="L198">            return false;</span>
+
+<span class="fc" id="L200">        initRandomAccessFile();</span>
+        try {
+<span class="fc" id="L202">            long byteCount = readHeader(raFile);</span>
+<span class="pc bpc" id="L203" title="1 of 2 branches missed.">            if (byteCount &lt; 0)</span>
+<span class="nc" id="L204">                return false;</span>
+
+<span class="fc" id="L206">            mapIt(HEADER_OFFSET, byteCount - HEADER_OFFSET);</span>
+<span class="fc" id="L207">            return true;</span>
+<span class="nc" id="L208">        } catch (IOException ex) {</span>
+<span class="nc" id="L209">            throw new RuntimeException(&quot;Problem while loading &quot; + getFullName(), ex);</span>
+        }
+    }
+
+    @Override
+    public void flush() {
+<span class="pc bpc" id="L215" title="1 of 2 branches missed.">        if (isClosed())</span>
+<span class="nc" id="L216">            throw new IllegalStateException(&quot;already closed&quot;);</span>
+
+        try {
+<span class="fc bfc" id="L219" title="All 2 branches covered.">            for (MappedByteBuffer bb : segments) {</span>
+<span class="fc" id="L220">                bb.force();</span>
+<span class="fc" id="L221">            }</span>
+<span class="fc" id="L222">            writeHeader(raFile, raFile.length(), segmentSizeInBytes);</span>
+
+            // this could be necessary too
+            // http://stackoverflow.com/q/14011398/194609
+<span class="fc" id="L226">            raFile.getFD().sync();</span>
+            // equivalent to raFile.getChannel().force(true);
+<span class="nc" id="L228">        } catch (Exception ex) {</span>
+<span class="nc" id="L229">            throw new RuntimeException(ex);</span>
+<span class="fc" id="L230">        }</span>
+<span class="fc" id="L231">    }</span>
+
+    /**
+     * Load memory mapped files into physical memory.
+     */
+    public void load(int percentage) {
+<span class="nc bnc" id="L237" title="All 4 branches missed.">        if (percentage &lt; 0 || percentage &gt; 100)</span>
+<span class="nc" id="L238">            throw new IllegalArgumentException(&quot;Percentage for MMapDataAccess.load for &quot; + getName() + &quot; must be in [0,100] but was &quot; + percentage);</span>
+<span class="nc" id="L239">        int max = Math.round(segments.size() * percentage / 100f);</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">        for (int i = 0; i &lt; max; i++) {</span>
+<span class="nc" id="L241">            segments.get(i).load();</span>
+        }
+<span class="nc" id="L243">    }</span>
+
+    @Override
+    public void close() {
+<span class="fc" id="L247">        super.close();</span>
+<span class="fc" id="L248">        clean(0, segments.size());</span>
+<span class="fc" id="L249">        segments.clear();</span>
+<span class="fc" id="L250">        Helper.close(raFile);</span>
+<span class="fc" id="L251">    }</span>
+
+    @Override
+    public void setInt(long bytePos, int value) {
+<span class="fc" id="L255">        int bufferIndex = (int) (bytePos &gt;&gt; segmentSizePower);</span>
+<span class="fc" id="L256">        int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L257">        ByteBuffer b1 = segments.get(bufferIndex);</span>
+<span class="fc bfc" id="L258" title="All 2 branches covered.">        if (index + 3 &gt;= segmentSizeInBytes) {</span>
+            // seldom and special case if int has to be written into two separate segments
+<span class="fc" id="L260">            ByteBuffer b2 = segments.get(bufferIndex + 1);</span>
+<span class="fc bfc" id="L261" title="All 2 branches covered.">            if (index + 1 &gt;= segmentSizeInBytes) {</span>
+<span class="fc" id="L262">                b2.putShort(1, (short) (value &gt;&gt;&gt; 16));</span>
+<span class="fc" id="L263">                b2.put(0, (byte) (value &gt;&gt;&gt; 8));</span>
+<span class="fc" id="L264">                b1.put(index, (byte) value);</span>
+<span class="fc bfc" id="L265" title="All 2 branches covered.">            } else if (index + 2 &gt;= segmentSizeInBytes) {</span>
+<span class="fc" id="L266">                b2.putShort(0, (short) (value &gt;&gt;&gt; 16));</span>
+<span class="fc" id="L267">                b1.putShort(index, (short) value);</span>
+            } else {
+                // index + 3 &gt;= segmentSizeInBytes
+<span class="fc" id="L270">                b2.put(0, (byte) (value &gt;&gt;&gt; 24));</span>
+<span class="fc" id="L271">                b1.putShort(index + 1, (short) (value &gt;&gt;&gt; 8));</span>
+<span class="fc" id="L272">                b1.put(index, (byte) value);</span>
+            }
+<span class="fc" id="L274">        } else {</span>
+<span class="fc" id="L275">            b1.putInt(index, value);</span>
+        }
+<span class="fc" id="L277">    }</span>
+
+    @Override
+    public int getInt(long bytePos) {
+<span class="fc" id="L281">        int bufferIndex = (int) (bytePos &gt;&gt; segmentSizePower);</span>
+<span class="fc" id="L282">        int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L283">        ByteBuffer b1 = segments.get(bufferIndex);</span>
+<span class="fc bfc" id="L284" title="All 2 branches covered.">        if (index + 3 &gt;= segmentSizeInBytes) {</span>
+<span class="fc" id="L285">            ByteBuffer b2 = segments.get(bufferIndex + 1);</span>
+<span class="fc bfc" id="L286" title="All 2 branches covered.">            if (index + 1 &gt;= segmentSizeInBytes)</span>
+<span class="fc" id="L287">                return (b2.getShort(1) &amp; 0xFFFF) &lt;&lt; 16 | (b2.get(0) &amp; 0xFF) &lt;&lt; 8 | (b1.get(index) &amp; 0xFF);</span>
+<span class="fc bfc" id="L288" title="All 2 branches covered.">            if (index + 2 &gt;= segmentSizeInBytes)</span>
+<span class="fc" id="L289">                return (b2.getShort(0) &amp; 0xFFFF) &lt;&lt; 16 | (b1.getShort(index) &amp; 0xFFFF);</span>
+            // index + 3 &gt;= segmentSizeInBytes
+<span class="fc" id="L291">            return (b2.get(0) &amp; 0xFF) &lt;&lt; 24 | (b1.getShort(index + 1) &amp; 0xFFFF) &lt;&lt; 8 | (b1.get(index) &amp; 0xFF);</span>
+        }
+<span class="fc" id="L293">        return b1.getInt(index);</span>
+    }
+
+    @Override
+    public void setShort(long bytePos, short value) {
+<span class="fc" id="L298">        int bufferIndex = (int) (bytePos &gt;&gt;&gt; segmentSizePower);</span>
+<span class="fc" id="L299">        int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L300">        ByteBuffer byteBuffer = segments.get(bufferIndex);</span>
+<span class="fc bfc" id="L301" title="All 2 branches covered.">        if (index + 1 &gt;= segmentSizeInBytes) {</span>
+<span class="fc" id="L302">            ByteBuffer byteBufferNext = segments.get(bufferIndex + 1);</span>
+            // seldom and special case if short has to be written into two separate segments
+<span class="fc" id="L304">            byteBuffer.put(index, (byte) value);</span>
+<span class="fc" id="L305">            byteBufferNext.put(0, (byte) (value &gt;&gt;&gt; 8));</span>
+<span class="fc" id="L306">        } else {</span>
+<span class="fc" id="L307">            byteBuffer.putShort(index, value);</span>
+        }
+<span class="fc" id="L309">    }</span>
+
+    @Override
+    public short getShort(long bytePos) {
+<span class="fc" id="L313">        int bufferIndex = (int) (bytePos &gt;&gt;&gt; segmentSizePower);</span>
+<span class="fc" id="L314">        int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L315">        ByteBuffer byteBuffer = segments.get(bufferIndex);</span>
+<span class="fc bfc" id="L316" title="All 2 branches covered.">        if (index + 1 &gt;= segmentSizeInBytes) {</span>
+<span class="fc" id="L317">            ByteBuffer byteBufferNext = segments.get(bufferIndex + 1);</span>
+<span class="fc" id="L318">            return (short) ((byteBufferNext.get(0) &amp; 0xFF) &lt;&lt; 8 | byteBuffer.get(index) &amp; 0xFF);</span>
+        }
+<span class="fc" id="L320">        return byteBuffer.getShort(index);</span>
+    }
+
+    @Override
+    public void setBytes(long bytePos, byte[] values, int length) {
+<span class="pc bpc" id="L325" title="1 of 2 branches missed.">        assert length &lt;= segmentSizeInBytes : &quot;the length has to be smaller or equal to the segment size: &quot; + length + &quot; vs. &quot; + segmentSizeInBytes;</span>
+<span class="fc" id="L326">        final int bufferIndex = (int) (bytePos &gt;&gt;&gt; segmentSizePower);</span>
+<span class="fc" id="L327">        final int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L328">        final int delta = index + length - segmentSizeInBytes;</span>
+<span class="fc" id="L329">        final ByteBuffer bb1 = segments.get(bufferIndex);</span>
+<span class="fc bfc" id="L330" title="All 2 branches covered.">        if (delta &gt; 0) {</span>
+<span class="fc" id="L331">            length -= delta;</span>
+<span class="fc" id="L332">            bb1.put(index, values, 0, length);</span>
+        } else {
+<span class="fc" id="L334">            bb1.put(index, values, 0, length);</span>
+        }
+<span class="fc bfc" id="L336" title="All 2 branches covered.">        if (delta &gt; 0) {</span>
+<span class="fc" id="L337">            final ByteBuffer bb2 = segments.get(bufferIndex + 1);</span>
+<span class="fc" id="L338">            bb2.put(0, values, length, delta);</span>
+        }
+<span class="fc" id="L340">    }</span>
+
+    @Override
+    public void getBytes(long bytePos, byte[] values, int length) {
+<span class="pc bpc" id="L344" title="1 of 2 branches missed.">        assert length &lt;= segmentSizeInBytes : &quot;the length has to be smaller or equal to the segment size: &quot; + length + &quot; vs. &quot; + segmentSizeInBytes;</span>
+<span class="fc" id="L345">        int bufferIndex = (int) (bytePos &gt;&gt;&gt; segmentSizePower);</span>
+<span class="fc" id="L346">        int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L347">        int delta = index + length - segmentSizeInBytes;</span>
+<span class="fc" id="L348">        final ByteBuffer bb1 = segments.get(bufferIndex);</span>
+<span class="fc bfc" id="L349" title="All 2 branches covered.">        if (delta &gt; 0) {</span>
+<span class="fc" id="L350">            length -= delta;</span>
+<span class="fc" id="L351">            bb1.get(index, values, 0, length);</span>
+
+<span class="fc" id="L353">            final ByteBuffer bb2 = segments.get(bufferIndex + 1);</span>
+<span class="fc" id="L354">            bb2.get(0, values, length, delta);</span>
+<span class="fc" id="L355">        } else {</span>
+<span class="fc" id="L356">            bb1.get(index, values, 0, length);</span>
+        }
+<span class="fc" id="L358">    }</span>
+
+    @Override
+    public void setByte(long bytePos, byte value) {
+<span class="fc" id="L362">        int bufferIndex = (int) (bytePos &gt;&gt;&gt; segmentSizePower);</span>
+<span class="fc" id="L363">        int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L364">        final ByteBuffer bb1 = segments.get(bufferIndex);</span>
+<span class="fc" id="L365">        bb1.put(index, value);</span>
+<span class="fc" id="L366">    }</span>
+
+    @Override
+    public byte getByte(long bytePos) {
+<span class="fc" id="L370">        int bufferIndex = (int) (bytePos &gt;&gt;&gt; segmentSizePower);</span>
+<span class="fc" id="L371">        int index = (int) (bytePos &amp; indexDivisor);</span>
+<span class="fc" id="L372">        final ByteBuffer bb1 = segments.get(bufferIndex);</span>
+<span class="fc" id="L373">        return bb1.get(index);</span>
+    }
+
+    @Override
+    public long getCapacity() {
+<span class="fc" id="L378">        long cap = 0;</span>
+<span class="fc bfc" id="L379" title="All 2 branches covered.">        for (ByteBuffer bb : segments) {</span>
+<span class="fc" id="L380">            cap += bb.capacity();</span>
+<span class="fc" id="L381">        }</span>
+<span class="fc" id="L382">        return cap;</span>
+    }
+
+    @Override
+    public int getSegments() {
+<span class="fc" id="L387">        return segments.size();</span>
+    }
+
+    /**
+     * Cleans up MappedByteBuffers. Be sure you bring the segments list in a consistent state
+     * afterwards.
+     * &lt;p&gt;
+     *
+     * @param from inclusive
+     * @param to   exclusive
+     */
+    private void clean(int from, int to) {
+<span class="fc bfc" id="L399" title="All 2 branches covered.">        for (int i = from; i &lt; to; i++) {</span>
+<span class="fc" id="L400">            ByteBuffer bb = segments.get(i);</span>
+<span class="fc" id="L401">            cleanMappedByteBuffer(bb);</span>
+<span class="fc" id="L402">            segments.set(i, null);</span>
+        }
+<span class="fc" id="L404">    }</span>
+
+    @Override
+    public DAType getType() {
+<span class="fc" id="L408">        return DAType.MMAP;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

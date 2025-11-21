@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DirectionResolver.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">DirectionResolver.java</span></div><h1>DirectionResolver.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.util.DirectedEdgeFilter;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.GHPoint;
+
+import java.util.*;
+
+/**
+ * This class is used to determine the pairs of edges that go into/out of a node of the routing graph. Two such pairs
+ * are determined: One pair for the case a given coordinate should be right of a vehicle driving into/out of the node and
+ * one pair for the case where the coordinate is on the left.
+ * &lt;p&gt;
+ * Example:
+ * &lt;p&gt;
+ * .a  x  b
+ * --- o ---
+ * &lt;p&gt;
+ * If the location 'x' should be on the left side the incoming edge would be 'a' and the outgoing edge would be 'b'.
+ * If the location 'x' should be on the right side the incoming edge would be 'b' and the outgoing edge would be 'a'.
+ * &lt;p&gt;
+ * The returned edge IDs can have some special values: we use {@link EdgeIterator#NO_EDGE} to indicate it is
+ * not possible to arrive or leave a location in a certain direction and {@link EdgeIterator#ANY_EDGE} if
+ * there was no clear way to determine an edge id.
+ * &lt;p&gt;
+ * There are a few special cases:
+ * - if it is not possible to determine a clear result, such as for junctions with multiple adjacent edges
+ * we return {@link DirectionResolverResult#unrestricted()}}
+ * - if there is no way to reach or leave a location at all we return {@link DirectionResolverResult#impossible()}
+ * - for locations where the location can only possibly be on the left or right side (such as one-ways we return
+ * {@link DirectionResolverResult#onlyLeft(int, int)} or {@link DirectionResolverResult#onlyRight(int, int)}
+ */
+<span class="fc" id="L52">public class DirectionResolver {</span>
+    private final EdgeExplorer edgeExplorer;
+    private final NodeAccess nodeAccess;
+    private final DirectedEdgeFilter isAccessible;
+
+<span class="fc" id="L57">    public DirectionResolver(Graph graph, DirectedEdgeFilter isAccessible) {</span>
+<span class="fc" id="L58">        this.edgeExplorer = graph.createEdgeExplorer();</span>
+<span class="fc" id="L59">        this.nodeAccess = graph.getNodeAccess();</span>
+<span class="fc" id="L60">        this.isAccessible = isAccessible;</span>
+<span class="fc" id="L61">    }</span>
+
+    /**
+     * @param node     the node for which the incoming/outgoing edges should be determined
+     * @param location the location next to the road relative to which the 'left' and 'right' side edges should be determined
+     * @see DirectionResolver
+     */
+    public DirectionResolverResult resolveDirections(int node, GHPoint location) {
+<span class="fc" id="L69">        AdjacentEdges adjacentEdges = calcAdjEdges(node);</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        if (adjacentEdges.numStandardEdges == 0) {</span>
+<span class="fc" id="L71">            return DirectionResolverResult.impossible();</span>
+        }
+<span class="fc bfc" id="L73" title="All 4 branches covered.">        if (!adjacentEdges.hasInEdges() || !adjacentEdges.hasOutEdges()) {</span>
+<span class="fc" id="L74">            return DirectionResolverResult.impossible();</span>
+        }
+<span class="pc bpc" id="L76" title="1 of 2 branches missed.">        if (adjacentEdges.nextPoints.isEmpty()) {</span>
+<span class="nc" id="L77">            return DirectionResolverResult.impossible();</span>
+        }
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (adjacentEdges.numZeroDistanceEdges &gt; 0) {</span>
+            // if we snap to a tower node that is adjacent to a barrier edge we apply no restrictions. this is the
+            // easiest thing to do, but maybe we need a more sophisticated handling of this case in the future.
+<span class="fc" id="L82">            return DirectionResolverResult.unrestricted();</span>
+        }
+<span class="fc" id="L84">        Point snappedPoint = new Point(nodeAccess.getLat(node), nodeAccess.getLon(node));</span>
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">        if (adjacentEdges.nextPoints.contains(snappedPoint)) {</span>
+            // this might happen if a pillar node of an adjacent edge has the same coordinates as the snapped point,
+            // but this should be prevented by the map import already
+<span class="nc" id="L88">            throw new IllegalStateException(&quot;Pillar node of adjacent edge matches snapped point, this should not happen&quot;);</span>
+        }
+        // we can classify the different cases by the number of different next points!
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        if (adjacentEdges.nextPoints.size() == 1) {</span>
+<span class="fc" id="L92">            Point neighbor = adjacentEdges.nextPoints.iterator().next();</span>
+<span class="fc" id="L93">            List&lt;Edge&gt; inEdges = adjacentEdges.getInEdges(neighbor);</span>
+<span class="fc" id="L94">            List&lt;Edge&gt; outEdges = adjacentEdges.getOutEdges(neighbor);</span>
+<span class="pc bpc" id="L95" title="2 of 4 branches missed.">            assert inEdges.size() &gt; 0 &amp;&amp; outEdges.size() &gt; 0 : &quot;if there is only one next point there has to be an in edge and an out edge connected with it&quot;;</span>
+            // if there are multiple edges going to the (single) next point we cannot return a reasonable result and
+            // leave this point unrestricted
+<span class="pc bpc" id="L98" title="1 of 4 branches missed.">            if (inEdges.size() &gt; 1 || outEdges.size() &gt; 1) {</span>
+<span class="fc" id="L99">                return DirectionResolverResult.unrestricted();</span>
+            }
+            // since there is only one next point we know this is the end of a dead end street so the right and left
+            // side are treated equally and for both cases we use the only possible edge ids.
+<span class="fc" id="L103">            return DirectionResolverResult.restricted(inEdges.get(0).edgeId, outEdges.get(0).edgeId, inEdges.get(0).edgeId, outEdges.get(0).edgeId);</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">        } else if (adjacentEdges.nextPoints.size() == 2) {</span>
+<span class="fc" id="L105">            Iterator&lt;Point&gt; iter = adjacentEdges.nextPoints.iterator();</span>
+<span class="fc" id="L106">            Point p1 = iter.next();</span>
+<span class="fc" id="L107">            Point p2 = iter.next();</span>
+<span class="fc" id="L108">            List&lt;Edge&gt; in1 = adjacentEdges.getInEdges(p1);</span>
+<span class="fc" id="L109">            List&lt;Edge&gt; in2 = adjacentEdges.getInEdges(p2);</span>
+<span class="fc" id="L110">            List&lt;Edge&gt; out1 = adjacentEdges.getOutEdges(p1);</span>
+<span class="fc" id="L111">            List&lt;Edge&gt; out2 = adjacentEdges.getOutEdges(p2);</span>
+<span class="pc bpc" id="L112" title="2 of 8 branches missed.">            if (in1.size() &gt; 1 || in2.size() &gt; 1 || out1.size() &gt; 1 || out2.size() &gt; 1) {</span>
+<span class="fc" id="L113">                return DirectionResolverResult.unrestricted();</span>
+            }
+<span class="pc bpc" id="L115" title="2 of 4 branches missed.">            if (in1.size() + in2.size() == 0 || out1.size() + out2.size() == 0) {</span>
+<span class="nc" id="L116">                throw new IllegalStateException(&quot;there has to be at least one in and one out edge when there are two next points&quot;);</span>
+            }
+<span class="pc bpc" id="L118" title="2 of 4 branches missed.">            if (in1.size() + out1.size() == 0 || in2.size() + out2.size() == 0) {</span>
+<span class="nc" id="L119">                throw new IllegalStateException(&quot;there has to be at least one in or one out edge for each of the two next points&quot;);</span>
+            }
+<span class="fc" id="L121">            Point locationPoint = new Point(location.lat, location.lon);</span>
+<span class="fc bfc" id="L122" title="All 4 branches covered.">            if (in1.isEmpty() || out2.isEmpty()) {</span>
+<span class="fc" id="L123">                return resolveDirections(snappedPoint, locationPoint, in2.get(0), out1.get(0));</span>
+<span class="fc bfc" id="L124" title="All 4 branches covered.">            } else if (in2.isEmpty() || out1.isEmpty()) {</span>
+<span class="fc" id="L125">                return resolveDirections(snappedPoint, locationPoint, in1.get(0), out2.get(0));</span>
+            } else {
+<span class="fc" id="L127">                return resolveDirections(snappedPoint, locationPoint, in1.get(0), out2.get(0), in2.get(0).edgeId, out1.get(0).edgeId);</span>
+            }
+        } else {
+            // we snapped to a junction, in this case we do not apply restrictions
+            // note: TOWER and PILLAR mostly occur when location is near the end of a dead end street or a sharp
+            // curve, like switchbacks in the mountains of Andorra
+<span class="fc" id="L133">            return DirectionResolverResult.unrestricted();</span>
+        }
+    }
+
+    private DirectionResolverResult resolveDirections(Point snappedPoint, Point queryPoint, Edge inEdge, Edge outEdge) {
+<span class="fc" id="L138">        boolean rightLane = isOnRightLane(queryPoint, snappedPoint, inEdge.nextPoint, outEdge.nextPoint);</span>
+<span class="fc bfc" id="L139" title="All 2 branches covered.">        if (rightLane) {</span>
+<span class="fc" id="L140">            return DirectionResolverResult.onlyRight(inEdge.edgeId, outEdge.edgeId);</span>
+        } else {
+<span class="fc" id="L142">            return DirectionResolverResult.onlyLeft(inEdge.edgeId, outEdge.edgeId);</span>
+        }
+    }
+
+    private DirectionResolverResult resolveDirections(Point snappedPoint, Point queryPoint, Edge inEdge, Edge outEdge, int altInEdge, int altOutEdge) {
+<span class="fc" id="L147">        Point inPoint = inEdge.nextPoint;</span>
+<span class="fc" id="L148">        Point outPoint = outEdge.nextPoint;</span>
+<span class="fc" id="L149">        boolean rightLane = isOnRightLane(queryPoint, snappedPoint, inPoint, outPoint);</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (rightLane) {</span>
+<span class="fc" id="L151">            return DirectionResolverResult.restricted(inEdge.edgeId, outEdge.edgeId, altInEdge, altOutEdge);</span>
+        } else {
+<span class="fc" id="L153">            return DirectionResolverResult.restricted(altInEdge, altOutEdge, inEdge.edgeId, outEdge.edgeId);</span>
+        }
+    }
+
+    private boolean isOnRightLane(Point queryPoint, Point snappedPoint, Point inPoint, Point outPoint) {
+<span class="fc" id="L158">        double qX = diffLon(snappedPoint, queryPoint);</span>
+<span class="fc" id="L159">        double qY = diffLat(snappedPoint, queryPoint);</span>
+<span class="fc" id="L160">        double iX = diffLon(snappedPoint, inPoint);</span>
+<span class="fc" id="L161">        double iY = diffLat(snappedPoint, inPoint);</span>
+<span class="fc" id="L162">        double oX = diffLon(snappedPoint, outPoint);</span>
+<span class="fc" id="L163">        double oY = diffLat(snappedPoint, outPoint);</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">        return !AngleCalc.ANGLE_CALC.isClockwise(iX, iY, oX, oY, qX, qY);</span>
+    }
+
+    private double diffLon(Point p, Point q) {
+<span class="fc" id="L168">        return q.lon - p.lon;</span>
+    }
+
+    private double diffLat(Point p, Point q) {
+<span class="fc" id="L172">        return q.lat - p.lat;</span>
+    }
+
+    private AdjacentEdges calcAdjEdges(int node) {
+<span class="fc" id="L176">        AdjacentEdges adjacentEdges = new AdjacentEdges();</span>
+<span class="fc" id="L177">        EdgeIterator iter = edgeExplorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L179">            boolean isIn = isAccessible.accept(iter, true);</span>
+<span class="fc" id="L180">            boolean isOut = isAccessible.accept(iter, false);</span>
+<span class="fc bfc" id="L181" title="All 4 branches covered.">            if (!isIn &amp;&amp; !isOut)</span>
+<span class="fc" id="L182">                continue;</span>
+            // we are interested in the coordinates of the next point on this edge, it could be the adj tower node
+            // but also a pillar node
+<span class="fc" id="L185">            final PointList geometry = iter.fetchWayGeometry(FetchMode.ALL);</span>
+<span class="fc" id="L186">            double nextPointLat = geometry.getLat(1);</span>
+<span class="fc" id="L187">            double nextPointLon = geometry.getLon(1);</span>
+
+<span class="fc" id="L189">            boolean isZeroDistanceEdge = false;</span>
+<span class="fc bfc" id="L190" title="All 2 branches covered.">            if (PointList.equalsEps(nextPointLat, geometry.getLat(0)) &amp;&amp;</span>
+<span class="fc bfc" id="L191" title="All 2 branches covered.">                    PointList.equalsEps(nextPointLon, geometry.getLon(0))) {</span>
+<span class="fc bfc" id="L192" title="All 2 branches covered.">                if (geometry.size() &gt; 2) {</span>
+                    // todo: special treatment in case the coordinates of the first pillar node equal those of the base tower
+                    // node, see #1694
+<span class="fc" id="L195">                    nextPointLat = geometry.getLat(2);</span>
+<span class="fc" id="L196">                    nextPointLon = geometry.getLon(2);</span>
+<span class="pc bpc" id="L197" title="1 of 2 branches missed.">                } else if (geometry.size() == 2) {</span>
+                    // an edge where base and adj node share the same coordinates. this is the case for barrier edges that
+                    // we create artificially
+<span class="fc" id="L200">                    isZeroDistanceEdge = true;</span>
+                } else {
+<span class="nc" id="L202">                    throw new IllegalStateException(&quot;Geometry has less than two points&quot;);</span>
+                }
+            }
+<span class="fc" id="L205">            Point nextPoint = new Point(nextPointLat, nextPointLon);</span>
+<span class="fc" id="L206">            Edge edge = new Edge(iter.getEdge(), iter.getAdjNode(), nextPoint);</span>
+<span class="fc" id="L207">            adjacentEdges.addEdge(edge, isIn, isOut);</span>
+
+<span class="fc bfc" id="L209" title="All 2 branches covered.">            if (isZeroDistanceEdge)</span>
+<span class="fc" id="L210">                adjacentEdges.numZeroDistanceEdges++;</span>
+            else
+<span class="fc" id="L212">                adjacentEdges.numStandardEdges++;</span>
+
+<span class="fc" id="L214">        }</span>
+<span class="fc" id="L215">        return adjacentEdges;</span>
+    }
+
+<span class="fc" id="L218">    private static class AdjacentEdges {</span>
+<span class="fc" id="L219">        private final Map&lt;Point, List&lt;Edge&gt;&gt; inEdgesByNextPoint = new HashMap&lt;&gt;(2);</span>
+<span class="fc" id="L220">        private final Map&lt;Point, List&lt;Edge&gt;&gt; outEdgesByNextPoint = new HashMap&lt;&gt;(2);</span>
+<span class="fc" id="L221">        final Set&lt;Point&gt; nextPoints = new HashSet&lt;&gt;(2);</span>
+        int numStandardEdges;
+        int numZeroDistanceEdges;
+
+        void addEdge(Edge edge, boolean isIn, boolean isOut) {
+<span class="fc bfc" id="L226" title="All 2 branches covered.">            if (isIn) {</span>
+<span class="fc" id="L227">                addInEdge(edge);</span>
+            }
+<span class="fc bfc" id="L229" title="All 2 branches covered.">            if (isOut) {</span>
+<span class="fc" id="L230">                addOutEdge(edge);</span>
+            }
+<span class="fc" id="L232">            addNextPoint(edge);</span>
+<span class="fc" id="L233">        }</span>
+
+        List&lt;Edge&gt; getInEdges(Point p) {
+<span class="fc" id="L236">            List&lt;Edge&gt; result = inEdgesByNextPoint.get(p);</span>
+<span class="fc bfc" id="L237" title="All 2 branches covered.">            return result == null ? Collections.emptyList() : result;</span>
+        }
+
+        List&lt;Edge&gt; getOutEdges(Point p) {
+<span class="fc" id="L241">            List&lt;Edge&gt; result = outEdgesByNextPoint.get(p);</span>
+<span class="fc bfc" id="L242" title="All 2 branches covered.">            return result == null ? Collections.emptyList() : result;</span>
+        }
+
+        boolean hasInEdges() {
+<span class="fc bfc" id="L246" title="All 2 branches covered.">            return !inEdgesByNextPoint.isEmpty();</span>
+        }
+
+        boolean hasOutEdges() {
+<span class="fc bfc" id="L250" title="All 2 branches covered.">            return !outEdgesByNextPoint.isEmpty();</span>
+        }
+
+        private void addOutEdge(Edge edge) {
+<span class="fc" id="L254">            addEdge(outEdgesByNextPoint, edge);</span>
+<span class="fc" id="L255">        }</span>
+
+        private void addInEdge(Edge edge) {
+<span class="fc" id="L258">            addEdge(inEdgesByNextPoint, edge);</span>
+<span class="fc" id="L259">        }</span>
+
+        private void addNextPoint(Edge edge) {
+<span class="fc" id="L262">            nextPoints.add(edge.nextPoint);</span>
+<span class="fc" id="L263">        }</span>
+
+        private static void addEdge(Map&lt;Point, List&lt;Edge&gt;&gt; edgesByNextPoint, Edge edge) {
+<span class="fc" id="L266">            List&lt;Edge&gt; edges = edgesByNextPoint.get(edge.nextPoint);</span>
+<span class="fc bfc" id="L267" title="All 2 branches covered.">            if (edges == null) {</span>
+<span class="fc" id="L268">                edges = new ArrayList&lt;&gt;(2);</span>
+<span class="fc" id="L269">                edges.add(edge);</span>
+<span class="fc" id="L270">                edgesByNextPoint.put(edge.nextPoint, edges);</span>
+            } else {
+<span class="fc" id="L272">                edges.add(edge);</span>
+            }
+<span class="fc" id="L274">        }</span>
+    }
+
+    private static class Point {
+        final double lat;
+        final double lon;
+
+<span class="fc" id="L281">        Point(double lat, double lon) {</span>
+<span class="fc" id="L282">            this.lat = lat;</span>
+<span class="fc" id="L283">            this.lon = lon;</span>
+<span class="fc" id="L284">        }</span>
+
+        @Override
+        public boolean equals(Object o) {
+<span class="pc bpc" id="L288" title="1 of 2 branches missed.">            if (this == o) return true;</span>
+<span class="pc bpc" id="L289" title="2 of 4 branches missed.">            if (o == null || getClass() != o.getClass()) return false;</span>
+<span class="fc" id="L290">            Point other = (Point) o;</span>
+<span class="fc bfc" id="L291" title="All 4 branches covered.">            return NumHelper.equalsEps(lat, other.lat) &amp;&amp; NumHelper.equalsEps(lon, other.lon);</span>
+        }
+
+        @Override
+        public int hashCode() {
+            // it does not matter, because we only use maps with very few elements. not using GHPoint because of it's
+            // broken hashCode implementation (#2445) and there is no good reason need to depend on it either
+<span class="fc" id="L298">            return 0;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L303">            return lat + &quot;, &quot; + lon;</span>
+        }
+    }
+
+    private static class Edge {
+        final int edgeId;
+        final int adjNode;
+        /**
+         * the next point of this edge, not necessarily the point corresponding to adjNode, but often this is the
+         * next pillar (!) node.
+         */
+        final Point nextPoint;
+
+<span class="fc" id="L316">        Edge(int edgeId, int adjNode, Point nextPoint) {</span>
+<span class="fc" id="L317">            this.edgeId = edgeId;</span>
+<span class="fc" id="L318">            this.adjNode = adjNode;</span>
+<span class="fc" id="L319">            this.nextPoint = nextPoint;</span>
+<span class="fc" id="L320">        }</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

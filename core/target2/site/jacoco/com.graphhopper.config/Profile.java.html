@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Profile.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.config</a> &gt; <span class="el_source">Profile.java</span></div><h1>Profile.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.config;
+
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.graphhopper.util.CustomModel;
+import com.graphhopper.util.Helper;
+import com.graphhopper.util.PMap;
+import com.graphhopper.util.TurnCostsConfig;
+
+import java.util.List;
+
+import static java.util.Collections.emptyList;
+
+/**
+ * Corresponds to an entry of the `profiles` section in `config.yml` and specifies the properties of a routing profile.
+ * The name used here needs to be used when setting up CH/LM preparations. See also the documentation in
+ * `config-example.yml'
+ *
+ * @see CHProfile
+ * @see LMProfile
+ */
+public class Profile {
+    private String name;
+    private TurnCostsConfig turnCostsConfig;
+<span class="fc" id="L44">    private String weighting = &quot;custom&quot;;</span>
+<span class="fc" id="L45">    private PMap hints = new PMap();</span>
+
+    public static void validateProfileName(String profileName) {
+<span class="pc bpc" id="L48" title="1 of 2 branches missed.">        if (!profileName.matches(&quot;^[a-z0-9_\\-]+$&quot;)) {</span>
+<span class="nc" id="L49">            throw new IllegalArgumentException(&quot;Profile names may only contain lower case letters, numbers and underscores, given: &quot; + profileName);</span>
+        }
+<span class="fc" id="L51">    }</span>
+
+<span class="fc" id="L53">    private Profile() {</span>
+        // default constructor needed for jackson
+<span class="fc" id="L55">    }</span>
+
+<span class="fc" id="L57">    public Profile(String name) {</span>
+<span class="fc" id="L58">        setName(name);</span>
+<span class="fc" id="L59">        setCustomModel(new CustomModel());</span>
+<span class="fc" id="L60">    }</span>
+
+<span class="fc" id="L62">    public Profile(Profile p) {</span>
+<span class="fc" id="L63">        setName(p.getName());</span>
+<span class="fc" id="L64">        setTurnCostsConfig(p.getTurnCostsConfig());</span>
+<span class="fc" id="L65">        setWeighting(p.getWeighting());</span>
+<span class="fc" id="L66">        hints = new PMap(p.getHints());</span>
+<span class="fc" id="L67">    }</span>
+
+    public String getName() {
+<span class="fc" id="L70">        return name;</span>
+    }
+
+    public Profile setName(String name) {
+<span class="fc" id="L74">        validateProfileName(name);</span>
+<span class="fc" id="L75">        this.name = name;</span>
+<span class="fc" id="L76">        return this;</span>
+    }
+
+    public Profile setTurnCostsConfig(TurnCostsConfig turnCostsConfig) {
+<span class="fc" id="L80">        this.turnCostsConfig = turnCostsConfig;</span>
+<span class="fc" id="L81">        return this;</span>
+    }
+
+    @JsonProperty(&quot;turn_costs&quot;)
+    public TurnCostsConfig getTurnCostsConfig() {
+<span class="fc" id="L86">        return turnCostsConfig;</span>
+    }
+
+    public String getWeighting() {
+<span class="fc" id="L90">        return weighting;</span>
+    }
+
+    public Profile setWeighting(String weighting) {
+<span class="fc" id="L94">        this.weighting = weighting;</span>
+<span class="fc" id="L95">        return this;</span>
+    }
+
+    public Profile setCustomModel(CustomModel customModel) {
+<span class="pc bpc" id="L99" title="1 of 2 branches missed.">        if (customModel != null)</span>
+<span class="fc" id="L100">            customModel.internal();</span>
+<span class="fc" id="L101">        getHints().putObject(CustomModel.KEY, customModel);</span>
+<span class="fc" id="L102">        return this;</span>
+    }
+
+    public CustomModel getCustomModel() {
+<span class="fc" id="L106">        return getHints().getObject(CustomModel.KEY, null);</span>
+    }
+
+    public boolean hasTurnCosts() {
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        return turnCostsConfig != null;</span>
+    }
+
+    @JsonIgnore
+    public PMap getHints() {
+<span class="fc" id="L115">        return hints;</span>
+    }
+
+    @JsonAnySetter
+    public Profile putHint(String key, Object value) {
+<span class="pc bpc" id="L120" title="1 of 2 branches missed.">        if (key.equals(&quot;u_turn_costs&quot;))</span>
+<span class="nc" id="L121">            throw new IllegalArgumentException(&quot;u_turn_costs no longer accepted in profile. Use the turn costs configuration instead, see docs/migration/config-migration-08-09.md&quot;);</span>
+<span class="pc bpc" id="L122" title="1 of 2 branches missed.">        if (key.equals(&quot;vehicle&quot;))</span>
+<span class="nc" id="L123">            throw new IllegalArgumentException(&quot;vehicle no longer accepted in profile, see docs/migration/config-migration-08-09.md&quot;);</span>
+<span class="fc" id="L124">        this.hints.putObject(key, value);</span>
+<span class="fc" id="L125">        return this;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L130">        return createContentString(emptyList());</span>
+    }
+
+    @Override
+    public boolean equals(Object o) {
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        if (this == o) return true;</span>
+<span class="nc bnc" id="L136" title="All 4 branches missed.">        if (o == null || getClass() != o.getClass()) return false;</span>
+<span class="nc" id="L137">        Profile profile = (Profile) o;</span>
+<span class="nc" id="L138">        return name.equals(profile.name);</span>
+    }
+
+    private String createContentString(List&lt;String&gt; excludedHints) {
+        // used to check against stored custom models, see #2026
+<span class="fc" id="L143">        PMap filteredHints = new PMap(hints);</span>
+<span class="fc" id="L144">        excludedHints.forEach(filteredHints::remove);</span>
+<span class="fc" id="L145">        return &quot;name=&quot; + name + &quot;|turn_costs={&quot; + turnCostsConfig + &quot;}|weighting=&quot; + weighting + &quot;|hints=&quot; + filteredHints;</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc" id="L150">        return name.hashCode();</span>
+    }
+
+    public int getVersion() {
+<span class="fc" id="L154">        return getVersion(emptyList());</span>
+    }
+
+    public int getVersion(List&lt;String&gt; excludedHints) {
+<span class="fc" id="L158">        return Helper.staticHashCode(createContentString(excludedHints));</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

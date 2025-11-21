@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StringUtils.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.apache.commons.lang3</a> &gt; <span class="el_source">StringUtils.java</span></div><h1>StringUtils.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.graphhopper.apache.commons.lang3;
+
+
+/**
+ * This class is a partial copy of the org.apache.commons.lang3.StringUtils
+ * that can be found here: https://github.com/apache/commons-lang/blob/master/src/main/java/org/apache/commons/lang3/StringUtils.java
+ * &lt;p&gt;
+ * The library can be found here: https://commons.apache.org/proper/commons-lang/
+ */
+<span class="nc" id="L26">public class StringUtils {</span>
+
+    /**
+     * &lt;p&gt;Find the Levenshtein distance between two Strings.&lt;/p&gt;
+     * &lt;p&gt;
+     * &lt;p&gt;This is the number of changes needed to change one String into
+     * another, where each change is a single character modification (deletion,
+     * insertion or substitution).&lt;/p&gt;
+     * &lt;p&gt;
+     * &lt;p&gt;The implementation uses a single-dimensional array of length s.length() + 1. See
+     * &lt;a href=&quot;http://blog.softwx.net/2014/12/optimizing-levenshtein-algorithm-in-c.html&quot;&gt;
+     * http://blog.softwx.net/2014/12/optimizing-levenshtein-algorithm-in-c.html&lt;/a&gt; for details.&lt;/p&gt;
+     * &lt;p&gt;
+     * &lt;pre&gt;
+     * StringUtils.getLevenshteinDistance(null, *)             = IllegalArgumentException
+     * StringUtils.getLevenshteinDistance(*, null)             = IllegalArgumentException
+     * StringUtils.getLevenshteinDistance(&quot;&quot;,&quot;&quot;)               = 0
+     * StringUtils.getLevenshteinDistance(&quot;&quot;,&quot;a&quot;)              = 1
+     * StringUtils.getLevenshteinDistance(&quot;aaapppp&quot;, &quot;&quot;)       = 7
+     * StringUtils.getLevenshteinDistance(&quot;frog&quot;, &quot;fog&quot;)       = 1
+     * StringUtils.getLevenshteinDistance(&quot;fly&quot;, &quot;ant&quot;)        = 3
+     * StringUtils.getLevenshteinDistance(&quot;elephant&quot;, &quot;hippo&quot;) = 7
+     * StringUtils.getLevenshteinDistance(&quot;hippo&quot;, &quot;elephant&quot;) = 7
+     * StringUtils.getLevenshteinDistance(&quot;hippo&quot;, &quot;zzzzzzzz&quot;) = 8
+     * StringUtils.getLevenshteinDistance(&quot;hello&quot;, &quot;hallo&quot;)    = 1
+     * &lt;/pre&gt;
+     *
+     * @param s the first String, must not be null
+     * @param t the second String, must not be null
+     * @return result distance
+     * @throws IllegalArgumentException if either String input {@code null}
+     * @since 3.0 Changed signature from getLevenshteinDistance(String, String) to
+     * getLevenshteinDistance(CharSequence, CharSequence)
+     */
+    public static int getLevenshteinDistance(CharSequence s, CharSequence t) {
+<span class="fc bfc" id="L61" title="All 4 branches covered.">        if (s == null || t == null) {</span>
+<span class="fc" id="L62">            throw new IllegalArgumentException(&quot;Strings must not be null&quot;);</span>
+        }
+
+<span class="fc" id="L65">        int n = s.length();</span>
+<span class="fc" id="L66">        int m = t.length();</span>
+
+<span class="fc bfc" id="L68" title="All 2 branches covered.">        if (n == 0) {</span>
+<span class="fc" id="L69">            return m;</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        } else if (m == 0) {</span>
+<span class="fc" id="L71">            return n;</span>
+        }
+
+<span class="fc bfc" id="L74" title="All 2 branches covered.">        if (n &gt; m) {</span>
+            // swap the input strings to consume less memory
+<span class="fc" id="L76">            final CharSequence tmp = s;</span>
+<span class="fc" id="L77">            s = t;</span>
+<span class="fc" id="L78">            t = tmp;</span>
+<span class="fc" id="L79">            n = m;</span>
+<span class="fc" id="L80">            m = t.length();</span>
+        }
+
+<span class="fc" id="L83">        final int p[] = new int[n + 1];</span>
+        // indexes into strings s and t
+        int i; // iterates through s
+        int j; // iterates through t
+        int upper_left;
+        int upper;
+
+        char t_j; // jth character of t
+        int cost;
+
+<span class="fc bfc" id="L93" title="All 2 branches covered.">        for (i = 0; i &lt;= n; i++) {</span>
+<span class="fc" id="L94">            p[i] = i;</span>
+        }
+
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        for (j = 1; j &lt;= m; j++) {</span>
+<span class="fc" id="L98">            upper_left = p[0];</span>
+<span class="fc" id="L99">            t_j = t.charAt(j - 1);</span>
+<span class="fc" id="L100">            p[0] = j;</span>
+
+<span class="fc bfc" id="L102" title="All 2 branches covered.">            for (i = 1; i &lt;= n; i++) {</span>
+<span class="fc" id="L103">                upper = p[i];</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">                cost = s.charAt(i - 1) == t_j ? 0 : 1;</span>
+                // minimum of cell to the left+1, to the top+1, diagonally left and up +cost
+<span class="fc" id="L106">                p[i] = Math.min(Math.min(p[i - 1] + 1, p[i] + 1), upper_left + cost);</span>
+<span class="fc" id="L107">                upper_left = upper;</span>
+            }
+        }
+
+<span class="fc" id="L111">        return p[n];</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

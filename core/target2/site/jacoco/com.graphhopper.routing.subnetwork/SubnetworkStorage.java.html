@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SubnetworkStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.subnetwork</a> &gt; <span class="el_source">SubnetworkStorage.java</span></div><h1>SubnetworkStorage.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.subnetwork;
+
+import com.graphhopper.storage.DataAccess;
+
+/**
+ * This class handles storage of subnetwork ids for every node. Useful to pick the correct set of
+ * landmarks or fail fast for routing when two nodes are from different subnetworks.
+ *
+ * @author Peter Karich
+ */
+public class SubnetworkStorage {
+    final DataAccess da;
+
+<span class="fc" id="L31">    public SubnetworkStorage(DataAccess da) {</span>
+<span class="fc" id="L32">        this.da = da;</span>
+<span class="fc" id="L33">    }</span>
+
+    /**
+     * Returns the subnetwork ID for the specified nodeId or 0 if non is associated e.g. because the
+     * subnetwork is too small.
+     */
+    public int getSubnetwork(int nodeId) {
+<span class="fc" id="L40">        return da.getByte(nodeId);</span>
+    }
+
+    /**
+     * This method sets the subnetwork if of the specified nodeId. Default is 0 and means subnetwork
+     * was too small to be useful to be stored.
+     */
+    public void setSubnetwork(int nodeId, int subnetwork) {
+<span class="pc bpc" id="L48" title="1 of 2 branches missed.">        if (subnetwork &gt; 127)</span>
+<span class="nc" id="L49">            throw new IllegalArgumentException(&quot;Number of subnetworks is currently limited to 127 but requested &quot; + subnetwork);</span>
+
+<span class="fc" id="L51">        da.setByte(nodeId, (byte) subnetwork);</span>
+<span class="fc" id="L52">    }</span>
+
+    public boolean loadExisting() {
+<span class="fc" id="L55">        return da.loadExisting();</span>
+    }
+
+    public SubnetworkStorage create(long byteCount) {
+<span class="fc" id="L59">        da.create(2000);</span>
+<span class="fc" id="L60">        da.ensureCapacity(byteCount);</span>
+<span class="fc" id="L61">        return this;</span>
+    }
+
+    public void flush() {
+<span class="fc" id="L65">        da.flush();</span>
+<span class="fc" id="L66">    }</span>
+
+    public void close() {
+<span class="fc" id="L69">        da.close();</span>
+<span class="fc" id="L70">    }</span>
+
+    public boolean isClosed() {
+<span class="nc" id="L73">        return da.isClosed();</span>
+    }
+
+    public long getCapacity() {
+<span class="nc" id="L77">        return da.getCapacity();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MinHeapWithUpdate.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.coll</a> &gt; <span class="el_source">MinHeapWithUpdate.java</span></div><h1>MinHeapWithUpdate.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.coll;
+
+import com.graphhopper.apache.commons.collections.IntFloatBinaryHeap;
+
+import java.util.Arrays;
+
+/**
+ * A minimum heap implemented using a binary tree (https://en.wikipedia.org/wiki/Binary_heap). Besides the tree and the
+ * elements' values this heap also keeps track of the positions of the elements in the tree.
+ * This requires additional book-keeping when doing pushes/polls, but allows for an efficient update operation.
+ * For the same reason the heap has a fixed memory size that is determined in the constructor and the inserted element
+ * may not exceed a certain range.
+ * todo: strictly speaking the heap could automatically grow/shrink as long as the range of legal ids stays fixed, but
+ * for simplicity the heap has a fixed size for now.
+ * &lt;p&gt;
+ * This class is very similar to {@link IntFloatBinaryHeap}, but compared to this has an efficient update operation.
+ * In turn it is (much) less memory-efficient when the heap is used for a small number of elements from a large range.
+ */
+<span class="fc" id="L37">public class MinHeapWithUpdate {</span>
+    private static final int NOT_PRESENT = -1;
+    private final int[] tree;
+    private final int[] positions;
+    private final float[] vals;
+    private final int max;
+    private int size;
+
+    /**
+     * @param elements the number of elements that can be stored in this heap. Currently the heap cannot be resized or
+     *                 shrunk/trimmed after initial creation. elements-1 is the maximum id that can be stored in this
+     *                 heap
+     */
+<span class="fc" id="L50">    public MinHeapWithUpdate(int elements) {</span>
+        // we use an offset of one to make the arithmetic a bit simpler/more efficient, the 0th elements are not used!
+<span class="fc" id="L52">        tree = new int[elements + 1];</span>
+<span class="fc" id="L53">        positions = new int[elements + 1];</span>
+<span class="fc" id="L54">        Arrays.fill(positions, NOT_PRESENT);</span>
+<span class="fc" id="L55">        vals = new float[elements + 1];</span>
+<span class="fc" id="L56">        vals[0] = Float.NEGATIVE_INFINITY;</span>
+<span class="fc" id="L57">        this.max = elements;</span>
+<span class="fc" id="L58">    }</span>
+
+    public int size() {
+<span class="fc" id="L61">        return size;</span>
+    }
+
+    public boolean isEmpty() {
+<span class="fc bfc" id="L65" title="All 2 branches covered.">        return size == 0;</span>
+    }
+
+    /**
+     * Adds an element to the heap, the given id must not exceed the size specified in the constructor. Its illegal
+     * to push the same id twice (unless it was polled/removed before). To update the value of an id contained in the
+     * heap use the {@link #update} method.
+     */
+    public void push(int id, float value) {
+<span class="fc" id="L74">        checkIdInRange(id);</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (size == max)</span>
+<span class="fc" id="L76">            throw new IllegalStateException(&quot;Cannot push anymore, the heap is already full. size: &quot; + size);</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        if (contains(id))</span>
+<span class="fc" id="L78">            throw new IllegalStateException(&quot;Element with id: &quot; + id + &quot; was pushed already, you need to use the update method if you want to change its value&quot;);</span>
+<span class="fc" id="L79">        size++;</span>
+<span class="fc" id="L80">        tree[size] = id;</span>
+<span class="fc" id="L81">        positions[id] = size;</span>
+<span class="fc" id="L82">        vals[size] = value;</span>
+<span class="fc" id="L83">        percolateUp(size);</span>
+<span class="fc" id="L84">    }</span>
+
+    /**
+     * @return true if the heap contains an element with the given id
+     */
+    public boolean contains(int id) {
+<span class="fc" id="L90">        checkIdInRange(id);</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        return positions[id] != NOT_PRESENT;</span>
+    }
+
+    /**
+     * Updates the element with the given id. The complexity of this method is O(log(N)), just like push/poll.
+     * Its illegal to update elements that are not contained in the heap. Use {@link #contains} to check the existence
+     * of an id.
+     */
+    public void update(int id, float value) {
+<span class="fc" id="L100">        checkIdInRange(id);</span>
+<span class="fc" id="L101">        int index = positions[id];</span>
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">        if (index &lt; 0)</span>
+<span class="nc" id="L103">            throw new IllegalStateException(&quot;The heap does not contain: &quot; + id + &quot;. Use the contains method to check this before calling update&quot;);</span>
+<span class="fc" id="L104">        float prev = vals[index];</span>
+<span class="fc" id="L105">        vals[index] = value;</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        if (value &gt; prev)</span>
+<span class="fc" id="L107">            percolateDown(index);</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        else if (value &lt; prev)</span>
+<span class="fc" id="L109">            percolateUp(index);</span>
+<span class="fc" id="L110">    }</span>
+
+    /**
+     * @return the id of the next element to be polled, i.e. the same as calling poll() without removing the element
+     */
+    public int peekId() {
+<span class="fc" id="L116">        return tree[1];</span>
+    }
+
+    /**
+     * @return the value of the next element to be polled
+     */
+    public float peekValue() {
+<span class="fc" id="L123">        return vals[1];</span>
+    }
+
+    /**
+     * Extracts the element with minimum value from the heap
+     */
+    public int poll() {
+<span class="fc" id="L130">        int id = peekId();</span>
+<span class="fc" id="L131">        tree[1] = tree[size];</span>
+<span class="fc" id="L132">        vals[1] = vals[size];</span>
+<span class="fc" id="L133">        positions[tree[1]] = 1;</span>
+<span class="fc" id="L134">        positions[id] = NOT_PRESENT;</span>
+<span class="fc" id="L135">        size--;</span>
+<span class="fc" id="L136">        percolateDown(1);</span>
+<span class="fc" id="L137">        return id;</span>
+    }
+
+    public void clear() {
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        for (int i = 1; i &lt;= size; i++)</span>
+<span class="fc" id="L142">            positions[tree[i]] = NOT_PRESENT;</span>
+<span class="fc" id="L143">        size = 0;</span>
+<span class="fc" id="L144">    }</span>
+
+    private void percolateUp(int index) {
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">        assert index != 0;</span>
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        if (index == 1)</span>
+<span class="fc" id="L149">            return;</span>
+<span class="fc" id="L150">        final int el = tree[index];</span>
+<span class="fc" id="L151">        final float val = vals[index];</span>
+        // the finish condition (index==0) is covered here automatically because we set vals[0]=-inf
+<span class="fc bfc" id="L153" title="All 2 branches covered.">        while (val &lt; vals[index &gt;&gt; 1]) {</span>
+<span class="fc" id="L154">            int parent = index &gt;&gt; 1;</span>
+<span class="fc" id="L155">            tree[index] = tree[parent];</span>
+<span class="fc" id="L156">            vals[index] = vals[parent];</span>
+<span class="fc" id="L157">            positions[tree[index]] = index;</span>
+<span class="fc" id="L158">            index = parent;</span>
+<span class="fc" id="L159">        }</span>
+<span class="fc" id="L160">        tree[index] = el;</span>
+<span class="fc" id="L161">        vals[index] = val;</span>
+<span class="fc" id="L162">        positions[tree[index]] = index;</span>
+<span class="fc" id="L163">    }</span>
+
+    private void percolateDown(int index) {
+<span class="fc bfc" id="L166" title="All 2 branches covered.">        if (size == 0)</span>
+<span class="fc" id="L167">            return;</span>
+<span class="pc bpc" id="L168" title="1 of 2 branches missed.">        assert index &gt; 0;</span>
+<span class="pc bpc" id="L169" title="1 of 2 branches missed.">        assert index &lt;= size;</span>
+<span class="fc" id="L170">        final int el = tree[index];</span>
+<span class="fc" id="L171">        final float val = vals[index];</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">        while (index &lt;&lt; 1 &lt;= size) {</span>
+<span class="fc" id="L173">            int child = index &lt;&lt; 1;</span>
+<span class="fc bfc" id="L174" title="All 4 branches covered.">            if (child != size &amp;&amp; vals[child + 1] &lt; vals[child])</span>
+                // use the second child if it exists and has a smaller value
+<span class="fc" id="L176">                child++;</span>
+<span class="fc bfc" id="L177" title="All 2 branches covered.">            if (vals[child] &gt;= val)</span>
+<span class="fc" id="L178">                break;</span>
+<span class="fc" id="L179">            tree[index] = tree[child];</span>
+<span class="fc" id="L180">            vals[index] = vals[child];</span>
+<span class="fc" id="L181">            positions[tree[index]] = index;</span>
+<span class="fc" id="L182">            index = child;</span>
+<span class="fc" id="L183">        }</span>
+<span class="fc" id="L184">        tree[index] = el;</span>
+<span class="fc" id="L185">        vals[index] = val;</span>
+<span class="fc" id="L186">        positions[tree[index]] = index;</span>
+<span class="fc" id="L187">    }</span>
+
+    private void checkIdInRange(int id) {
+<span class="fc bfc" id="L190" title="All 4 branches covered.">        if (id &lt; 0 || id &gt;= max)</span>
+<span class="fc" id="L191">            throw new IllegalArgumentException(&quot;Illegal id: &quot; + id + &quot;, legal range: [0, &quot; + max + &quot;[&quot;);</span>
+<span class="fc" id="L192">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

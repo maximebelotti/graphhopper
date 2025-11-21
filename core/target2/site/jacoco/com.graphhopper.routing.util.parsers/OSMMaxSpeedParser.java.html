@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OSMMaxSpeedParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">OSMMaxSpeedParser.java</span></div><h1>OSMMaxSpeedParser.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.routing.ev.MaxSpeed;
+import com.graphhopper.storage.IntsRef;
+import com.graphhopper.util.DistanceCalcEarth;
+import com.graphhopper.util.Helper;
+
+import static com.graphhopper.routing.ev.MaxSpeed.MAXSPEED_150;
+import static com.graphhopper.routing.ev.MaxSpeed.MAXSPEED_MISSING;
+
+public class OSMMaxSpeedParser implements TagParser {
+
+    /**
+     * Special value to represent `maxspeed=none` internally, not exposed via the maxspeed encoded value
+     */
+    public static final double MAXSPEED_NONE = -1;
+
+    private final DecimalEncodedValue carMaxSpeedEnc;
+
+<span class="fc" id="L40">    public OSMMaxSpeedParser(DecimalEncodedValue carMaxSpeedEnc) {</span>
+<span class="pc bpc" id="L41" title="1 of 2 branches missed.">        if (!carMaxSpeedEnc.isStoreTwoDirections())</span>
+<span class="nc" id="L42">            throw new IllegalArgumentException(&quot;EncodedValue for maxSpeed must be able to store two directions&quot;);</span>
+
+<span class="fc" id="L44">        this.carMaxSpeedEnc = carMaxSpeedEnc;</span>
+<span class="fc" id="L45">    }</span>
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
+<span class="fc" id="L49">        carMaxSpeedEnc.setDecimal(false, edgeId, edgeIntAccess, parseMaxSpeed(way, false));</span>
+<span class="fc" id="L50">        carMaxSpeedEnc.setDecimal(true, edgeId, edgeIntAccess, parseMaxSpeed(way, true));</span>
+<span class="fc" id="L51">    }</span>
+
+    /**
+     * @return The maxspeed for the given way. It can be anything between 0 and {@link MaxSpeed.MAXSPEED_150},
+     *         or {@link MaxSpeed.MAXSPEED_MISSING} in case there is no valid maxspeed tagged for this way in this direction.
+     */
+    public static double parseMaxSpeed(ReaderWay way, boolean reverse) {
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        double directedMaxSpeed = parseMaxSpeedTag(way, reverse ? &quot;maxspeed:backward&quot; : &quot;maxspeed:forward&quot;);</span>
+<span class="fc bfc" id="L59" title="All 2 branches covered.">        if (directedMaxSpeed != MAXSPEED_MISSING)</span>
+<span class="fc" id="L60">            return directedMaxSpeed;</span>
+        else {
+<span class="fc" id="L62">            return parseMaxSpeedTag(way, &quot;maxspeed&quot;);</span>
+        }
+    }
+
+    private static double parseMaxSpeedTag(ReaderWay way, String tag) {
+<span class="fc" id="L67">        double maxSpeed = parseMaxspeedString(way.getTag(tag));</span>
+<span class="fc bfc" id="L68" title="All 4 branches covered.">        if (maxSpeed != MAXSPEED_MISSING &amp;&amp; maxSpeed != MAXSPEED_NONE)</span>
+            // there is no actual use for maxspeeds above 150 so we simply truncate here
+<span class="fc" id="L70">            return Math.min(MAXSPEED_150, maxSpeed);</span>
+<span class="fc bfc" id="L71" title="All 4 branches covered.">        else if (maxSpeed == MAXSPEED_NONE &amp;&amp; way.hasTag(&quot;highway&quot;, &quot;motorway&quot;, &quot;motorway_link&quot;, &quot;trunk&quot;, &quot;trunk_link&quot;, &quot;primary&quot;))</span>
+            // We ignore maxspeed=none with some exceptions where unlimited speed is actually allowed like on some
+            // motorways, trunks and (very rarely) primary roads in Germany, or the Isle of Man. In other cases
+            // maxspeed=none is only used because mappers have a false understanding of this tag.
+<span class="fc" id="L75">            return MaxSpeed.MAXSPEED_150;</span>
+        else
+<span class="fc" id="L77">            return MAXSPEED_MISSING;</span>
+    }
+
+    /**
+     ** @return the speed in km/h, or {@link MAXSPEED_MISSING} if the string is invalid, or {@link MAXSPEED_NONE} in case it equals 'none'
+     */
+    public static double parseMaxspeedString(String str) {
+<span class="fc bfc" id="L84" title="All 2 branches covered.">        if (Helper.isEmpty(str))</span>
+<span class="fc" id="L85">            return MAXSPEED_MISSING;</span>
+
+<span class="fc bfc" id="L87" title="All 2 branches covered.">        if (&quot;walk&quot;.equals(str.trim()))</span>
+<span class="fc" id="L88">            return 6;</span>
+
+<span class="fc bfc" id="L90" title="All 2 branches covered.">        if (&quot;none&quot;.equals(str.trim()))</span>
+            // Special case intended to be used when there is actually no speed limit and drivers
+            // can go as fast as they want like on parts of the German Autobahn. However, in OSM
+            // this is sometimes misused by mappers trying to indicate that there is no additional
+            // sign apart from the general speed limit.
+<span class="fc" id="L95">            return MAXSPEED_NONE;</span>
+
+<span class="fc" id="L97">        int mpInteger = str.indexOf(&quot;mp&quot;);</span>
+<span class="fc" id="L98">        int knotInteger = str.indexOf(&quot;knots&quot;);</span>
+<span class="fc" id="L99">        int kmInteger = str.indexOf(&quot;km&quot;);</span>
+<span class="fc" id="L100">        int kphInteger = str.indexOf(&quot;kph&quot;);</span>
+
+        double factor;
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        if (mpInteger &gt; 0) {</span>
+<span class="fc" id="L104">            str = str.substring(0, mpInteger).trim();</span>
+<span class="fc" id="L105">            factor = DistanceCalcEarth.KM_MILE;</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        } else if (knotInteger &gt; 0) {</span>
+<span class="fc" id="L107">            str = str.substring(0, knotInteger).trim();</span>
+<span class="fc" id="L108">            factor = 1.852; // see https://en.wikipedia.org/wiki/Knot_%28unit%29#Definitions</span>
+        } else {
+<span class="fc bfc" id="L110" title="All 2 branches covered.">            if (kmInteger &gt; 0) {</span>
+<span class="fc" id="L111">                str = str.substring(0, kmInteger).trim();</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">            } else if (kphInteger &gt; 0) {</span>
+<span class="fc" id="L113">                str = str.substring(0, kphInteger).trim();</span>
+            }
+<span class="fc" id="L115">            factor = 1;</span>
+        }
+
+        double value;
+        try {
+<span class="fc" id="L120">            value = Double.parseDouble(str) * factor;</span>
+<span class="fc" id="L121">        } catch (Exception ex) {</span>
+<span class="fc" id="L122">            return MAXSPEED_MISSING;</span>
+<span class="fc" id="L123">        }</span>
+
+<span class="fc bfc" id="L125" title="All 2 branches covered.">        if (value &lt; 4.8)</span>
+            // We consider maxspeed &lt; 4.8km/h a bug in OSM data and act as if the tag wasn't there.
+            // The limit is chosen such that maxspeed=3mph is still valid, because there actually are
+            // some road signs using 3mph.
+            // https://github.com/graphhopper/graphhopper/pull/3077#discussion_r1826842203
+<span class="fc" id="L130">            return MAXSPEED_MISSING;</span>
+
+<span class="fc" id="L132">        return value;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

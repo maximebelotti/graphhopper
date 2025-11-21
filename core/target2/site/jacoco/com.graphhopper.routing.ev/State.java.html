@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>State.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">State.java</span></div><h1>State.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.ev;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * The country subdivision is stored in this EncodedValue. E.g. US-CA is the enum US_CA.
+ */
+<span class="fc" id="L9">public enum State {</span>
+<span class="fc" id="L10">    MISSING(&quot;-&quot;),</span>
+
+    // Australia
+<span class="fc" id="L13">    AU_ACT(&quot;AU-ACT&quot;),</span>
+<span class="fc" id="L14">    AU_NSW(&quot;AU-NSW&quot;),</span>
+<span class="fc" id="L15">    AU_NT(&quot;AU-NT&quot;),</span>
+<span class="fc" id="L16">    AU_QLD(&quot;AU-QLD&quot;),</span>
+<span class="fc" id="L17">    AU_SA(&quot;AU-SA&quot;),</span>
+<span class="fc" id="L18">    AU_TAS(&quot;AU-TAS&quot;),</span>
+<span class="fc" id="L19">    AU_VIC(&quot;AU-VIC&quot;),</span>
+<span class="fc" id="L20">    AU_WA(&quot;AU-WA&quot;),</span>
+
+    // the sub regions of Belgium have no data in countries.geojson
+    // BE_BRU(&quot;BE-BRU&quot;, BEL),
+    // BE_VLG(&quot;BE-VLG&quot;, BEL),
+    // BE_WAL(&quot;BE-WAL&quot;, BEL),
+
+    // Canada
+<span class="fc" id="L28">    CA_AB(&quot;CA-AB&quot;),</span>
+<span class="fc" id="L29">    CA_BC(&quot;CA-BC&quot;),</span>
+<span class="fc" id="L30">    CA_MB(&quot;CA-MB&quot;),</span>
+<span class="fc" id="L31">    CA_NB(&quot;CA-NB&quot;),</span>
+<span class="fc" id="L32">    CA_NL(&quot;CA-NL&quot;),</span>
+<span class="fc" id="L33">    CA_NS(&quot;CA-NS&quot;),</span>
+<span class="fc" id="L34">    CA_NT(&quot;CA-NT&quot;),</span>
+<span class="fc" id="L35">    CA_NU(&quot;CA-NU&quot;),</span>
+<span class="fc" id="L36">    CA_ON(&quot;CA-ON&quot;),</span>
+<span class="fc" id="L37">    CA_PE(&quot;CA-PE&quot;),</span>
+<span class="fc" id="L38">    CA_QC(&quot;CA-QC&quot;),</span>
+<span class="fc" id="L39">    CA_SK(&quot;CA-SK&quot;),</span>
+<span class="fc" id="L40">    CA_YT(&quot;CA-YT&quot;),</span>
+
+    // Federated States of Micronesia
+<span class="fc" id="L43">    FM_KSA(&quot;FM-KSA&quot;),</span>
+<span class="fc" id="L44">    FM_PNI(&quot;FM-PNI&quot;),</span>
+<span class="fc" id="L45">    FM_TRK(&quot;FM-TRK&quot;),</span>
+<span class="fc" id="L46">    FM_YAP(&quot;FM-YAP&quot;),</span>
+
+    // United Kingdom
+    // TODO currently it isn't supported when the states list does not cover the entire country
+    //  furthermore the speed limits for Scotland are not different for car
+    // GB_SCT(&quot;GB-SCT&quot;, GBR),
+
+    // Netherlands
+    // TODO same problem here
+    // NL_BQ1(&quot;NL-BQ1&quot;, NLD),
+    // NL_BQ2(&quot;NL-BQ2&quot;, NLD),
+    // NL_BQ3(&quot;NL-BQ3&quot;, NLD),
+
+    // United States
+<span class="fc" id="L60">    US_AL(&quot;US-AL&quot;),</span>
+<span class="fc" id="L61">    US_AK(&quot;US-AK&quot;),</span>
+<span class="fc" id="L62">    US_AZ(&quot;US-AZ&quot;),</span>
+<span class="fc" id="L63">    US_AR(&quot;US-AR&quot;),</span>
+<span class="fc" id="L64">    US_CA(&quot;US-CA&quot;),</span>
+<span class="fc" id="L65">    US_CO(&quot;US-CO&quot;),</span>
+<span class="fc" id="L66">    US_CT(&quot;US-CT&quot;),</span>
+<span class="fc" id="L67">    US_DE(&quot;US-DE&quot;),</span>
+<span class="fc" id="L68">    US_DC(&quot;US-DC&quot;), // is a federal district not a state</span>
+<span class="fc" id="L69">    US_FL(&quot;US-FL&quot;),</span>
+<span class="fc" id="L70">    US_GA(&quot;US-GA&quot;),</span>
+<span class="fc" id="L71">    US_HI(&quot;US-HI&quot;),</span>
+<span class="fc" id="L72">    US_ID(&quot;US-ID&quot;),</span>
+<span class="fc" id="L73">    US_IL(&quot;US-IL&quot;),</span>
+<span class="fc" id="L74">    US_IN(&quot;US-IN&quot;),</span>
+<span class="fc" id="L75">    US_IA(&quot;US-IA&quot;),</span>
+<span class="fc" id="L76">    US_KS(&quot;US-KS&quot;),</span>
+<span class="fc" id="L77">    US_KY(&quot;US-KY&quot;),</span>
+<span class="fc" id="L78">    US_LA(&quot;US-LA&quot;),</span>
+<span class="fc" id="L79">    US_ME(&quot;US-ME&quot;),</span>
+<span class="fc" id="L80">    US_MD(&quot;US-MD&quot;),</span>
+<span class="fc" id="L81">    US_MA(&quot;US-MA&quot;),</span>
+<span class="fc" id="L82">    US_MI(&quot;US-MI&quot;),</span>
+<span class="fc" id="L83">    US_MN(&quot;US-MN&quot;),</span>
+<span class="fc" id="L84">    US_MS(&quot;US-MS&quot;),</span>
+<span class="fc" id="L85">    US_MO(&quot;US-MO&quot;),</span>
+<span class="fc" id="L86">    US_MT(&quot;US-MT&quot;),</span>
+<span class="fc" id="L87">    US_NE(&quot;US-NE&quot;),</span>
+<span class="fc" id="L88">    US_NV(&quot;US-NV&quot;),</span>
+<span class="fc" id="L89">    US_NH(&quot;US-NH&quot;),</span>
+<span class="fc" id="L90">    US_NJ(&quot;US-NJ&quot;),</span>
+<span class="fc" id="L91">    US_NM(&quot;US-NM&quot;),</span>
+<span class="fc" id="L92">    US_NY(&quot;US-NY&quot;),</span>
+<span class="fc" id="L93">    US_NC(&quot;US-NC&quot;),</span>
+<span class="fc" id="L94">    US_ND(&quot;US-ND&quot;),</span>
+<span class="fc" id="L95">    US_OH(&quot;US-OH&quot;),</span>
+<span class="fc" id="L96">    US_OK(&quot;US-OK&quot;),</span>
+<span class="fc" id="L97">    US_OR(&quot;US-OR&quot;),</span>
+<span class="fc" id="L98">    US_PA(&quot;US-PA&quot;),</span>
+<span class="fc" id="L99">    US_RI(&quot;US-RI&quot;),</span>
+<span class="fc" id="L100">    US_SC(&quot;US-SC&quot;),</span>
+<span class="fc" id="L101">    US_SD(&quot;US-SD&quot;),</span>
+<span class="fc" id="L102">    US_TN(&quot;US-TN&quot;),</span>
+<span class="fc" id="L103">    US_TX(&quot;US-TX&quot;),</span>
+<span class="fc" id="L104">    US_UT(&quot;US-UT&quot;),</span>
+<span class="fc" id="L105">    US_VT(&quot;US-VT&quot;),</span>
+<span class="fc" id="L106">    US_VA(&quot;US-VA&quot;),</span>
+<span class="fc" id="L107">    US_WA(&quot;US-WA&quot;),</span>
+<span class="fc" id="L108">    US_WV(&quot;US-WV&quot;),</span>
+<span class="fc" id="L109">    US_WI(&quot;US-WI&quot;),</span>
+<span class="fc" id="L110">    US_WY(&quot;US-WY&quot;);</span>
+
+    public static final String KEY = &quot;state&quot;, ISO_3166_2 = &quot;ISO3166-2&quot;;
+
+    private static final Map&lt;String,State&gt; STATE_BY_CODE;
+    static {
+<span class="fc" id="L116">        var map = new HashMap&lt;String,State&gt;();</span>
+<span class="fc bfc" id="L117" title="All 2 branches covered.">        for (State state : State.values()) {</span>
+<span class="fc" id="L118">            map.put(state.stateCode, state);</span>
+        }
+<span class="fc" id="L120">        STATE_BY_CODE = Map.copyOf(map); // unmodifiable</span>
+<span class="fc" id="L121">    }</span>
+
+    private final String stateCode;
+
+    /**
+     * @param isoCodeOfSubdivision should be ISO 3166-2 but with hyphen like US-CA
+     */
+<span class="fc" id="L128">    State(String isoCodeOfSubdivision) {</span>
+<span class="fc" id="L129">        this.stateCode = isoCodeOfSubdivision;</span>
+<span class="fc" id="L130">    }</span>
+
+    /**
+     * @param iso should be ISO 3166-2 but with hyphen like US-CA
+     */
+    public static State find(String iso) {
+<span class="fc" id="L136">        return STATE_BY_CODE.getOrDefault(iso, State.MISSING);</span>
+    }
+
+    /**
+     * @return ISO 3166-2 code with hyphen. E.g. US-CA
+     */
+    public String getStateCode() {
+<span class="fc" id="L143">        return stateCode;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L148">        return stateCode;</span>
+    }
+
+    public static EnumEncodedValue&lt;State&gt; create() {
+<span class="fc" id="L152">        return new EnumEncodedValue&lt;&gt;(State.KEY, State.class);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

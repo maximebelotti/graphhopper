@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DijkstraOneToMany.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">DijkstraOneToMany.java</span></div><h1>DijkstraOneToMany.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.graphhopper.apache.commons.collections.IntFloatBinaryHeap;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.*;
+
+import java.util.Arrays;
+
+/**
+ * A simple dijkstra tuned to perform multiple one to many queries with the same source and different target nodes
+ * more efficiently than {@link Dijkstra}. Old data structures are cached between requests and potentially reused and
+ * the shortest path tree is stored in (large as the graph) arrays instead of hash maps.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class DijkstraOneToMany extends AbstractRoutingAlgorithm {
+    private static final int EMPTY_PARENT = -1;
+    private static final int NOT_FOUND = -1;
+    private final IntArrayListWithCap changedNodes;
+    protected double[] weights;
+    private int[] parents;
+    private int[] edgeIds;
+    private IntFloatBinaryHeap heap;
+    private int visitedNodes;
+<span class="fc" id="L46">    private boolean doClear = true;</span>
+    private int endNode;
+    private int currNode, fromNode, to;
+<span class="fc" id="L49">    private double weightLimit = Double.MAX_VALUE;</span>
+
+    public DijkstraOneToMany(Graph graph, Weighting weighting, TraversalMode tMode) {
+<span class="fc" id="L52">        super(graph, weighting, tMode);</span>
+
+<span class="fc" id="L54">        parents = new int[graph.getNodes()];</span>
+<span class="fc" id="L55">        Arrays.fill(parents, EMPTY_PARENT);</span>
+
+<span class="fc" id="L57">        edgeIds = new int[graph.getNodes()];</span>
+<span class="fc" id="L58">        Arrays.fill(edgeIds, EdgeIterator.NO_EDGE);</span>
+
+<span class="fc" id="L60">        weights = new double[graph.getNodes()];</span>
+
+<span class="fc" id="L62">        Arrays.fill(weights, Double.MAX_VALUE);</span>
+
+<span class="fc" id="L64">        heap = new IntFloatBinaryHeap(1000);</span>
+<span class="fc" id="L65">        changedNodes = new IntArrayListWithCap();</span>
+<span class="fc" id="L66">    }</span>
+
+    @Override
+    public Path calcPath(int from, int to) {
+<span class="fc" id="L70">        setupFinishTime();</span>
+<span class="fc" id="L71">        fromNode = from;</span>
+<span class="fc" id="L72">        endNode = findEndNode(from, to);</span>
+<span class="pc bpc" id="L73" title="1 of 4 branches missed.">        if (endNode &lt; 0 || isWeightLimitExceeded()) {</span>
+<span class="fc" id="L74">            Path path = createEmptyPath();</span>
+<span class="fc" id="L75">            path.setFromNode(fromNode);</span>
+<span class="fc" id="L76">            path.setEndNode(endNode);</span>
+<span class="fc" id="L77">            return path;</span>
+        }
+
+<span class="fc" id="L80">        Path path = new Path(graph);</span>
+<span class="fc" id="L81">        int node = endNode;</span>
+        while (true) {
+<span class="fc" id="L83">            int edge = edgeIds[node];</span>
+<span class="fc bfc" id="L84" title="All 2 branches covered.">            if (!EdgeIterator.Edge.isValid(edge)) {</span>
+<span class="fc" id="L85">                break;</span>
+            }
+<span class="fc" id="L87">            EdgeIteratorState edgeState = graph.getEdgeIteratorState(edge, node);</span>
+<span class="fc" id="L88">            path.addDistance(edgeState.getDistance());</span>
+            // todo: we do not yet account for turn times here!
+<span class="fc" id="L90">            path.addTime(weighting.calcEdgeMillis(edgeState, false));</span>
+<span class="fc" id="L91">            path.addEdge(edge);</span>
+<span class="fc" id="L92">            node = parents[node];</span>
+<span class="fc" id="L93">        }</span>
+<span class="fc" id="L94">        ArrayUtil.reverse(path.getEdges());</span>
+<span class="fc" id="L95">        path.setFromNode(fromNode);</span>
+<span class="fc" id="L96">        path.setEndNode(endNode);</span>
+<span class="fc" id="L97">        path.setFound(true);</span>
+<span class="fc" id="L98">        path.setWeight(weights[endNode]);</span>
+<span class="fc" id="L99">        return path;</span>
+    }
+
+    /**
+     * Call clear if you have a different start node and need to clear the cache.
+     */
+    public DijkstraOneToMany clear() {
+<span class="nc" id="L106">        doClear = true;</span>
+<span class="nc" id="L107">        return this;</span>
+    }
+
+    public double getWeight(int endNode) {
+<span class="nc" id="L111">        return weights[endNode];</span>
+    }
+
+    public int findEndNode(int from, int to) {
+<span class="pc bpc" id="L115" title="1 of 2 branches missed.">        if (weights.length &lt; 2)</span>
+<span class="nc" id="L116">            return NOT_FOUND;</span>
+
+<span class="fc" id="L118">        this.to = to;</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        if (doClear) {</span>
+<span class="fc" id="L120">            doClear = false;</span>
+<span class="fc" id="L121">            int vn = changedNodes.size();</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">            for (int i = 0; i &lt; vn; i++) {</span>
+<span class="fc" id="L123">                int n = changedNodes.get(i);</span>
+<span class="fc" id="L124">                weights[n] = Double.MAX_VALUE;</span>
+<span class="fc" id="L125">                parents[n] = EMPTY_PARENT;</span>
+<span class="fc" id="L126">                edgeIds[n] = EdgeIterator.NO_EDGE;</span>
+            }
+
+<span class="fc" id="L129">            heap.clear();</span>
+
+            // changedNodes.clear();
+<span class="fc" id="L132">            changedNodes.elementsCount = 0;</span>
+
+<span class="fc" id="L134">            currNode = from;</span>
+<span class="pc bpc" id="L135" title="1 of 2 branches missed.">            if (!traversalMode.isEdgeBased()) {</span>
+<span class="fc" id="L136">                weights[currNode] = 0;</span>
+<span class="fc" id="L137">                changedNodes.add(currNode);</span>
+            }
+<span class="fc" id="L139">        } else {</span>
+            // Cached! Re-use existing data structures
+<span class="fc" id="L141">            int parentNode = parents[to];</span>
+<span class="pc bpc" id="L142" title="1 of 4 branches missed.">            if (parentNode != EMPTY_PARENT &amp;&amp; weights[to] &lt;= weights[currNode])</span>
+<span class="fc" id="L143">                return to;</span>
+
+<span class="pc bpc" id="L145" title="2 of 6 branches missed.">            if (heap.isEmpty() || isMaxVisitedNodesExceeded() || isTimeoutExceeded())</span>
+<span class="fc" id="L146">                return NOT_FOUND;</span>
+
+<span class="fc" id="L148">            currNode = heap.poll();</span>
+        }
+
+<span class="fc" id="L151">        visitedNodes = 0;</span>
+
+        // we call 'finished' before heap.peekElement but this would add unnecessary overhead for this special case so we do it outside of the loop
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        if (finished()) {</span>
+            // then we need a small workaround for special cases see #707
+<span class="pc bpc" id="L156" title="1 of 2 branches missed.">            if (heap.isEmpty())</span>
+<span class="fc" id="L157">                doClear = true;</span>
+<span class="fc" id="L158">            return currNode;</span>
+        }
+
+        while (true) {
+<span class="fc" id="L162">            visitedNodes++;</span>
+<span class="fc" id="L163">            EdgeIterator iter = edgeExplorer.setBaseNode(currNode);</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">            while (iter.next()) {</span>
+<span class="fc" id="L165">                int adjNode = iter.getAdjNode();</span>
+<span class="fc" id="L166">                int prevEdgeId = edgeIds[adjNode];</span>
+<span class="pc bpc" id="L167" title="1 of 2 branches missed.">                if (!accept(iter, prevEdgeId))</span>
+<span class="nc" id="L168">                    continue;</span>
+
+<span class="fc" id="L170">                double tmpWeight = GHUtility.calcWeightWithTurnWeight(weighting, iter, false, prevEdgeId) + weights[currNode];</span>
+<span class="fc bfc" id="L171" title="All 2 branches covered.">                if (Double.isInfinite(tmpWeight))</span>
+<span class="fc" id="L172">                    continue;</span>
+
+<span class="fc" id="L174">                double w = weights[adjNode];</span>
+<span class="fc bfc" id="L175" title="All 2 branches covered.">                if (w == Double.MAX_VALUE) {</span>
+<span class="fc" id="L176">                    parents[adjNode] = currNode;</span>
+<span class="fc" id="L177">                    weights[adjNode] = tmpWeight;</span>
+<span class="fc" id="L178">                    heap.insert(tmpWeight, adjNode);</span>
+<span class="fc" id="L179">                    changedNodes.add(adjNode);</span>
+<span class="fc" id="L180">                    edgeIds[adjNode] = iter.getEdge();</span>
+
+<span class="fc bfc" id="L182" title="All 2 branches covered.">                } else if (w &gt; tmpWeight) {</span>
+<span class="fc" id="L183">                    parents[adjNode] = currNode;</span>
+<span class="fc" id="L184">                    weights[adjNode] = tmpWeight;</span>
+<span class="fc" id="L185">                    heap.update(tmpWeight, adjNode);</span>
+<span class="fc" id="L186">                    changedNodes.add(adjNode);</span>
+<span class="fc" id="L187">                    edgeIds[adjNode] = iter.getEdge();</span>
+                }
+<span class="fc" id="L189">            }</span>
+
+<span class="pc bpc" id="L191" title="2 of 8 branches missed.">            if (heap.isEmpty() || isMaxVisitedNodesExceeded() || isWeightLimitExceeded() || isTimeoutExceeded())</span>
+<span class="fc" id="L192">                return NOT_FOUND;</span>
+
+            // calling just peek and not poll is important if the next query is cached
+<span class="fc" id="L195">            currNode = heap.peekElement();</span>
+<span class="fc bfc" id="L196" title="All 2 branches covered.">            if (finished())</span>
+<span class="fc" id="L197">                return currNode;</span>
+
+<span class="fc" id="L199">            heap.poll();</span>
+<span class="fc" id="L200">        }</span>
+    }
+
+    private boolean finished() {
+<span class="fc bfc" id="L204" title="All 2 branches covered.">        return currNode == to;</span>
+    }
+
+    public void setWeightLimit(double weightLimit) {
+<span class="fc" id="L208">        this.weightLimit = weightLimit;</span>
+<span class="fc" id="L209">    }</span>
+
+    protected boolean isWeightLimitExceeded() {
+<span class="pc bpc" id="L212" title="1 of 2 branches missed.">        return weights[currNode] &gt; weightLimit;</span>
+    }
+
+    public void close() {
+<span class="nc" id="L216">        weights = null;</span>
+<span class="nc" id="L217">        parents = null;</span>
+<span class="nc" id="L218">        edgeIds = null;</span>
+<span class="nc" id="L219">        heap = null;</span>
+<span class="nc" id="L220">    }</span>
+
+    @Override
+    public int getVisitedNodes() {
+<span class="fc" id="L224">        return visitedNodes;</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="nc" id="L229">        return Parameters.Algorithms.DIJKSTRA_ONE_TO_MANY;</span>
+    }
+
+    /**
+     * List currently used memory in MB (approximately)
+     */
+    public String getMemoryUsageAsString() {
+<span class="nc" id="L236">        long len = weights.length;</span>
+<span class="nc" id="L237">        return ((8L + 4L + 4L) * len</span>
+<span class="nc" id="L238">                + changedNodes.getCapacity() * 4L</span>
+<span class="nc" id="L239">                + heap.getCapacity() * (4L + 4L)) / Helper.MB</span>
+                + &quot;MB&quot;;
+    }
+
+    private static class IntArrayListWithCap extends IntArrayList {
+<span class="fc" id="L244">        public IntArrayListWithCap() {</span>
+<span class="fc" id="L245">        }</span>
+
+        public int getCapacity() {
+<span class="nc" id="L248">            return buffer.length;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

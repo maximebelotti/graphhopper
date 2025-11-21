@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QueryOverlayBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.querygraph</a> &gt; <span class="el_source">QueryOverlayBuilder.java</span></div><h1>QueryOverlayBuilder.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.querygraph;
+
+import com.carrotsearch.hppc.predicates.IntObjectPredicate;
+import com.graphhopper.coll.GHIntObjectHashMap;
+import com.graphhopper.search.KVStorage;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.IntsRef;
+import com.graphhopper.storage.index.Snap;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.GHPoint;
+import com.graphhopper.util.shapes.GHPoint3D;
+
+import java.util.*;
+
+import static com.graphhopper.util.DistancePlaneProjection.DIST_PLANE;
+
+<span class="fc" id="L35">class QueryOverlayBuilder {</span>
+    private final int firstVirtualNodeId;
+    private final int firstVirtualEdgeId;
+    private final boolean is3D;
+    private QueryOverlay queryOverlay;
+
+    public static QueryOverlay build(Graph graph, List&lt;Snap&gt; snaps) {
+<span class="fc" id="L42">        return build(graph.getNodes(), graph.getEdges(), graph.getNodeAccess().is3D(), snaps);</span>
+    }
+
+    public static QueryOverlay build(int firstVirtualNodeId, int firstVirtualEdgeId, boolean is3D, List&lt;Snap&gt; snaps) {
+<span class="fc" id="L46">        return new QueryOverlayBuilder(firstVirtualNodeId, firstVirtualEdgeId, is3D).build(snaps);</span>
+    }
+
+<span class="fc" id="L49">    private QueryOverlayBuilder(int firstVirtualNodeId, int firstVirtualEdgeId, boolean is3D) {</span>
+<span class="fc" id="L50">        this.firstVirtualNodeId = firstVirtualNodeId;</span>
+<span class="fc" id="L51">        this.firstVirtualEdgeId = firstVirtualEdgeId;</span>
+<span class="fc" id="L52">        this.is3D = is3D;</span>
+<span class="fc" id="L53">    }</span>
+
+    private QueryOverlay build(List&lt;Snap&gt; resList) {
+<span class="fc" id="L56">        queryOverlay = new QueryOverlay(resList.size(), is3D);</span>
+<span class="fc" id="L57">        buildVirtualEdges(resList);</span>
+<span class="fc" id="L58">        buildEdgeChangesAtRealNodes();</span>
+<span class="fc" id="L59">        return queryOverlay;</span>
+    }
+
+    /**
+     * For all specified snaps calculate the snapped point and if necessary set the closest node
+     * to a virtual one and reverse the closest edge. Additionally the wayIndex can change if an edge is
+     * swapped.
+     */
+    private void buildVirtualEdges(List&lt;Snap&gt; snaps) {
+<span class="fc" id="L68">        GHIntObjectHashMap&lt;List&lt;Snap&gt;&gt; edge2res = new GHIntObjectHashMap&lt;&gt;(snaps.size());</span>
+
+        // Phase 1
+        // calculate snapped point and swap direction of closest edge if necessary
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        for (Snap snap : snaps) {</span>
+            // Do not create virtual node for a snap if it is directly on a tower node or not found
+<span class="fc bfc" id="L74" title="All 2 branches covered.">            if (snap.getSnappedPosition() == Snap.Position.TOWER)</span>
+<span class="fc" id="L75">                continue;</span>
+
+<span class="fc" id="L77">            EdgeIteratorState closestEdge = snap.getClosestEdge();</span>
+<span class="pc bpc" id="L78" title="1 of 2 branches missed.">            if (closestEdge == null)</span>
+<span class="nc" id="L79">                throw new IllegalStateException(&quot;Do not call QueryGraph.create with invalid Snap &quot; + snap);</span>
+
+<span class="fc" id="L81">            int base = closestEdge.getBaseNode();</span>
+
+            // Force the identical direction for all closest edges.
+            // It is important to sort multiple results for the same edge by its wayIndex
+<span class="fc bfc" id="L85" title="All 2 branches covered.">            boolean doReverse = base &gt; closestEdge.getAdjNode();</span>
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">            if (base == closestEdge.getAdjNode()) {</span>
+                // check for special case #162 where adj == base and force direction via latitude comparison
+<span class="nc" id="L88">                PointList pl = closestEdge.fetchWayGeometry(FetchMode.PILLAR_ONLY);</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">                if (pl.size() &gt; 1)</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">                    doReverse = pl.getLat(0) &gt; pl.getLat(pl.size() - 1);</span>
+            }
+
+<span class="fc bfc" id="L93" title="All 2 branches covered.">            if (doReverse) {</span>
+<span class="fc" id="L94">                closestEdge = closestEdge.detach(true);</span>
+<span class="fc" id="L95">                PointList fullPL = closestEdge.fetchWayGeometry(FetchMode.ALL);</span>
+<span class="fc" id="L96">                snap.setClosestEdge(closestEdge);</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">                if (snap.getSnappedPosition() == Snap.Position.PILLAR)</span>
+                    // ON pillar node
+<span class="fc" id="L99">                    snap.setWayIndex(fullPL.size() - snap.getWayIndex() - 1);</span>
+                else
+                    // for case &quot;OFF pillar node&quot;
+<span class="fc" id="L102">                    snap.setWayIndex(fullPL.size() - snap.getWayIndex() - 2);</span>
+
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">                if (snap.getWayIndex() &lt; 0)</span>
+<span class="nc" id="L105">                    throw new IllegalStateException(&quot;Problem with wayIndex while reversing closest edge:&quot; + closestEdge + &quot;, &quot; + snap);</span>
+            }
+
+            // find multiple results on same edge
+<span class="fc" id="L109">            int edgeId = closestEdge.getEdge();</span>
+<span class="fc" id="L110">            List&lt;Snap&gt; list = edge2res.get(edgeId);</span>
+<span class="fc bfc" id="L111" title="All 2 branches covered.">            if (list == null) {</span>
+<span class="fc" id="L112">                list = new ArrayList&lt;&gt;(5);</span>
+<span class="fc" id="L113">                edge2res.put(edgeId, list);</span>
+            }
+<span class="fc" id="L115">            list.add(snap);</span>
+<span class="fc" id="L116">        }</span>
+
+        // Phase 2 - now it is clear which points cut one edge
+        // 1. create point lists
+        // 2. create virtual edges between virtual nodes and its neighbor (virtual or normal nodes)
+<span class="fc" id="L121">        edge2res.forEach(new IntObjectPredicate&lt;List&lt;Snap&gt;&gt;() {</span>
+            @Override
+            public boolean apply(int edgeId, List&lt;Snap&gt; results) {
+                // we can expect at least one entry in the results
+<span class="fc" id="L125">                EdgeIteratorState closestEdge = results.get(0).getClosestEdge();</span>
+<span class="fc" id="L126">                final PointList fullPL = closestEdge.fetchWayGeometry(FetchMode.ALL);</span>
+<span class="fc" id="L127">                int baseNode = closestEdge.getBaseNode();</span>
+<span class="fc" id="L128">                Collections.sort(results, new Comparator&lt;Snap&gt;() {</span>
+                    @Override
+                    public int compare(Snap o1, Snap o2) {
+<span class="fc" id="L131">                        int diff = Integer.compare(o1.getWayIndex(), o2.getWayIndex());</span>
+<span class="fc bfc" id="L132" title="All 2 branches covered.">                        if (diff == 0) {</span>
+<span class="fc" id="L133">                            return Double.compare(distanceOfSnappedPointToPillarNode(o1), distanceOfSnappedPointToPillarNode(o2));</span>
+                        } else {
+<span class="fc" id="L135">                            return diff;</span>
+                        }
+                    }
+
+                    private double distanceOfSnappedPointToPillarNode(Snap o) {
+<span class="fc" id="L140">                        GHPoint snappedPoint = o.getSnappedPoint();</span>
+<span class="fc" id="L141">                        double fromLat = fullPL.getLat(o.getWayIndex());</span>
+<span class="fc" id="L142">                        double fromLon = fullPL.getLon(o.getWayIndex());</span>
+<span class="fc" id="L143">                        return DistancePlaneProjection.DIST_PLANE.calcNormalizedDist(fromLat, fromLon, snappedPoint.lat, snappedPoint.lon);</span>
+                    }
+                });
+
+<span class="fc" id="L147">                GHPoint3D prevPoint = fullPL.get(0);</span>
+<span class="fc" id="L148">                int adjNode = closestEdge.getAdjNode();</span>
+<span class="fc" id="L149">                int origEdgeKey = closestEdge.getEdgeKey();</span>
+<span class="fc" id="L150">                int origRevEdgeKey = closestEdge.getReverseEdgeKey();</span>
+<span class="fc" id="L151">                int prevWayIndex = 1;</span>
+<span class="fc" id="L152">                int prevNodeId = baseNode;</span>
+<span class="fc" id="L153">                int virtNodeId = queryOverlay.getVirtualNodes().size() + firstVirtualNodeId;</span>
+<span class="fc" id="L154">                boolean addedEdges = false;</span>
+
+                // Create base and adjacent PointLists for all non-equal virtual nodes.
+                // We do so via inserting them at the correct position of fullPL and cutting the
+                // fullPL into the right pieces.
+<span class="fc bfc" id="L159" title="All 2 branches covered.">                for (int i = 0; i &lt; results.size(); i++) {</span>
+<span class="fc" id="L160">                    Snap res = results.get(i);</span>
+<span class="pc bpc" id="L161" title="1 of 2 branches missed.">                    if (res.getClosestEdge().getBaseNode() != baseNode)</span>
+<span class="nc" id="L162">                        throw new IllegalStateException(&quot;Base nodes have to be identical but were not: &quot; + closestEdge + &quot; vs &quot; + res.getClosestEdge());</span>
+
+<span class="fc" id="L164">                    GHPoint3D currSnapped = res.getSnappedPoint();</span>
+
+                    // no new virtual nodes if very close (&quot;snap&quot; together)
+<span class="fc bfc" id="L167" title="All 2 branches covered.">                    if (Snap.considerEqual(prevPoint.lat, prevPoint.lon, currSnapped.lat, currSnapped.lon)) {</span>
+<span class="fc" id="L168">                        res.setClosestNode(prevNodeId);</span>
+<span class="fc" id="L169">                        res.setSnappedPoint(prevPoint);</span>
+<span class="pc bpc" id="L170" title="1 of 2 branches missed.">                        res.setWayIndex(i == 0 ? 0 : results.get(i - 1).getWayIndex());</span>
+<span class="pc bpc" id="L171" title="1 of 2 branches missed.">                        res.setSnappedPosition(i == 0 ? Snap.Position.TOWER : results.get(i - 1).getSnappedPosition());</span>
+<span class="fc" id="L172">                        res.setQueryDistance(DIST_PLANE.calcDist(prevPoint.lat, prevPoint.lon, res.getQueryPoint().lat, res.getQueryPoint().lon));</span>
+<span class="fc" id="L173">                        continue;</span>
+                    }
+
+<span class="fc" id="L176">                    queryOverlay.getClosestEdges().add(res.getClosestEdge().getEdge());</span>
+<span class="fc bfc" id="L177" title="All 2 branches covered.">                    boolean isPillar = res.getSnappedPosition() == Snap.Position.PILLAR;</span>
+<span class="fc" id="L178">                    createEdges(origEdgeKey, origRevEdgeKey,</span>
+                            prevPoint, prevWayIndex, isPillar,
+<span class="fc" id="L180">                            res.getSnappedPoint(), res.getWayIndex(),</span>
+                            fullPL, closestEdge, prevNodeId, virtNodeId);
+
+<span class="fc" id="L183">                    queryOverlay.getVirtualNodes().add(currSnapped.lat, currSnapped.lon, currSnapped.ele);</span>
+
+                    // add edges again to set adjacent edges for newVirtNodeId
+<span class="fc bfc" id="L186" title="All 2 branches covered.">                    if (addedEdges) {</span>
+<span class="fc" id="L187">                        queryOverlay.addVirtualEdge(queryOverlay.getVirtualEdge(queryOverlay.getNumVirtualEdges() - 2));</span>
+<span class="fc" id="L188">                        queryOverlay.addVirtualEdge(queryOverlay.getVirtualEdge(queryOverlay.getNumVirtualEdges() - 2));</span>
+                    }
+
+<span class="fc" id="L191">                    addedEdges = true;</span>
+<span class="fc" id="L192">                    res.setClosestNode(virtNodeId);</span>
+<span class="fc" id="L193">                    prevNodeId = virtNodeId;</span>
+<span class="fc" id="L194">                    prevWayIndex = res.getWayIndex() + 1;</span>
+<span class="fc" id="L195">                    prevPoint = currSnapped;</span>
+<span class="fc" id="L196">                    virtNodeId++;</span>
+                }
+
+                // two edges between last result and adjacent node are still missing if not all points skipped
+<span class="pc bpc" id="L200" title="1 of 2 branches missed.">                if (addedEdges)</span>
+<span class="fc" id="L201">                    createEdges(origEdgeKey, origRevEdgeKey,</span>
+                            prevPoint, prevWayIndex, false,
+<span class="fc" id="L203">                            fullPL.get(fullPL.size() - 1), fullPL.size() - 2,</span>
+                            fullPL, closestEdge, virtNodeId - 1, adjNode);
+
+<span class="fc" id="L206">                return true;</span>
+            }
+        });
+<span class="fc" id="L209">    }</span>
+
+    private void createEdges(int origEdgeKey, int origRevEdgeKey,
+                             GHPoint3D prevSnapped, int prevWayIndex, boolean isPillar, GHPoint3D currSnapped, int wayIndex,
+                             PointList fullPL, EdgeIteratorState closestEdge,
+                             int prevNodeId, int nodeId) {
+<span class="fc" id="L215">        int max = wayIndex + 1;</span>
+<span class="fc" id="L216">        PointList basePoints = new PointList(max - prevWayIndex + 1, is3D);</span>
+<span class="fc" id="L217">        basePoints.add(prevSnapped.lat, prevSnapped.lon, prevSnapped.ele);</span>
+<span class="fc bfc" id="L218" title="All 2 branches covered.">        for (int i = prevWayIndex; i &lt; max; i++) {</span>
+<span class="fc" id="L219">            basePoints.add(fullPL, i);</span>
+        }
+<span class="fc bfc" id="L221" title="All 2 branches covered.">        if (!isPillar) {</span>
+<span class="fc" id="L222">            basePoints.add(currSnapped.lat, currSnapped.lon, currSnapped.ele);</span>
+        }
+        // basePoints must have at least the size of 2 to make sure fetchWayGeometry(FetchMode.ALL) returns at least 2
+<span class="pc bpc" id="L225" title="1 of 2 branches missed.">        assert basePoints.size() &gt;= 2 : &quot;basePoints must have at least two points&quot;;</span>
+
+<span class="fc" id="L227">        PointList baseReversePoints = basePoints.clone(true);</span>
+<span class="fc" id="L228">        double baseDistance = DistancePlaneProjection.DIST_PLANE.calcDistance(basePoints);</span>
+<span class="fc" id="L229">        int virtEdgeId = firstVirtualEdgeId + queryOverlay.getNumVirtualEdges() / 2;</span>
+
+<span class="fc" id="L231">        boolean reverse = closestEdge.get(EdgeIteratorState.REVERSE_STATE);</span>
+        // edges between base and snapped point
+<span class="fc" id="L233">        Map&lt;String, KVStorage.KValue&gt; keyValues = closestEdge.getKeyValues();</span>
+<span class="fc" id="L234">        VirtualEdgeIteratorState baseEdge = new VirtualEdgeIteratorState(origEdgeKey, GHUtility.createEdgeKey(virtEdgeId, false),</span>
+<span class="fc" id="L235">                prevNodeId, nodeId, baseDistance, closestEdge.getFlags(), keyValues, basePoints, reverse);</span>
+<span class="fc" id="L236">        VirtualEdgeIteratorState baseReverseEdge = new VirtualEdgeIteratorState(origRevEdgeKey, GHUtility.createEdgeKey(virtEdgeId, true),</span>
+<span class="fc bfc" id="L237" title="All 2 branches covered.">                nodeId, prevNodeId, baseDistance, IntsRef.deepCopyOf(closestEdge.getFlags()), keyValues, baseReversePoints, !reverse);</span>
+
+<span class="fc" id="L239">        baseEdge.setReverseEdge(baseReverseEdge);</span>
+<span class="fc" id="L240">        baseReverseEdge.setReverseEdge(baseEdge);</span>
+<span class="fc" id="L241">        queryOverlay.addVirtualEdge(baseEdge);</span>
+<span class="fc" id="L242">        queryOverlay.addVirtualEdge(baseReverseEdge);</span>
+<span class="fc" id="L243">    }</span>
+
+    private void buildEdgeChangesAtRealNodes() {
+<span class="fc" id="L246">        EdgeChangeBuilder.build(queryOverlay.getClosestEdges(), queryOverlay.getVirtualEdges(), firstVirtualNodeId, queryOverlay.getEdgeChangesAtRealNodes());</span>
+<span class="fc" id="L247">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

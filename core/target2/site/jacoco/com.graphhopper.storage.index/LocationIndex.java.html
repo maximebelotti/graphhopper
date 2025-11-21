@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LocationIndex.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage.index</a> &gt; <span class="el_source">LocationIndex.java</span></div><h1>LocationIndex.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage.index;
+
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.util.shapes.BBox;
+
+/**
+ * Provides a way to map real world data &quot;lat,lon&quot; to internal ids/indices of a memory efficient graph
+ * - often just implemented as an array.
+ * &lt;p&gt;
+ * The implementations of findID needs to be thread safe!
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public interface LocationIndex {
+
+    /**
+     * This method returns the closest Snap for the specified location (lat, lon) and only if
+     * the filter accepts the edge as valid candidate (e.g. filtering away car-only results for bike
+     * search)
+     * &lt;p&gt;
+     *
+     * @param edgeFilter if a graph supports multiple vehicles we have to make sure that the entry
+     *                   node into the graph is accessible from a selected vehicle. E.g. if you have a FOOT-query do:
+     *                   &lt;pre&gt;AccessFilter.allEdges(footFlagEncoder);&lt;/pre&gt;
+     * @return An object containing the closest node and edge for the specified location. The node id
+     * has at least one edge which is accepted by the specified edgeFilter. If nothing is found
+     * the method Snap.isValid will return false.
+     */
+    Snap findClosest(double lat, double lon, EdgeFilter edgeFilter);
+
+    /**
+     * This method explores the LocationIndex with the specified Visitor. It visits only the stored edges (and only once)
+     * and limited by the queryBBox. Also (a few) more edges slightly outside of queryBBox could be
+     * returned that you can avoid via doing an explicit BBox check of the coordinates.
+     */
+    default void query(BBox queryBBox, Visitor function) {
+<span class="fc" id="L55">        query(createBBoxTileFilter(queryBBox), function);</span>
+<span class="fc" id="L56">    }</span>
+
+    void query(TileFilter tileFilter, Visitor function);
+
+    void close();
+
+
+    interface TileFilter {
+
+        /**
+         * @return true if all edges within the given bounding box shall be accepted
+         */
+        boolean acceptAll(BBox tile);
+
+        /**
+         * @return true if edges within the given bounding box shall potentially be accepted. In this
+         * case the tile filter will be applied again for smaller bounding boxes on a lower level.
+         * If this is the lowest level already simply all edges will be accepted.
+         */
+        boolean acceptPartially(BBox tile);
+    }
+
+    static TileFilter createBBoxTileFilter(BBox queryBBox) {
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        return queryBBox == null ? null : new TileFilter() {</span>
+            @Override
+            public boolean acceptAll(BBox tile) {
+<span class="fc" id="L82">                return queryBBox.contains(tile);</span>
+            }
+
+            @Override
+            public boolean acceptPartially(BBox tile) {
+<span class="fc" id="L87">                return queryBBox.intersects(tile);</span>
+            }
+        };
+    }
+
+    /**
+     * This interface allows to visit edges stored in the LocationIndex.
+     */
+    @FunctionalInterface
+    interface Visitor {
+
+        void onEdge(int edgeId);
+
+        default boolean isTileInfo() {
+<span class="fc" id="L101">            return false;</span>
+        }
+
+        /**
+         * This method is called if isTileInfo returns true.
+         */
+        default void onTile(BBox bbox, int depth) {
+<span class="nc" id="L108">        }</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

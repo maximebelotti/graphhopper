@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BalancedWeightApproximator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting</a> &gt; <span class="el_source">BalancedWeightApproximator.java</span></div><h1>BalancedWeightApproximator.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.weighting;
+
+/**
+ * Turns an unidirectional weight Approximation into a bidirectional balanced one.
+ * This means it can be used with an A* implementation that uses the stopping criterion
+ * described in [1].
+ *
+ * Note: In the paper, it is called a consistent (rather than balanced)
+ * approximator, but as noted in [2], consistent also means a different property which
+ * an approximator must already have before it should be plugged into this class (!).
+ *
+ * Most literature uses balanced for the property that this class is about.
+ *
+ * &lt;p&gt;
+ * [1] Ikeda, T., Hsu, M.-Y., Imai, H., Nishimura, S., Shimoura, H., Hashimoto, T., Tenmoku, K., and
+ * Mitoh, K. (1994). A fast algorithm for finding better routes by ai search techniques. In VNIS,
+ * pages 291–296.
+ *
+ * [2] Pijls, W.H.L.M, &amp;amp; Post, H. (2008). A new bidirectional algorithm for shortest paths (No. EI 2008-25).
+ * Report / Econometric Institute, Erasmus University Rotterdam
+ *
+ * @author jansoe
+ * @author Peter Karich
+ */
+public class BalancedWeightApproximator {
+
+    private final WeightApproximator uniDirApproximatorForward, uniDirApproximatorReverse;
+
+    // Constants to shift the estimate (reverse estimate) so that it is actually 0 at the destination (source).
+    double fromOffset, toOffset;
+
+<span class="fc" id="L49">    public BalancedWeightApproximator(WeightApproximator weightApprox) {</span>
+<span class="pc bpc" id="L50" title="1 of 2 branches missed.">        if (weightApprox == null)</span>
+<span class="nc" id="L51">            throw new IllegalArgumentException(&quot;WeightApproximator cannot be null&quot;);</span>
+
+<span class="fc" id="L53">        uniDirApproximatorForward = weightApprox;</span>
+<span class="fc" id="L54">        uniDirApproximatorReverse = weightApprox.reverse();</span>
+<span class="fc" id="L55">    }</span>
+
+    public WeightApproximator getApproximation() {
+<span class="nc" id="L58">        return uniDirApproximatorForward;</span>
+    }
+
+    public void setFromTo(int from, int to) {
+<span class="fc" id="L62">        uniDirApproximatorReverse.setTo(from);</span>
+<span class="fc" id="L63">        uniDirApproximatorForward.setTo(to);</span>
+<span class="fc" id="L64">        fromOffset = 0.5 * uniDirApproximatorForward.approximate(from);</span>
+<span class="fc" id="L65">        toOffset = 0.5 * uniDirApproximatorReverse.approximate(to);</span>
+<span class="fc" id="L66">    }</span>
+
+    public double approximate(int node, boolean reverse) {
+<span class="fc" id="L69">        double weightApproximation = 0.5 * (uniDirApproximatorForward.approximate(node) - uniDirApproximatorReverse.approximate(node));</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        if (reverse) {</span>
+<span class="fc" id="L71">            return fromOffset - weightApproximation;</span>
+        } else {
+<span class="fc" id="L73">            return toOffset + weightApproximation;</span>
+        }
+    }
+
+    public double getSlack() {
+<span class="fc" id="L78">        return uniDirApproximatorForward.getSlack();</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L83">        return uniDirApproximatorForward.toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

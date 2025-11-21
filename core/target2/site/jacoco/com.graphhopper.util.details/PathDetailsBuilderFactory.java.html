@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PathDetailsBuilderFactory.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util.details</a> &gt; <span class="el_source">PathDetailsBuilderFactory.java</span></div><h1>PathDetailsBuilderFactory.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util.details;
+
+import com.graphhopper.routing.Path;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static com.graphhopper.util.Parameters.Details.*;
+
+/**
+ * Generates a list of PathDetailsBuilder from a List of PathDetail names
+ *
+ * @author Robin Boldt
+ */
+<span class="fc" id="L35">public class PathDetailsBuilderFactory {</span>
+
+    public List&lt;PathDetailsBuilder&gt; createPathDetailsBuilders(List&lt;String&gt; requestedPathDetails, Path path, EncodedValueLookup evl, Weighting weighting, Graph graph) {
+<span class="fc" id="L38">        List&lt;PathDetailsBuilder&gt; builders = new ArrayList&lt;&gt;();</span>
+
+<span class="pc bpc" id="L40" title="1 of 2 branches missed.">        if (requestedPathDetails.contains(LEG_TIME))</span>
+<span class="nc" id="L41">            builders.add(new ConstantDetailsBuilder(LEG_TIME, path.getTime()));</span>
+<span class="fc bfc" id="L42" title="All 2 branches covered.">        if (requestedPathDetails.contains(LEG_DISTANCE))</span>
+<span class="fc" id="L43">            builders.add(new ConstantDetailsBuilder(LEG_DISTANCE, path.getDistance()));</span>
+<span class="pc bpc" id="L44" title="1 of 2 branches missed.">        if (requestedPathDetails.contains(LEG_WEIGHT))</span>
+<span class="nc" id="L45">            builders.add(new ConstantDetailsBuilder(LEG_WEIGHT, path.getWeight()));</span>
+
+<span class="fc bfc" id="L47" title="All 2 branches covered.">        for (String key : requestedPathDetails) {</span>
+<span class="fc bfc" id="L48" title="All 2 branches covered.">            if (key.endsWith(&quot;_conditional&quot;))</span>
+<span class="fc" id="L49">                builders.add(new KVStringDetails(key));</span>
+<span class="fc" id="L50">        }</span>
+
+<span class="pc bpc" id="L52" title="1 of 2 branches missed.">        if (requestedPathDetails.contains(MOTORWAY_JUNCTION))</span>
+<span class="nc" id="L53">            builders.add(new KVStringDetails(MOTORWAY_JUNCTION));</span>
+<span class="fc bfc" id="L54" title="All 2 branches covered.">        if (requestedPathDetails.contains(STREET_NAME))</span>
+<span class="fc" id="L55">            builders.add(new KVStringDetails(STREET_NAME));</span>
+<span class="fc bfc" id="L56" title="All 2 branches covered.">        if (requestedPathDetails.contains(STREET_REF))</span>
+<span class="fc" id="L57">            builders.add(new KVStringDetails(STREET_REF));</span>
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">        if (requestedPathDetails.contains(STREET_DESTINATION))</span>
+<span class="nc" id="L59">            builders.add(new KVStringDetails(STREET_DESTINATION));</span>
+
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        if (requestedPathDetails.contains(AVERAGE_SPEED))</span>
+<span class="fc" id="L62">            builders.add(new AverageSpeedDetails(weighting));</span>
+
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        if (requestedPathDetails.contains(EDGE_ID))</span>
+<span class="fc" id="L65">            builders.add(new EdgeIdDetails());</span>
+
+<span class="fc bfc" id="L67" title="All 2 branches covered.">        if (requestedPathDetails.contains(EDGE_KEY))</span>
+<span class="fc" id="L68">            builders.add(new EdgeKeyDetails());</span>
+
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        if (requestedPathDetails.contains(TIME))</span>
+<span class="fc" id="L71">            builders.add(new TimeDetails(weighting));</span>
+
+<span class="pc bpc" id="L73" title="1 of 2 branches missed.">        if (requestedPathDetails.contains(WEIGHT))</span>
+<span class="nc" id="L74">            builders.add(new WeightDetails(weighting));</span>
+
+<span class="fc bfc" id="L76" title="All 2 branches covered.">        if (requestedPathDetails.contains(DISTANCE))</span>
+<span class="fc" id="L77">            builders.add(new DistanceDetails());</span>
+
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (requestedPathDetails.contains(INTERSECTION))</span>
+<span class="fc" id="L80">            builders.add(new IntersectionDetails(graph, weighting));</span>
+
+<span class="fc bfc" id="L82" title="All 2 branches covered.">        for (String pathDetail : requestedPathDetails) {</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">            if (!evl.hasEncodedValue(pathDetail))</span>
+<span class="fc" id="L84">                continue; // path details like &quot;time&quot; won't be found</span>
+
+<span class="fc" id="L86">            EncodedValue ev = evl.getEncodedValue(pathDetail, EncodedValue.class);</span>
+<span class="fc bfc" id="L87" title="All 2 branches covered.">            if (ev instanceof DecimalEncodedValue)</span>
+<span class="fc" id="L88">                builders.add(new DecimalDetails(pathDetail, (DecimalEncodedValue) ev));</span>
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">            else if (ev instanceof BooleanEncodedValue)</span>
+<span class="nc" id="L90">                builders.add(new BooleanDetails(pathDetail, (BooleanEncodedValue) ev));</span>
+<span class="pc bpc" id="L91" title="1 of 2 branches missed.">            else if (ev instanceof EnumEncodedValue)</span>
+<span class="fc" id="L92">                builders.add(new EnumDetails&lt;&gt;(pathDetail, (EnumEncodedValue) ev));</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">            else if (ev instanceof StringEncodedValue)</span>
+<span class="nc" id="L94">                builders.add(new StringDetails(pathDetail, (StringEncodedValue) ev));</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">            else if (ev instanceof IntEncodedValue)</span>
+<span class="nc" id="L96">                builders.add(new IntDetails(pathDetail, (IntEncodedValue) ev));</span>
+            else
+<span class="nc" id="L98">                throw new IllegalArgumentException(&quot;unknown EncodedValue class &quot; + ev.getClass().getName());</span>
+<span class="fc" id="L99">        }</span>
+
+<span class="fc bfc" id="L101" title="All 2 branches covered.">        if (requestedPathDetails.size() &gt; builders.size()) {</span>
+<span class="fc" id="L102">            ArrayList&lt;String&gt; clonedArr = new ArrayList&lt;&gt;(requestedPathDetails); // avoid changing request parameter</span>
+<span class="pc bpc" id="L103" title="1 of 2 branches missed.">            for (PathDetailsBuilder pdb : builders) clonedArr.remove(pdb.getName());</span>
+<span class="fc" id="L104">            throw new IllegalArgumentException(&quot;Cannot find the path details: &quot; + clonedArr);</span>
+<span class="pc bpc" id="L105" title="1 of 2 branches missed.">        } else if (requestedPathDetails.size() &lt; builders.size())</span>
+<span class="nc" id="L106">            throw new IllegalStateException(&quot;It should not happen that there are more path details added &quot; + builders + &quot; than requested &quot; + requestedPathDetails);</span>
+
+<span class="fc" id="L108">        return builders;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

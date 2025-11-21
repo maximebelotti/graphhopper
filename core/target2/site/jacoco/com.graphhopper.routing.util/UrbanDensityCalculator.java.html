@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>UrbanDensityCalculator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util</a> &gt; <span class="el_source">UrbanDensityCalculator.java</span></div><h1>UrbanDensityCalculator.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.util;
+
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.StopWatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.function.ToDoubleFunction;
+
+<span class="nc" id="L30">public class UrbanDensityCalculator {</span>
+<span class="nc" id="L31">    private static final Logger logger = LoggerFactory.getLogger(UrbanDensityCalculator.class);</span>
+
+    /**
+     * Calculates the urban density (rural/residential/city) for all edges of the graph.
+     * First a weighted road density is calculated for every edge to determine whether it belongs to a residential area.
+     * In a second step very dense residential areas are classified as 'city'.
+     *
+     * @param residentialAreaRadius      radius used for residential area calculation in meters
+     * @param residentialAreaSensitivity Use higher values if there are too many residential areas that are not recognized. Use
+     *                                   smaller values if there are too many non-residential areas that are classified as residential.
+     * @param cityAreaRadius             in meters, see residentialAreaRadius
+     * @param cityAreaSensitivity        similar to residentialAreaSensitivity, but for the city classification
+     * @param threads                    number of threads used to calculate the road densities
+     */
+    public static void calcUrbanDensity(Graph graph, EnumEncodedValue&lt;UrbanDensity&gt; urbanDensityEnc,
+                                        EnumEncodedValue&lt;RoadClass&gt; roadClassEnc, BooleanEncodedValue roadClassLinkEnc,
+                                        double residentialAreaRadius, double residentialAreaSensitivity,
+                                        double cityAreaRadius, double cityAreaSensitivity,
+                                        int threads) {
+<span class="nc" id="L50">        logger.info(&quot;Calculating residential areas ..., radius={}, sensitivity={}, threads={}&quot;, residentialAreaRadius, residentialAreaSensitivity, threads);</span>
+<span class="nc" id="L51">        StopWatch sw = StopWatch.started();</span>
+<span class="nc" id="L52">        calcResidential(graph, urbanDensityEnc, roadClassEnc, roadClassLinkEnc, residentialAreaRadius, residentialAreaSensitivity, threads);</span>
+<span class="nc" id="L53">        logger.info(&quot;Finished calculating residential areas, took: &quot; + sw.stop().getSeconds() + &quot;s&quot;);</span>
+<span class="nc bnc" id="L54" title="All 2 branches missed.">        if (cityAreaRadius &gt; 1) {</span>
+<span class="nc" id="L55">            logger.info(&quot;Calculating city areas ..., radius={}, sensitivity={}, threads={}&quot;, cityAreaRadius, cityAreaSensitivity, threads);</span>
+<span class="nc" id="L56">            sw = StopWatch.started();</span>
+<span class="nc" id="L57">            calcCity(graph, urbanDensityEnc, cityAreaRadius, cityAreaSensitivity, threads);</span>
+<span class="nc" id="L58">            logger.info(&quot;Finished calculating city areas, took: &quot; + sw.stop().getSeconds() + &quot;s&quot;);</span>
+        }
+<span class="nc" id="L60">    }</span>
+
+    private static void calcResidential(Graph graph, EnumEncodedValue&lt;UrbanDensity&gt; urbanDensityEnc,
+                                        EnumEncodedValue&lt;RoadClass&gt; roadClassEnc, BooleanEncodedValue roadClassLinkEnc,
+                                        double radius, double sensitivity, int threads) {
+<span class="nc" id="L65">        final ToDoubleFunction&lt;EdgeIteratorState&gt; calcRoadFactor = edge -&gt; {</span>
+<span class="nc" id="L66">            RoadClass roadClass = edge.get(roadClassEnc);</span>
+            // we're interested in the road density of 'urban' roads, so dense road clusters of outdoor
+            // roads like tracks or paths and road class links should not contribute to the residential density
+<span class="nc bnc" id="L69" title="All 10 branches missed.">            if (edge.get(roadClassLinkEnc) ||</span>
+                    roadClass == RoadClass.TRACK ||
+                    roadClass == RoadClass.SERVICE ||
+                    roadClass == RoadClass.PATH ||
+                    roadClass == RoadClass.BRIDLEWAY)
+<span class="nc" id="L74">                return 0;</span>
+            else
+<span class="nc" id="L76">                return 1;</span>
+        };
+        // temporarily write results to an external array for thread-safety
+<span class="nc" id="L79">        boolean[] isResidential = new boolean[graph.getEdges()];</span>
+<span class="nc" id="L80">        RoadDensityCalculator.calcRoadDensities(graph, (calculator, edge) -&gt; {</span>
+<span class="nc" id="L81">            double roadDensity = calculator.calcRoadDensity(edge, radius, calcRoadFactor);</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">            isResidential[edge.getEdge()] = roadDensity * sensitivity &gt;= 1.0;</span>
+<span class="nc" id="L83">        }, threads);</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">        for (int edge = 0; edge &lt; isResidential.length; edge++)</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">            graph.getEdgeIteratorState(edge, Integer.MIN_VALUE).set(urbanDensityEnc, isResidential[edge] ? UrbanDensity.RESIDENTIAL : UrbanDensity.RURAL);</span>
+<span class="nc" id="L86">    }</span>
+
+    private static void calcCity(Graph graph, EnumEncodedValue&lt;UrbanDensity&gt; urbanDensityEnc,
+                                 double radius, double sensitivity, int threads) {
+        // do not modify the urban density values as long as we are still reading them -&gt; store city flags in this array first
+<span class="nc" id="L91">        boolean[] isCity = new boolean[graph.getEdges()];</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">        final ToDoubleFunction&lt;EdgeIteratorState&gt; calcRoadFactor = edge -&gt; edge.get(urbanDensityEnc) == UrbanDensity.RESIDENTIAL ? 1 : 0;</span>
+<span class="nc" id="L93">        RoadDensityCalculator.calcRoadDensities(graph, (calculator, edge) -&gt; {</span>
+<span class="nc" id="L94">            UrbanDensity urbanDensity = edge.get(urbanDensityEnc);</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">            if (urbanDensity == UrbanDensity.RURAL)</span>
+<span class="nc" id="L96">                return;</span>
+<span class="nc" id="L97">            double roadDensity = calculator.calcRoadDensity(edge, radius, calcRoadFactor);</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">            if (roadDensity * sensitivity &gt;= 1.0)</span>
+<span class="nc" id="L99">                isCity[edge.getEdge()] = true;</span>
+<span class="nc" id="L100">        }, threads);</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">        for (int edge = 0; edge &lt; isCity.length; edge++)</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">            if (isCity[edge])</span>
+<span class="nc" id="L103">                graph.getEdgeIteratorState(edge, Integer.MIN_VALUE).set(urbanDensityEnc, UrbanDensity.CITY);</span>
+<span class="nc" id="L104">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

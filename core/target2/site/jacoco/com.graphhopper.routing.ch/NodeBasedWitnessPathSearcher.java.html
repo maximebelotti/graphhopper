@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NodeBasedWitnessPathSearcher.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ch</a> &gt; <span class="el_source">NodeBasedWitnessPathSearcher.java</span></div><h1>NodeBasedWitnessPathSearcher.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ch;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.cursors.IntCursor;
+import com.graphhopper.apache.commons.collections.IntFloatBinaryHeap;
+import com.graphhopper.util.Helper;
+
+import java.util.Arrays;
+
+/**
+ * Used to perform witness searches during node-based CH preparation. Witness searches at node B determine if there is a
+ * path between two neighbor nodes A and C when we exclude B and check if this path is shorter than or equal to A-B-C.
+ */
+public class NodeBasedWitnessPathSearcher {
+    private final PrepareGraphEdgeExplorer outEdgeExplorer;
+    private final double[] weights;
+    private final IntArrayList changedNodes;
+    private final IntFloatBinaryHeap heap;
+<span class="fc" id="L36">    private int ignoreNode = -1;</span>
+<span class="fc" id="L37">    private int settledNodes = 0;</span>
+
+<span class="fc" id="L39">    public NodeBasedWitnessPathSearcher(CHPreparationGraph graph) {</span>
+<span class="fc" id="L40">        outEdgeExplorer = graph.createOutEdgeExplorer();</span>
+<span class="fc" id="L41">        weights = new double[graph.getNodes()];</span>
+<span class="fc" id="L42">        Arrays.fill(weights, Double.POSITIVE_INFINITY);</span>
+<span class="fc" id="L43">        heap = new IntFloatBinaryHeap(1000);</span>
+<span class="fc" id="L44">        changedNodes = new IntArrayList();</span>
+<span class="fc" id="L45">    }</span>
+
+    /**
+     * Sets up a search for given start node and an ignored node. The shortest path tree will be re-used for different
+     * target nodes until this method is called again.
+     */
+    public void init(int startNode, int ignoreNode) {
+<span class="fc" id="L52">        reset();</span>
+<span class="fc" id="L53">        this.ignoreNode = ignoreNode;</span>
+<span class="fc" id="L54">        weights[startNode] = 0;</span>
+<span class="fc" id="L55">        changedNodes.add(startNode);</span>
+<span class="fc" id="L56">        heap.insert(0, startNode);</span>
+<span class="fc" id="L57">    }</span>
+
+    /**
+     * Runs or continues a Dijkstra search starting at the startNode and ignoring the ignoreNode given in init().
+     * If the shortest path is found we return its weight. However, this method also returns early if any path was
+     * found for which the weight is below or equal to the given acceptedWeight, or the given maximum number of settled
+     * nodes is exceeded. In these cases the returned weight can be larger than the actual weight of the shortest path.
+     * In any case we get an upper bound for the real shortest path weight.
+     *
+     * @param targetNode      the target of the search. if this node is settled we return the weight of the shortest path
+     * @param acceptedWeight  once we find a path with weight smaller than or equal to this we return the weight. the
+     *                        returned weight might be larger than the weight of the real shortest path. if there is
+     *                        no path with weight smaller than or equal to this we stop the search and return the best
+     *                        path we found.
+     * @param maxSettledNodes once the number of settled nodes exceeds this number we return the currently found best
+     *                        weight path. in this case we might not have found a path at all.
+     * @return the weight of the found path or {@link Double#POSITIVE_INFINITY} if no path was found
+     */
+    public double findUpperBound(int targetNode, double acceptedWeight, int maxSettledNodes) {
+        // todo: for historic reasons we count the number of settled nodes for each call of this method
+        //       *not* the total number of settled nodes since starting the search (which corresponds
+        //       to the size of the settled part of the shortest path tree). it's probably worthwhile
+        //       to change this in the future.
+<span class="fc bfc" id="L80" title="All 6 branches covered.">        while (!heap.isEmpty() &amp;&amp; settledNodes &lt; maxSettledNodes &amp;&amp; heap.peekKey() &lt;= acceptedWeight) {</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">            if (weights[targetNode] &lt;= acceptedWeight)</span>
+                // we found *a* path to the target node (not necessarily the shortest), and the weight is acceptable, so we stop
+<span class="fc" id="L83">                return weights[targetNode];</span>
+<span class="fc" id="L84">            int node = heap.poll();</span>
+<span class="fc" id="L85">            PrepareGraphEdgeIterator iter = outEdgeExplorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">            while (iter.next()) {</span>
+<span class="fc" id="L87">                int adjNode = iter.getAdjNode();</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">                if (adjNode == ignoreNode)</span>
+<span class="fc" id="L89">                    continue;</span>
+<span class="fc" id="L90">                double weight = weights[node] + iter.getWeight();</span>
+<span class="pc bpc" id="L91" title="1 of 2 branches missed.">                if (Double.isInfinite(weight))</span>
+<span class="nc" id="L92">                    continue;</span>
+<span class="fc" id="L93">                double adjWeight = weights[adjNode];</span>
+<span class="fc bfc" id="L94" title="All 2 branches covered.">                if (adjWeight == Double.POSITIVE_INFINITY) {</span>
+<span class="fc" id="L95">                    weights[adjNode] = weight;</span>
+<span class="fc" id="L96">                    heap.insert(weight, adjNode);</span>
+<span class="fc" id="L97">                    changedNodes.add(adjNode);</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">                } else if (weight &lt; adjWeight) {</span>
+<span class="fc" id="L99">                    weights[adjNode] = weight;</span>
+<span class="fc" id="L100">                    heap.update(weight, adjNode);</span>
+                }
+<span class="fc" id="L102">            }</span>
+<span class="fc" id="L103">            settledNodes++;</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">            if (node == targetNode)</span>
+                // we have settled the target node, we now know the exact weight of the shortest path and return
+<span class="fc" id="L106">                return weights[node];</span>
+<span class="fc" id="L107">        }</span>
+
+<span class="fc" id="L109">        return weights[targetNode];</span>
+    }
+
+    public int getSettledNodes() {
+<span class="fc" id="L113">        return settledNodes;</span>
+    }
+
+    private void reset() {
+<span class="fc bfc" id="L117" title="All 2 branches covered.">        for (IntCursor c : changedNodes)</span>
+<span class="fc" id="L118">            weights[c.value] = Double.POSITIVE_INFINITY;</span>
+<span class="fc" id="L119">        changedNodes.elementsCount = 0;</span>
+<span class="fc" id="L120">        heap.clear();</span>
+<span class="fc" id="L121">        ignoreNode = -1;</span>
+<span class="fc" id="L122">        settledNodes = 0;</span>
+<span class="fc" id="L123">    }</span>
+
+    /**
+     * @return currently used memory in MB (approximately)
+     */
+    public String getMemoryUsageAsString() {
+<span class="fc" id="L129">        return (8L * weights.length</span>
+                + changedNodes.buffer.length * 4L
+<span class="fc" id="L131">                + heap.getMemoryUsage()</span>
+        ) / Helper.MB + &quot;MB&quot;;
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

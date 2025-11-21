@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.graphhopper.routing.RandomizedRoutingTest
+-------------------------------------------------------------------------------
+Tests run: 150, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.373 s - in com.graphhopper.routing.RandomizedRoutingTest

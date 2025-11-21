@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EdgeRestrictions.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">EdgeRestrictions.java</span></div><h1>EdgeRestrictions.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.IntArrayList;
+
+import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
+
+<span class="fc" id="L25">public class EdgeRestrictions {</span>
+<span class="fc" id="L26">    private int sourceOutEdge = ANY_EDGE;</span>
+<span class="fc" id="L27">    private int targetInEdge = ANY_EDGE;</span>
+<span class="fc" id="L28">    private final IntArrayList unfavoredEdges = IntArrayList.from();</span>
+
+    public int getSourceOutEdge() {
+<span class="fc" id="L31">        return sourceOutEdge;</span>
+    }
+
+    public void setSourceOutEdge(int sourceOutEdge) {
+<span class="fc" id="L35">        this.sourceOutEdge = sourceOutEdge;</span>
+<span class="fc" id="L36">    }</span>
+
+    public int getTargetInEdge() {
+<span class="fc" id="L39">        return targetInEdge;</span>
+    }
+
+    public void setTargetInEdge(int targetInEdge) {
+<span class="fc" id="L43">        this.targetInEdge = targetInEdge;</span>
+<span class="fc" id="L44">    }</span>
+
+    public IntArrayList getUnfavoredEdges() {
+<span class="fc" id="L47">        return unfavoredEdges;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

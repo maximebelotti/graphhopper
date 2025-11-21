@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Constants.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">Constants.java</span></div><h1>Constants.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import com.graphhopper.GraphHopper;
+
+import java.io.InputStreamReader;
+import java.util.List;
+import java.util.StringTokenizer;
+
+import static com.graphhopper.util.Helper.*;
+
+/**
+ * Defining several important constants for GraphHopper. Partially taken from Lucene.
+ */
+<span class="nc" id="L31">public class Constants {</span>
+    /**
+     * The value of &lt;code&gt;System.getProperty(&quot;java.version&quot;)&lt;/code&gt;. *
+     */
+<span class="fc" id="L35">    public static final String JAVA_VERSION = System.getProperty(&quot;java.version&quot;);</span>
+
+    /**
+     * The value of &lt;code&gt;System.getProperty(&quot;os.name&quot;)&lt;/code&gt;. *
+     */
+<span class="fc" id="L40">    public static final String OS_NAME = System.getProperty(&quot;os.name&quot;);</span>
+    /**
+     * True iff running on Linux.
+     */
+<span class="fc" id="L44">    public static final boolean LINUX = OS_NAME.startsWith(&quot;Linux&quot;);</span>
+    /**
+     * True iff running on Windows.
+     */
+<span class="fc" id="L48">    public static final boolean WINDOWS = OS_NAME.startsWith(&quot;Windows&quot;);</span>
+    /**
+     * True iff running on Mac OS X
+     */
+<span class="fc" id="L52">    public static final boolean MAC_OS_X = OS_NAME.startsWith(&quot;Mac OS X&quot;);</span>
+<span class="fc" id="L53">    public static final String OS_ARCH = System.getProperty(&quot;os.arch&quot;);</span>
+<span class="fc" id="L54">    public static final String OS_VERSION = System.getProperty(&quot;os.version&quot;);</span>
+<span class="fc" id="L55">    public static final String JAVA_VENDOR = System.getProperty(&quot;java.vendor&quot;);</span>
+<span class="fc" id="L56">    public static final String JVM_SPEC_VERSION = System.getProperty(&quot;java.specification.version&quot;);</span>
+    public static final boolean JRE_IS_MINIMUM_JAVA9;
+    private static final int JVM_MAJOR_VERSION;
+    private static final int JVM_MINOR_VERSION;
+
+    public static final int VERSION_NODE = 9;
+    public static final int VERSION_EDGE = 24;
+    // this should be increased whenever the format of the serialized EncodingManager is changed
+    public static final int VERSION_EM = 4;
+    public static final int VERSION_SHORTCUT = 9;
+    public static final int VERSION_NODE_CH = 0;
+    public static final int VERSION_GEOMETRY = 7;
+    public static final int VERSION_TURN_COSTS = 0;
+    public static final int VERSION_LOCATION_IDX = 5;
+    public static final int VERSION_KV_STORAGE = 2;
+    /**
+     * The version without the snapshot string
+     */
+    public static final String VERSION;
+    public static final String BUILD_DATE;
+    /**
+     * Details about the git commit this artifact was built for, can be null (if not built using maven)
+     */
+    public static final GitInfo GIT_INFO;
+    public static final boolean SNAPSHOT;
+
+    static {
+<span class="fc" id="L83">        final StringTokenizer st = new StringTokenizer(JVM_SPEC_VERSION, &quot;.&quot;);</span>
+<span class="fc" id="L84">        JVM_MAJOR_VERSION = Integer.parseInt(st.nextToken());</span>
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">        if (st.hasMoreTokens()) {</span>
+<span class="nc" id="L86">            JVM_MINOR_VERSION = Integer.parseInt(st.nextToken());</span>
+        } else {
+<span class="fc" id="L88">            JVM_MINOR_VERSION = 0;</span>
+        }
+<span class="pc bpc" id="L90" title="5 of 6 branches missed.">        JRE_IS_MINIMUM_JAVA9 = JVM_MAJOR_VERSION &gt; 1 || (JVM_MAJOR_VERSION == 1 &amp;&amp; JVM_MINOR_VERSION &gt;= 9);</span>
+
+<span class="fc" id="L92">        String version = &quot;0.0&quot;;</span>
+        try {
+            // see com/graphhopper/version file in resources which is modified in the maven packaging process
+            // to contain the current version
+<span class="fc" id="L96">            List&lt;String&gt; v = readFile(new InputStreamReader(GraphHopper.class.getResourceAsStream(&quot;version&quot;), UTF_CS));</span>
+<span class="fc" id="L97">            version = v.get(0);</span>
+<span class="nc" id="L98">        } catch (Exception ex) {</span>
+<span class="nc" id="L99">            System.err.println(&quot;GraphHopper Initialization ERROR: cannot read version!? &quot; + ex.getMessage());</span>
+<span class="fc" id="L100">        }</span>
+<span class="fc" id="L101">        int indexM = version.indexOf(&quot;-&quot;);</span>
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">        if (&quot;${project.version}&quot;.equals(version)) {</span>
+<span class="nc" id="L103">            VERSION = &quot;0.0&quot;;</span>
+<span class="nc" id="L104">            SNAPSHOT = true;</span>
+<span class="nc" id="L105">            System.err.println(&quot;GraphHopper Initialization WARNING: maven did not preprocess the version file! Do not use the jar for a release!&quot;);</span>
+<span class="pc bpc" id="L106" title="1 of 2 branches missed.">        } else if (&quot;0.0&quot;.equals(version)) {</span>
+<span class="nc" id="L107">            VERSION = &quot;0.0&quot;;</span>
+<span class="nc" id="L108">            SNAPSHOT = true;</span>
+<span class="nc" id="L109">            System.err.println(&quot;GraphHopper Initialization WARNING: cannot get version!?&quot;);</span>
+        } else {
+<span class="fc" id="L111">            String tmp = version;</span>
+            // throw away the &quot;-SNAPSHOT&quot;
+<span class="pc bpc" id="L113" title="1 of 2 branches missed.">            if (indexM &gt;= 0)</span>
+<span class="fc" id="L114">                tmp = version.substring(0, indexM);</span>
+
+<span class="fc" id="L116">            SNAPSHOT = toLowerCase(version).contains(&quot;-snapshot&quot;);</span>
+<span class="fc" id="L117">            VERSION = tmp;</span>
+        }
+<span class="fc" id="L119">        String buildDate = &quot;&quot;;</span>
+        try {
+<span class="fc" id="L121">            List&lt;String&gt; v = readFile(new InputStreamReader(GraphHopper.class.getResourceAsStream(&quot;builddate&quot;), UTF_CS));</span>
+<span class="fc" id="L122">            buildDate = v.get(0);</span>
+<span class="nc" id="L123">        } catch (Exception ex) {</span>
+<span class="fc" id="L124">        }</span>
+<span class="fc" id="L125">        BUILD_DATE = buildDate;</span>
+
+<span class="fc" id="L127">        List&lt;String&gt; gitInfos = null;</span>
+        try {
+<span class="fc" id="L129">            gitInfos = readFile(new InputStreamReader(GraphHopper.class.getResourceAsStream(&quot;gitinfo&quot;), UTF_CS));</span>
+<span class="pc bpc" id="L130" title="1 of 2 branches missed.">            if (gitInfos.size() != 6) {</span>
+<span class="nc" id="L131">                System.err.println(&quot;GraphHopper Initialization WARNING: unexpected git info: &quot; + gitInfos.toString());</span>
+<span class="nc" id="L132">                gitInfos = null;</span>
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">            } else if (gitInfos.get(1).startsWith(&quot;$&quot;)) {</span>
+<span class="nc" id="L134">                gitInfos = null;</span>
+            }
+<span class="nc" id="L136">        } catch (Exception ex) {</span>
+<span class="fc" id="L137">        }</span>
+<span class="pc bpc" id="L138" title="1 of 2 branches missed.">        GIT_INFO = gitInfos == null ? null : new GitInfo(gitInfos.get(1), gitInfos.get(2), gitInfos.get(3), gitInfos.get(4), Boolean.parseBoolean(gitInfos.get(5)));</span>
+<span class="fc" id="L139">    }</span>
+
+    public static String getVersions() {
+<span class="fc" id="L142">        return VERSION_NODE + &quot;,&quot; + VERSION_EDGE + &quot;,&quot; + VERSION_GEOMETRY + &quot;,&quot; + VERSION_LOCATION_IDX</span>
+                + &quot;,&quot; + VERSION_KV_STORAGE + &quot;,&quot; + VERSION_SHORTCUT;
+    }
+
+    public static String getMajorVersion() {
+<span class="nc" id="L147">        int firstIdx = VERSION.indexOf(&quot;.&quot;);</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">        if (firstIdx &lt; 0)</span>
+<span class="nc" id="L149">            throw new IllegalStateException(&quot;Cannot extract major version from version &quot; + VERSION);</span>
+
+<span class="nc" id="L151">        int sndIdx = VERSION.indexOf(&quot;.&quot;, firstIdx + 1);</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">        if (sndIdx &lt; 0)</span>
+<span class="nc" id="L153">            return VERSION;</span>
+<span class="nc" id="L154">        return VERSION.substring(0, sndIdx);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Triangulation.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.isochrone.algorithm</a> &gt; <span class="el_source">Triangulation.java</span></div><h1>Triangulation.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.isochrone.algorithm;
+
+import com.carrotsearch.hppc.IntObjectHashMap;
+import org.locationtech.jts.triangulate.quadedge.QuadEdge;
+import org.locationtech.jts.triangulate.quadedge.Vertex;
+import org.locationtech.jts.util.Assert;
+
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+<span class="fc" id="L31">public class Triangulation {</span>
+
+<span class="fc" id="L33">    Map&lt;String, QuadEdge&gt; edges = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L34">    IntObjectHashMap&lt;Vertex&gt; vertices = new IntObjectHashMap&lt;&gt;();</span>
+
+    public IntObjectHashMap&lt;QuadEdge&gt; getVertexQuadEdges() {
+<span class="nc" id="L37">        return vertexQuadEdges;</span>
+    }
+
+<span class="fc" id="L40">    IntObjectHashMap&lt;QuadEdge&gt; vertexQuadEdges = new IntObjectHashMap&lt;&gt;();</span>
+
+    public QuadEdge getEdge(int o, int d) {
+<span class="fc bfc" id="L43" title="All 2 branches covered.">        if (o &lt; d) {</span>
+<span class="fc" id="L44">            return edges.get(o + &quot;,&quot; + d);</span>
+        } else {
+<span class="fc" id="L46">            QuadEdge quadEdge = edges.get(d + &quot;,&quot; + o);</span>
+<span class="fc bfc" id="L47" title="All 2 branches covered.">            return quadEdge != null ? quadEdge.sym() : null;</span>
+        }
+
+    }
+
+    private void putEdge(int o, int d, QuadEdge quadEdge) {
+<span class="fc" id="L53">        vertexQuadEdges.put(o, quadEdge);</span>
+<span class="fc bfc" id="L54" title="All 2 branches covered.">        if (o &lt; d) {</span>
+<span class="fc" id="L55">            edges.put(o + &quot;,&quot; + d, quadEdge);</span>
+        } else {
+<span class="fc" id="L57">            edges.put(d + &quot;,&quot; + o, quadEdge.sym());</span>
+        }
+<span class="fc" id="L59">    }</span>
+
+    public void makeTriangle(int v1, int v2, int v3) {
+<span class="fc" id="L62">        QuadEdge e1 = getEdge(v1, v2);</span>
+<span class="fc" id="L63">        QuadEdge e2 = getEdge(v2, v3);</span>
+<span class="fc" id="L64">        QuadEdge e3 = getEdge(v3, v1);</span>
+<span class="fc bfc" id="L65" title="All 4 branches covered.">        if (e1 == null &amp;&amp; e2 != null) {</span>
+<span class="fc" id="L66">            makeTriangle(v2, v3, v1, e2, e3, e1);</span>
+<span class="fc bfc" id="L67" title="All 4 branches covered.">        } else if (e2 == null &amp;&amp; e3 != null) {</span>
+<span class="fc" id="L68">            makeTriangle(v3, v1, v2, e3, e1, e2);</span>
+        } else {
+<span class="fc" id="L70">            makeTriangle(v1, v2, v3, e1, e2, e3);</span>
+        }
+<span class="fc" id="L72">    }</span>
+
+    private void makeTriangle(int v1, int v2, int v3, QuadEdge e1, QuadEdge e2, QuadEdge e3) {
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (e1 == null) {</span>
+<span class="fc" id="L76">            e1 = QuadEdge.makeEdge(getVertex(v1), getVertex(v2));</span>
+<span class="fc" id="L77">            putEdge(v1, v2, e1);</span>
+<span class="fc" id="L78">            putEdge(v2, v1, e1.sym());</span>
+        }
+<span class="fc bfc" id="L80" title="All 2 branches covered.">        if (e2 == null) {</span>
+<span class="fc" id="L81">            e2 = QuadEdge.makeEdge(getVertex(v2), getVertex(v3));</span>
+<span class="fc" id="L82">            QuadEdge.splice(e1.lNext(), e2);</span>
+<span class="fc" id="L83">            putEdge(v2, v3, e2);</span>
+<span class="fc" id="L84">            putEdge(v3, v2, e2.sym());</span>
+        }
+<span class="fc bfc" id="L86" title="All 2 branches covered.">        if (e3 == null) {</span>
+<span class="pc bpc" id="L87" title="1 of 2 branches missed.">            if (e1.lNext() == e2) {</span>
+<span class="fc" id="L88">                e3 = QuadEdge.connect(e2, e1);</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">            } else if (e2.lNext() == e1) {</span>
+<span class="nc" id="L90">                throw new RuntimeException();</span>
+            } else {
+<span class="nc" id="L92">                QuadEdge.splice(e1.lNext(), e2);</span>
+<span class="nc" id="L93">                e3 = QuadEdge.connect(e2, e1);</span>
+            }
+<span class="fc" id="L95">            putEdge(v3, v1, e3);</span>
+<span class="fc" id="L96">            putEdge(v1, v3, e3.sym());</span>
+        } else {
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">            if (e1.lNext() != e2) {</span>
+<span class="fc" id="L99">                QuadEdge.splice(e1.lNext(), e2);</span>
+            }
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">            if (e2.lNext() != e3) {</span>
+<span class="nc" id="L102">                QuadEdge.splice(e2.lNext(), e3);</span>
+            }
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">            if (e3.lNext() != e1) {</span>
+<span class="fc" id="L105">                QuadEdge.splice(e3.lNext(), e1);</span>
+            }
+        }
+<span class="fc" id="L108">        assertTriangle(e1, e2, e3);</span>
+<span class="fc" id="L109">    }</span>
+
+    private Vertex getVertex(int v3) {
+<span class="fc" id="L112">        return vertices.get(v3);</span>
+    }
+
+    public IntObjectHashMap&lt;Vertex&gt; getVertices() {
+<span class="fc" id="L116">        return vertices;</span>
+    }
+
+    public Collection&lt;ReadableQuadEdge&gt; getEdges() {
+<span class="fc" id="L120">        return edges.values().stream().map(QuadEdgeAsReadableQuadEdge::new).collect(Collectors.toList());</span>
+    }
+
+    public void assertTriangle(QuadEdge e1, QuadEdge e2, QuadEdge e3) {
+<span class="fc" id="L124">        Assert.equals(e2, e1.lNext());</span>
+<span class="fc" id="L125">        Assert.equals(e3, e2.lNext());</span>
+<span class="fc" id="L126">        Assert.equals(e1, e3.lNext());</span>
+<span class="fc" id="L127">    }</span>
+
+    public void assertTriangle(int v1, int v2, int v3) {
+<span class="nc" id="L130">        assertTriangle(getEdge(v1, v2), getEdge(v2, v3), getEdge(v3, v1));</span>
+<span class="nc" id="L131">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

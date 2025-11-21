@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>JaroWinkler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.debatty.java.stringsimilarity</a> &gt; <span class="el_source">JaroWinkler.java</span></div><h1>JaroWinkler.java</h1><pre class="source lang-java linenums">/*
+Copyright 2015 Thibault Debatty.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the &quot;Software&quot;), to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+package com.graphhopper.debatty.java.stringsimilarity;
+
+import java.util.Arrays;
+
+/**
+ * This class is copied from: https://github.com/tdebatty/java-string-similarity/blob/master/src/main/java/info/debatty/java/stringsimilarity/JaroWinkler.java
+ * and slightly modified. *
+ *
+ * The Jaro–Winkler distance metric is designed and best suited for short
+ * strings such as person names, and to detect typos; it is (roughly) a
+ * variation of Damerau-Levenshtein, where the substitution of 2 close
+ * characters is considered less important then the substitution of 2 characters
+ * that a far from each other.
+ * Jaro-Winkler was developed in the area of record linkage (duplicate
+ * detection) (Winkler, 1990). It returns a value in the interval [0.0, 1.0].
+ * The distance is computed as 1 - Jaro-Winkler similarity.
+ * @author Thibault Debatty
+ */
+public class JaroWinkler {
+
+    private static final double DEFAULT_THRESHOLD = 0.7;
+    private static final int THREE = 3;
+    private static final double JW_COEF = 0.1;
+    private final double threshold;
+
+    /**
+     * Instantiate with default threshold (0.7).
+     *
+     */
+<span class="fc" id="L46">    public JaroWinkler() {</span>
+<span class="fc" id="L47">        this.threshold = DEFAULT_THRESHOLD;</span>
+<span class="fc" id="L48">    }</span>
+
+    /**
+     * Instantiate with given threshold to determine when Winkler bonus should
+     * be used.
+     * Set threshold to a negative value to get the Jaro distance.
+     */
+<span class="nc" id="L55">    public JaroWinkler(final double threshold) {</span>
+<span class="nc" id="L56">        this.threshold = threshold;</span>
+<span class="nc" id="L57">    }</span>
+
+    /**
+     * Returns the current value of the threshold used for adding the Winkler
+     * bonus. The default value is 0.7.
+     *
+     * @return the current value of the threshold
+     */
+    public final double getThreshold() {
+<span class="fc" id="L66">        return threshold;</span>
+    }
+
+    /**
+     * Compute JW similarity.
+     */
+    public final double similarity(final String s1, final String s2) {
+<span class="fc" id="L73">        int[] mtp = matches(s1, s2);</span>
+<span class="fc" id="L74">        float m = mtp[0];</span>
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (m == 0) {</span>
+<span class="nc" id="L76">            return 0f;</span>
+        }
+<span class="fc" id="L78">        double j = ((m / s1.length() + m / s2.length() + (m - mtp[1]) / m))</span>
+                / THREE;
+<span class="fc" id="L80">        double jw = j;</span>
+
+<span class="fc bfc" id="L82" title="All 2 branches covered.">        if (j &gt; getThreshold()) {</span>
+<span class="fc" id="L83">            jw = j + Math.min(JW_COEF, 1.0 / mtp[THREE]) * mtp[2] * (1 - j);</span>
+        }
+<span class="fc" id="L85">        return jw;</span>
+    }
+
+
+    /**
+     * Return 1 - similarity.
+     */
+    public final double distance(final String s1, final String s2) {
+<span class="nc" id="L93">        return 1.0 - similarity(s1, s2);</span>
+    }
+
+    private int[] matches(final String s1, final String s2) {
+        String max, min;
+<span class="fc bfc" id="L98" title="All 2 branches covered.">        if (s1.length() &gt; s2.length()) {</span>
+<span class="fc" id="L99">            max = s1;</span>
+<span class="fc" id="L100">            min = s2;</span>
+        } else {
+<span class="fc" id="L102">            max = s2;</span>
+<span class="fc" id="L103">            min = s1;</span>
+        }
+<span class="fc" id="L105">        int range = Math.max(max.length() / 2 - 1, 0);</span>
+<span class="fc" id="L106">        int[] matchIndexes = new int[min.length()];</span>
+<span class="fc" id="L107">        Arrays.fill(matchIndexes, -1);</span>
+<span class="fc" id="L108">        boolean[] matchFlags = new boolean[max.length()];</span>
+<span class="fc" id="L109">        int matches = 0;</span>
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        for (int mi = 0; mi &lt; min.length(); mi++) {</span>
+<span class="fc" id="L111">            char c1 = min.charAt(mi);</span>
+<span class="fc" id="L112">            for (int xi = Math.max(mi - range, 0),</span>
+<span class="fc bfc" id="L113" title="All 2 branches covered.">                 xn = Math.min(mi + range + 1, max.length()); xi &lt; xn; xi++) {</span>
+<span class="fc bfc" id="L114" title="All 4 branches covered.">                if (!matchFlags[xi] &amp;&amp; c1 == max.charAt(xi)) {</span>
+<span class="fc" id="L115">                    matchIndexes[mi] = xi;</span>
+<span class="fc" id="L116">                    matchFlags[xi] = true;</span>
+<span class="fc" id="L117">                    matches++;</span>
+<span class="fc" id="L118">                    break;</span>
+                }
+            }
+        }
+<span class="fc" id="L122">        char[] ms1 = new char[matches];</span>
+<span class="fc" id="L123">        char[] ms2 = new char[matches];</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">        for (int i = 0, si = 0; i &lt; min.length(); i++) {</span>
+<span class="fc bfc" id="L125" title="All 2 branches covered.">            if (matchIndexes[i] != -1) {</span>
+<span class="fc" id="L126">                ms1[si] = min.charAt(i);</span>
+<span class="fc" id="L127">                si++;</span>
+            }
+        }
+<span class="fc bfc" id="L130" title="All 2 branches covered.">        for (int i = 0, si = 0; i &lt; max.length(); i++) {</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">            if (matchFlags[i]) {</span>
+<span class="fc" id="L132">                ms2[si] = max.charAt(i);</span>
+<span class="fc" id="L133">                si++;</span>
+            }
+        }
+<span class="fc" id="L136">        int transpositions = 0;</span>
+<span class="fc bfc" id="L137" title="All 2 branches covered.">        for (int mi = 0; mi &lt; ms1.length; mi++) {</span>
+<span class="fc bfc" id="L138" title="All 2 branches covered.">            if (ms1[mi] != ms2[mi]) {</span>
+<span class="fc" id="L139">                transpositions++;</span>
+            }
+        }
+<span class="fc" id="L142">        int prefix = 0;</span>
+<span class="fc bfc" id="L143" title="All 2 branches covered.">        for (int mi = 0; mi &lt; min.length(); mi++) {</span>
+<span class="fc bfc" id="L144" title="All 2 branches covered.">            if (s1.charAt(mi) == s2.charAt(mi)) {</span>
+<span class="fc" id="L145">                prefix++;</span>
+            } else {
+                break;
+            }
+        }
+<span class="fc" id="L150">        return new int[]{matches, transpositions / 2, prefix, max.length()};</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Path.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">Path.java</span></div><h1>Path.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntIndexedContainer;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.FetchMode;
+import com.graphhopper.util.PointList;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * This class represents the result of a shortest path calculation. It also provides methods to extract further
+ * information about the found path, like instructions etc.
+ *
+ * @author Peter Karich
+ * @author Ottavio Campana
+ * @author jan soe
+ * @author easbar
+ */
+public class Path {
+    final Graph graph;
+    private final NodeAccess nodeAccess;
+<span class="fc" id="L45">    private double weight = Double.MAX_VALUE;</span>
+    private double distance;
+    private long time;
+<span class="fc" id="L48">    private IntArrayList edgeIds = new IntArrayList();</span>
+<span class="fc" id="L49">    private int fromNode = -1;</span>
+<span class="fc" id="L50">    private int endNode = -1;</span>
+    private List&lt;String&gt; description;
+    private boolean found;
+<span class="fc" id="L53">    private String debugInfo = &quot;&quot;;</span>
+
+<span class="fc" id="L55">    public Path(Graph graph) {</span>
+<span class="fc" id="L56">        this.graph = graph;</span>
+<span class="fc" id="L57">        this.nodeAccess = graph.getNodeAccess();</span>
+<span class="fc" id="L58">    }</span>
+
+    public Graph getGraph() {
+<span class="nc" id="L61">        return graph;</span>
+    }
+
+    /**
+     * @return the description of this route alternative to make it meaningful for the user e.g. it
+     * displays one or two main roads of the route.
+     */
+    public List&lt;String&gt; getDescription() {
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        if (description == null)</span>
+<span class="fc" id="L70">            return Collections.emptyList();</span>
+<span class="fc" id="L71">        return description;</span>
+    }
+
+    public Path setDescription(List&lt;String&gt; description) {
+<span class="fc" id="L75">        this.description = description;</span>
+<span class="fc" id="L76">        return this;</span>
+    }
+
+    public IntArrayList getEdges() {
+<span class="fc" id="L80">        return edgeIds;</span>
+    }
+
+    public void setEdges(IntArrayList edgeIds) {
+<span class="nc" id="L84">        this.edgeIds = edgeIds;</span>
+<span class="nc" id="L85">    }</span>
+
+    public void addEdge(int edge) {
+<span class="fc" id="L88">        edgeIds.add(edge);</span>
+<span class="fc" id="L89">    }</span>
+
+    public int getEdgeCount() {
+<span class="fc" id="L92">        return edgeIds.size();</span>
+    }
+
+    public int getEndNode() {
+<span class="fc" id="L96">        return endNode;</span>
+    }
+
+    public Path setEndNode(int end) {
+<span class="fc" id="L100">        endNode = end;</span>
+<span class="fc" id="L101">        return this;</span>
+    }
+
+    public int getFromNode() {
+<span class="pc bpc" id="L105" title="1 of 2 branches missed.">        if (fromNode &lt; 0)</span>
+<span class="nc" id="L106">            throw new IllegalStateException(&quot;fromNode &lt; 0 should not happen&quot;);</span>
+
+<span class="fc" id="L108">        return fromNode;</span>
+    }
+
+    /**
+     * We need to remember fromNode explicitly as its not saved in one edgeId of edgeIds.
+     */
+    public Path setFromNode(int from) {
+<span class="fc" id="L115">        fromNode = from;</span>
+<span class="fc" id="L116">        return this;</span>
+    }
+
+    public boolean isFound() {
+<span class="fc" id="L120">        return found;</span>
+    }
+
+    public Path setFound(boolean found) {
+<span class="fc" id="L124">        this.found = found;</span>
+<span class="fc" id="L125">        return this;</span>
+    }
+
+    public Path setDistance(double distance) {
+<span class="fc" id="L129">        this.distance = distance;</span>
+<span class="fc" id="L130">        return this;</span>
+    }
+
+    public Path addDistance(double distance) {
+<span class="fc" id="L134">        this.distance += distance;</span>
+<span class="fc" id="L135">        return this;</span>
+    }
+
+    /**
+     * @return distance in meter
+     */
+    public double getDistance() {
+<span class="fc" id="L142">        return distance;</span>
+    }
+
+    /**
+     * @return time in millis
+     */
+    public long getTime() {
+<span class="fc" id="L149">        return time;</span>
+    }
+
+    public Path setTime(long time) {
+<span class="nc" id="L153">        this.time = time;</span>
+<span class="nc" id="L154">        return this;</span>
+    }
+
+    public Path addTime(long time) {
+<span class="fc" id="L158">        this.time += time;</span>
+<span class="fc" id="L159">        return this;</span>
+    }
+
+    /**
+     * This weight will be updated during the algorithm. The initial value is maximum double.
+     */
+    public double getWeight() {
+<span class="fc" id="L166">        return weight;</span>
+    }
+
+    public Path setWeight(double w) {
+<span class="fc" id="L170">        this.weight = w;</span>
+<span class="fc" id="L171">        return this;</span>
+    }
+
+    /**
+     * Yields the final edge of the path
+     */
+    public EdgeIteratorState getFinalEdge() {
+<span class="fc" id="L178">        return graph.getEdgeIteratorState(edgeIds.get(edgeIds.size() - 1), endNode);</span>
+    }
+
+    public void setDebugInfo(String debugInfo) {
+<span class="fc" id="L182">        this.debugInfo = debugInfo;</span>
+<span class="fc" id="L183">    }</span>
+
+    public String getDebugInfo() {
+<span class="fc" id="L186">        return debugInfo;</span>
+    }
+
+    /**
+     * Iterates over all edges in this path sorted from start to end and calls the visitor callback
+     * for every edge.
+     * &lt;p&gt;
+     *
+     * @param visitor callback to handle every edge. The edge is decoupled from the iterator and can
+     *                be stored.
+     */
+    public void forEveryEdge(EdgeVisitor visitor) {
+<span class="fc" id="L198">        int tmpNode = getFromNode();</span>
+<span class="fc" id="L199">        int len = edgeIds.size();</span>
+<span class="fc" id="L200">        int prevEdgeId = EdgeIterator.NO_EDGE;</span>
+<span class="fc bfc" id="L201" title="All 2 branches covered.">        for (int i = 0; i &lt; len; i++) {</span>
+<span class="fc" id="L202">            EdgeIteratorState edgeBase = graph.getEdgeIteratorState(edgeIds.get(i), tmpNode);</span>
+<span class="pc bpc" id="L203" title="1 of 2 branches missed.">            if (edgeBase == null)</span>
+<span class="nc" id="L204">                throw new IllegalStateException(&quot;Edge &quot; + edgeIds.get(i) + &quot; was empty when requested with node &quot; + tmpNode</span>
+<span class="nc" id="L205">                        + &quot;, array index:&quot; + i + &quot;, edges:&quot; + edgeIds.size());</span>
+
+<span class="fc" id="L207">            tmpNode = edgeBase.getBaseNode();</span>
+            // more efficient swap, currently not implemented for virtual edges: visitor.next(edgeBase.detach(true), i);
+<span class="fc" id="L209">            edgeBase = graph.getEdgeIteratorState(edgeBase.getEdge(), tmpNode);</span>
+<span class="fc" id="L210">            visitor.next(edgeBase, i, prevEdgeId);</span>
+
+<span class="fc" id="L212">            prevEdgeId = edgeBase.getEdge();</span>
+        }
+<span class="fc" id="L214">        visitor.finish();</span>
+<span class="fc" id="L215">    }</span>
+
+    /**
+     * Returns the list of all edges.
+     */
+    public List&lt;EdgeIteratorState&gt; calcEdges() {
+<span class="fc" id="L221">        final List&lt;EdgeIteratorState&gt; edges = new ArrayList&lt;&gt;(edgeIds.size());</span>
+<span class="fc bfc" id="L222" title="All 2 branches covered.">        if (edgeIds.isEmpty())</span>
+<span class="fc" id="L223">            return edges;</span>
+
+<span class="fc" id="L225">        forEveryEdge(new EdgeVisitor() {</span>
+            @Override
+            public void next(EdgeIteratorState eb, int index, int prevEdgeId) {
+<span class="fc" id="L228">                edges.add(eb);</span>
+<span class="fc" id="L229">            }</span>
+
+            @Override
+            public void finish() {
+
+<span class="fc" id="L234">            }</span>
+        });
+<span class="fc" id="L236">        return edges;</span>
+    }
+
+    /**
+     * @return the uncached node indices of the tower nodes in this path.
+     */
+    public IntIndexedContainer calcNodes() {
+<span class="fc" id="L243">        final IntArrayList nodes = new IntArrayList(edgeIds.size() + 1);</span>
+<span class="fc bfc" id="L244" title="All 2 branches covered.">        if (edgeIds.isEmpty()) {</span>
+<span class="fc bfc" id="L245" title="All 2 branches covered.">            if (isFound()) {</span>
+<span class="fc" id="L246">                nodes.add(endNode);</span>
+            }
+<span class="fc" id="L248">            return nodes;</span>
+        }
+
+<span class="fc" id="L251">        int tmpNode = getFromNode();</span>
+<span class="fc" id="L252">        nodes.add(tmpNode);</span>
+<span class="fc" id="L253">        forEveryEdge(new EdgeVisitor() {</span>
+            @Override
+            public void next(EdgeIteratorState eb, int index, int prevEdgeId) {
+<span class="fc" id="L256">                nodes.add(eb.getAdjNode());</span>
+<span class="fc" id="L257">            }</span>
+
+            @Override
+            public void finish() {
+
+<span class="fc" id="L262">            }</span>
+        });
+<span class="fc" id="L264">        return nodes;</span>
+    }
+
+    /**
+     * This method calculated a list of points for this path
+     * &lt;p&gt;
+     *
+     * @return the geometry of this path
+     */
+    public PointList calcPoints() {
+<span class="fc" id="L274">        final PointList points = new PointList(edgeIds.size() + 1, nodeAccess.is3D());</span>
+<span class="fc bfc" id="L275" title="All 2 branches covered.">        if (edgeIds.isEmpty()) {</span>
+<span class="pc bpc" id="L276" title="1 of 2 branches missed.">            if (isFound()) {</span>
+<span class="fc" id="L277">                points.add(nodeAccess, endNode);</span>
+            }
+<span class="fc" id="L279">            return points;</span>
+        }
+
+<span class="fc" id="L282">        int tmpNode = getFromNode();</span>
+<span class="fc" id="L283">        points.add(nodeAccess, tmpNode);</span>
+<span class="fc" id="L284">        forEveryEdge(new EdgeVisitor() {</span>
+            @Override
+            public void next(EdgeIteratorState eb, int index, int prevEdgeId) {
+<span class="fc" id="L287">                PointList pl = eb.fetchWayGeometry(FetchMode.PILLAR_AND_ADJ);</span>
+<span class="fc bfc" id="L288" title="All 2 branches covered.">                for (int j = 0; j &lt; pl.size(); j++) {</span>
+<span class="fc" id="L289">                    points.add(pl, j);</span>
+                }
+<span class="fc" id="L291">            }</span>
+
+            @Override
+            public void finish() {
+
+<span class="fc" id="L296">            }</span>
+        });
+<span class="fc" id="L298">        return points;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L303">        return &quot;found: &quot; + found + &quot;, weight: &quot; + weight + &quot;, time: &quot; + time + &quot;, distance: &quot; + distance + &quot;, edges: &quot; + edgeIds.size();</span>
+    }
+
+    /**
+     * The callback used in forEveryEdge.
+     */
+    public interface EdgeVisitor {
+        void next(EdgeIteratorState edge, int index, int prevEdgeId);
+
+        void finish();
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

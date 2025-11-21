@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Country.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">Country.java</span></div><h1>Country.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ev;
+
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static com.graphhopper.routing.ev.State.*;
+
+/**
+ * The enum constants correspond to the ISO3166-1:alpha3 code of the corresponding country.
+ */
+<span class="fc" id="L30">public enum Country {</span>
+
+<span class="fc" id="L32">    MISSING(&quot;missing&quot;, &quot;---&quot;, &quot;--&quot;, true),</span>
+<span class="fc" id="L33">    AFG(&quot;Afghanistan&quot;, &quot;AFG&quot;, &quot;AF&quot;, true),</span>
+<span class="fc" id="L34">    AGO(&quot;Angola&quot;, &quot;AGO&quot;, &quot;AO&quot;, true),</span>
+<span class="fc" id="L35">    AIA(&quot;Anguilla&quot;, &quot;AIA&quot;, &quot;AI&quot;, false),</span>
+<span class="fc" id="L36">    ALB(&quot;Albania&quot;, &quot;ALB&quot;, &quot;AL&quot;, true),</span>
+<span class="fc" id="L37">    AND(&quot;Andorra&quot;, &quot;AND&quot;, &quot;AD&quot;, true),</span>
+<span class="fc" id="L38">    ARE(&quot;United Arab Emirates&quot;, &quot;ARE&quot;, &quot;AE&quot;, true),</span>
+<span class="fc" id="L39">    ARG(&quot;Argentina&quot;, &quot;ARG&quot;, &quot;AR&quot;, true),</span>
+<span class="fc" id="L40">    ARM(&quot;Armenia&quot;, &quot;ARM&quot;, &quot;AM&quot;, true),</span>
+<span class="fc" id="L41">    ATG(&quot;Antigua and Barbuda&quot;, &quot;ATG&quot;, &quot;AG&quot;, false),</span>
+<span class="fc" id="L42">    AUS(&quot;Australia&quot;, &quot;AUS&quot;, &quot;AU&quot;, false, AU_ACT, AU_NSW, AU_NT, AU_QLD, AU_SA, AU_TAS, AU_VIC, AU_WA),</span>
+<span class="fc" id="L43">    AUT(&quot;Austria&quot;, &quot;AUT&quot;, &quot;AT&quot;, true),</span>
+<span class="fc" id="L44">    AZE(&quot;Azerbaijan&quot;, &quot;AZE&quot;, &quot;AZ&quot;, true),</span>
+<span class="fc" id="L45">    BDI(&quot;Burundi&quot;, &quot;BDI&quot;, &quot;BI&quot;, true),</span>
+<span class="fc" id="L46">    BEL(&quot;Belgium&quot;, &quot;BEL&quot;, &quot;BE&quot;, true),</span>
+<span class="fc" id="L47">    BEN(&quot;Benin&quot;, &quot;BEN&quot;, &quot;BJ&quot;, true),</span>
+<span class="fc" id="L48">    BFA(&quot;Burkina Faso&quot;, &quot;BFA&quot;, &quot;BF&quot;, true),</span>
+<span class="fc" id="L49">    BGD(&quot;Bangladesh&quot;, &quot;BGD&quot;, &quot;BD&quot;, true),</span>
+<span class="fc" id="L50">    BGR(&quot;Bulgaria&quot;, &quot;BGR&quot;, &quot;BG&quot;, true),</span>
+<span class="fc" id="L51">    BHR(&quot;Bahrain&quot;, &quot;BHR&quot;, &quot;BH&quot;, true),</span>
+<span class="fc" id="L52">    BHS(&quot;The Bahamas&quot;, &quot;BHS&quot;, &quot;BS&quot;, false),</span>
+<span class="fc" id="L53">    BIH(&quot;Bosnia and Herzegovina&quot;, &quot;BIH&quot;, &quot;BA&quot;, true),</span>
+<span class="fc" id="L54">    BLR(&quot;Belarus&quot;, &quot;BLR&quot;, &quot;BY&quot;, true),</span>
+<span class="fc" id="L55">    BLZ(&quot;Belize&quot;, &quot;BLZ&quot;, &quot;BZ&quot;, true),</span>
+<span class="fc" id="L56">    BMU(&quot;Bermuda&quot;, &quot;BMU&quot;, &quot;BM&quot;, true),</span>
+<span class="fc" id="L57">    BOL(&quot;Bolivia&quot;, &quot;BOL&quot;, &quot;BO&quot;, true),</span>
+<span class="fc" id="L58">    BRA(&quot;Brazil&quot;, &quot;BRA&quot;, &quot;BR&quot;, true),</span>
+<span class="fc" id="L59">    BRB(&quot;Barbados&quot;, &quot;BRB&quot;, &quot;BB&quot;, false),</span>
+<span class="fc" id="L60">    BRN(&quot;Brunei&quot;, &quot;BRN&quot;, &quot;BN&quot;, true),</span>
+<span class="fc" id="L61">    BTN(&quot;Bhutan&quot;, &quot;BTN&quot;, &quot;BT&quot;, false),</span>
+<span class="fc" id="L62">    BWA(&quot;Botswana&quot;, &quot;BWA&quot;, &quot;BW&quot;, false),</span>
+<span class="fc" id="L63">    CAF(&quot;Central African Republic&quot;, &quot;CAF&quot;, &quot;CF&quot;, true),</span>
+<span class="fc" id="L64">    CAN(&quot;Canada&quot;, &quot;CAN&quot;, &quot;CA&quot;, true, CA_AB, CA_BC, CA_MB, CA_NB, CA_NL, CA_NS, CA_NT, CA_NU, CA_ON, CA_PE, CA_QC, CA_SK, CA_YT),</span>
+<span class="fc" id="L65">    CHE(&quot;Switzerland&quot;, &quot;CHE&quot;, &quot;CH&quot;, true),</span>
+<span class="fc" id="L66">    CHL(&quot;Chile&quot;, &quot;CHL&quot;, &quot;CL&quot;, true),</span>
+<span class="fc" id="L67">    CHN(&quot;China&quot;, &quot;CHN&quot;, &quot;CN&quot;, true),</span>
+<span class="fc" id="L68">    CIV(&quot;Côte d'Ivoire&quot;, &quot;CIV&quot;, &quot;CI&quot;, true),</span>
+<span class="fc" id="L69">    CMR(&quot;Cameroon&quot;, &quot;CMR&quot;, &quot;CM&quot;, true),</span>
+<span class="fc" id="L70">    COD(&quot;Democratic Republic of the Congo&quot;, &quot;COD&quot;, &quot;CD&quot;, true),</span>
+<span class="fc" id="L71">    COG(&quot;Congo-Brazzaville&quot;, &quot;COG&quot;, &quot;CG&quot;, true),</span>
+<span class="fc" id="L72">    COK(&quot;Cook Islands&quot;, &quot;COK&quot;, &quot;CK&quot;, true),</span>
+<span class="fc" id="L73">    COL(&quot;Colombia&quot;, &quot;COL&quot;, &quot;CO&quot;, true),</span>
+<span class="fc" id="L74">    COM(&quot;Comoros&quot;, &quot;COM&quot;, &quot;KM&quot;, true),</span>
+<span class="fc" id="L75">    CPV(&quot;Cape Verde&quot;, &quot;CPV&quot;, &quot;CV&quot;, true),</span>
+<span class="fc" id="L76">    CRI(&quot;Costa Rica&quot;, &quot;CRI&quot;, &quot;CR&quot;, true),</span>
+<span class="fc" id="L77">    CUB(&quot;Cuba&quot;, &quot;CUB&quot;, &quot;CU&quot;, true),</span>
+<span class="fc" id="L78">    CYM(&quot;Cayman Islands&quot;, &quot;CYM&quot;, &quot;KY&quot;, false),</span>
+<span class="fc" id="L79">    CYP(&quot;Cyprus&quot;, &quot;CYP&quot;, &quot;CY&quot;, false),</span>
+<span class="fc" id="L80">    CZE(&quot;Czechia&quot;, &quot;CZE&quot;, &quot;CZ&quot;, true),</span>
+<span class="fc" id="L81">    DEU(&quot;Germany&quot;, &quot;DEU&quot;, &quot;DE&quot;, true),</span>
+<span class="fc" id="L82">    DJI(&quot;Djibouti&quot;, &quot;DJI&quot;, &quot;DJ&quot;, true),</span>
+<span class="fc" id="L83">    DMA(&quot;Dominica&quot;, &quot;DMA&quot;, &quot;DM&quot;, false),</span>
+<span class="fc" id="L84">    DNK(&quot;Denmark&quot;, &quot;DNK&quot;, &quot;DK&quot;, true),</span>
+<span class="fc" id="L85">    DOM(&quot;Dominican Republic&quot;, &quot;DOM&quot;, &quot;DO&quot;, true),</span>
+<span class="fc" id="L86">    DZA(&quot;Algeria&quot;, &quot;DZA&quot;, &quot;DZ&quot;, true),</span>
+<span class="fc" id="L87">    ECU(&quot;Ecuador&quot;, &quot;ECU&quot;, &quot;EC&quot;, true),</span>
+<span class="fc" id="L88">    EGY(&quot;Egypt&quot;, &quot;EGY&quot;, &quot;EG&quot;, true),</span>
+<span class="fc" id="L89">    ERI(&quot;Eritrea&quot;, &quot;ERI&quot;, &quot;ER&quot;, true),</span>
+<span class="fc" id="L90">    ESP(&quot;Spain&quot;, &quot;ESP&quot;, &quot;ES&quot;, true),</span>
+<span class="fc" id="L91">    EST(&quot;Estonia&quot;, &quot;EST&quot;, &quot;EE&quot;, true),</span>
+<span class="fc" id="L92">    ETH(&quot;Ethiopia&quot;, &quot;ETH&quot;, &quot;ET&quot;, true),</span>
+<span class="fc" id="L93">    FIN(&quot;Finland&quot;, &quot;FIN&quot;, &quot;FI&quot;, true),</span>
+<span class="fc" id="L94">    FJI(&quot;Fiji&quot;, &quot;FJI&quot;, &quot;FJ&quot;, false),</span>
+<span class="fc" id="L95">    FLK(&quot;Falkland Islands&quot;, &quot;FLK&quot;, &quot;FK&quot;, false),</span>
+<span class="fc" id="L96">    FRA(&quot;France&quot;, &quot;FRA&quot;, &quot;FR&quot;, true),</span>
+<span class="fc" id="L97">    FRO(&quot;Faroe Islands&quot;, &quot;FRO&quot;, &quot;FO&quot;, true),</span>
+<span class="fc" id="L98">    FSM(&quot;Federated States of Micronesia&quot;, &quot;FSM&quot;, &quot;FM&quot;, true, FM_KSA, FM_PNI, FM_TRK, FM_YAP),</span>
+<span class="fc" id="L99">    GAB(&quot;Gabon&quot;, &quot;GAB&quot;, &quot;GA&quot;, true),</span>
+<span class="fc" id="L100">    GBR(&quot;United Kingdom&quot;, &quot;GBR&quot;, &quot;GB&quot;, false),</span>
+<span class="fc" id="L101">    GEO(&quot;Georgia&quot;, &quot;GEO&quot;, &quot;GE&quot;, true),</span>
+<span class="fc" id="L102">    GGY(&quot;Guernsey&quot;, &quot;GGY&quot;, &quot;GG&quot;, false),</span>
+<span class="fc" id="L103">    GHA(&quot;Ghana&quot;, &quot;GHA&quot;, &quot;GH&quot;, true),</span>
+<span class="fc" id="L104">    GIB(&quot;Gibraltar&quot;, &quot;GIB&quot;, &quot;GI&quot;, true),</span>
+<span class="fc" id="L105">    GIN(&quot;Guinea&quot;, &quot;GIN&quot;, &quot;GN&quot;, true),</span>
+<span class="fc" id="L106">    GMB(&quot;The Gambia&quot;, &quot;GMB&quot;, &quot;GM&quot;, true),</span>
+<span class="fc" id="L107">    GNB(&quot;Guinea-Bissau&quot;, &quot;GNB&quot;, &quot;GW&quot;, true),</span>
+<span class="fc" id="L108">    GNQ(&quot;Equatorial Guinea&quot;, &quot;GNQ&quot;, &quot;GQ&quot;, true),</span>
+<span class="fc" id="L109">    GRC(&quot;Greece&quot;, &quot;GRC&quot;, &quot;GR&quot;, true),</span>
+<span class="fc" id="L110">    GRD(&quot;Grenada&quot;, &quot;GRD&quot;, &quot;GD&quot;, false),</span>
+<span class="fc" id="L111">    GRL(&quot;Greenland&quot;, &quot;GRL&quot;, &quot;GL&quot;, true),</span>
+<span class="fc" id="L112">    GTM(&quot;Guatemala&quot;, &quot;GTM&quot;, &quot;GT&quot;, true),</span>
+<span class="fc" id="L113">    GUY(&quot;Guyana&quot;, &quot;GUY&quot;, &quot;GY&quot;, false),</span>
+<span class="fc" id="L114">    HND(&quot;Honduras&quot;, &quot;HND&quot;, &quot;HN&quot;, true),</span>
+<span class="fc" id="L115">    HRV(&quot;Croatia&quot;, &quot;HRV&quot;, &quot;HR&quot;, true),</span>
+<span class="fc" id="L116">    HTI(&quot;Haiti&quot;, &quot;HTI&quot;, &quot;HT&quot;, true),</span>
+<span class="fc" id="L117">    HUN(&quot;Hungary&quot;, &quot;HUN&quot;, &quot;HU&quot;, true),</span>
+<span class="fc" id="L118">    IDN(&quot;Indonesia&quot;, &quot;IDN&quot;, &quot;ID&quot;, false),</span>
+<span class="fc" id="L119">    IMN(&quot;Isle of Man&quot;, &quot;IMN&quot;, &quot;IM&quot;, false),</span>
+<span class="fc" id="L120">    IND(&quot;India&quot;, &quot;IND&quot;, &quot;IN&quot;, false),</span>
+<span class="fc" id="L121">    IOT(&quot;British Indian Ocean Territory&quot;, &quot;IOT&quot;, &quot;IO&quot;, true),</span>
+<span class="fc" id="L122">    IRL(&quot;Ireland&quot;, &quot;IRL&quot;, &quot;IE&quot;, false),</span>
+<span class="fc" id="L123">    IRN(&quot;Iran&quot;, &quot;IRN&quot;, &quot;IR&quot;, true),</span>
+<span class="fc" id="L124">    IRQ(&quot;Iraq&quot;, &quot;IRQ&quot;, &quot;IQ&quot;, true),</span>
+<span class="fc" id="L125">    ISL(&quot;Iceland&quot;, &quot;ISL&quot;, &quot;IS&quot;, true),</span>
+<span class="fc" id="L126">    ISR(&quot;Israel&quot;, &quot;ISR&quot;, &quot;IL&quot;, true),</span>
+<span class="fc" id="L127">    ITA(&quot;Italy&quot;, &quot;ITA&quot;, &quot;IT&quot;, true),</span>
+<span class="fc" id="L128">    JAM(&quot;Jamaica&quot;, &quot;JAM&quot;, &quot;JM&quot;, false),</span>
+<span class="fc" id="L129">    JEY(&quot;Jersey&quot;, &quot;JEY&quot;, &quot;JE&quot;, false),</span>
+<span class="fc" id="L130">    JOR(&quot;Jordan&quot;, &quot;JOR&quot;, &quot;JO&quot;, true),</span>
+<span class="fc" id="L131">    JPN(&quot;Japan&quot;, &quot;JPN&quot;, &quot;JP&quot;, false),</span>
+<span class="fc" id="L132">    KAZ(&quot;Kazakhstan&quot;, &quot;KAZ&quot;, &quot;KZ&quot;, true),</span>
+<span class="fc" id="L133">    KEN(&quot;Kenya&quot;, &quot;KEN&quot;, &quot;KE&quot;, false),</span>
+<span class="fc" id="L134">    KGZ(&quot;Kyrgyzstan&quot;, &quot;KGZ&quot;, &quot;KG&quot;, true),</span>
+<span class="fc" id="L135">    KHM(&quot;Cambodia&quot;, &quot;KHM&quot;, &quot;KH&quot;, true),</span>
+<span class="fc" id="L136">    KIR(&quot;Kiribati&quot;, &quot;KIR&quot;, &quot;KI&quot;, false),</span>
+<span class="fc" id="L137">    KNA(&quot;Saint Kitts and Nevis&quot;, &quot;KNA&quot;, &quot;KN&quot;, false),</span>
+<span class="fc" id="L138">    KOR(&quot;South Korea&quot;, &quot;KOR&quot;, &quot;KR&quot;, true),</span>
+<span class="fc" id="L139">    KWT(&quot;Kuwait&quot;, &quot;KWT&quot;, &quot;KW&quot;, true),</span>
+<span class="fc" id="L140">    LAO(&quot;Laos&quot;, &quot;LAO&quot;, &quot;LA&quot;, true),</span>
+<span class="fc" id="L141">    LBN(&quot;Lebanon&quot;, &quot;LBN&quot;, &quot;LB&quot;, true),</span>
+<span class="fc" id="L142">    LBR(&quot;Liberia&quot;, &quot;LBR&quot;, &quot;LR&quot;, true),</span>
+<span class="fc" id="L143">    LBY(&quot;Libya&quot;, &quot;LBY&quot;, &quot;LY&quot;, true),</span>
+<span class="fc" id="L144">    LCA(&quot;Saint Lucia&quot;, &quot;LCA&quot;, &quot;LC&quot;, false),</span>
+<span class="fc" id="L145">    LIE(&quot;Liechtenstein&quot;, &quot;LIE&quot;, &quot;LI&quot;, true),</span>
+<span class="fc" id="L146">    LKA(&quot;Sri Lanka&quot;, &quot;LKA&quot;, &quot;LK&quot;, false),</span>
+<span class="fc" id="L147">    LSO(&quot;Lesotho&quot;, &quot;LSO&quot;, &quot;LS&quot;, false),</span>
+<span class="fc" id="L148">    LTU(&quot;Lithuania&quot;, &quot;LTU&quot;, &quot;LT&quot;, true),</span>
+<span class="fc" id="L149">    LUX(&quot;Luxembourg&quot;, &quot;LUX&quot;, &quot;LU&quot;, true),</span>
+<span class="fc" id="L150">    LVA(&quot;Latvia&quot;, &quot;LVA&quot;, &quot;LV&quot;, true),</span>
+<span class="fc" id="L151">    MAR(&quot;Morocco&quot;, &quot;MAR&quot;, &quot;MA&quot;, true),</span>
+<span class="fc" id="L152">    MCO(&quot;Monaco&quot;, &quot;MCO&quot;, &quot;MC&quot;, true),</span>
+<span class="fc" id="L153">    MDA(&quot;Moldova&quot;, &quot;MDA&quot;, &quot;MD&quot;, true),</span>
+<span class="fc" id="L154">    MDG(&quot;Madagascar&quot;, &quot;MDG&quot;, &quot;MG&quot;, true),</span>
+<span class="fc" id="L155">    MDV(&quot;Maldives&quot;, &quot;MDV&quot;, &quot;MV&quot;, false),</span>
+<span class="fc" id="L156">    MEX(&quot;Mexico&quot;, &quot;MEX&quot;, &quot;MX&quot;, true),</span>
+<span class="fc" id="L157">    MHL(&quot;Marshall Islands&quot;, &quot;MHL&quot;, &quot;MH&quot;, true),</span>
+<span class="fc" id="L158">    MKD(&quot;North Macedonia&quot;, &quot;MKD&quot;, &quot;MK&quot;, true),</span>
+<span class="fc" id="L159">    MLI(&quot;Mali&quot;, &quot;MLI&quot;, &quot;ML&quot;, true),</span>
+<span class="fc" id="L160">    MLT(&quot;Malta&quot;, &quot;MLT&quot;, &quot;MT&quot;, false),</span>
+<span class="fc" id="L161">    MMR(&quot;Myanmar&quot;, &quot;MMR&quot;, &quot;MM&quot;, true),</span>
+<span class="fc" id="L162">    MNE(&quot;Montenegro&quot;, &quot;MNE&quot;, &quot;ME&quot;, true),</span>
+<span class="fc" id="L163">    MNG(&quot;Mongolia&quot;, &quot;MNG&quot;, &quot;MN&quot;, true),</span>
+<span class="fc" id="L164">    MOZ(&quot;Mozambique&quot;, &quot;MOZ&quot;, &quot;MZ&quot;, false),</span>
+<span class="fc" id="L165">    MRT(&quot;Mauritania&quot;, &quot;MRT&quot;, &quot;MR&quot;, true),</span>
+<span class="fc" id="L166">    MSR(&quot;Montserrat&quot;, &quot;MSR&quot;, &quot;MS&quot;, true),</span>
+<span class="fc" id="L167">    MUS(&quot;Mauritius&quot;, &quot;MUS&quot;, &quot;MU&quot;, false),</span>
+<span class="fc" id="L168">    MWI(&quot;Malawi&quot;, &quot;MWI&quot;, &quot;MW&quot;, false),</span>
+<span class="fc" id="L169">    MYS(&quot;Malaysia&quot;, &quot;MYS&quot;, &quot;MY&quot;, false),</span>
+<span class="fc" id="L170">    NAM(&quot;Namibia&quot;, &quot;NAM&quot;, &quot;NA&quot;, false),</span>
+<span class="fc" id="L171">    NER(&quot;Niger&quot;, &quot;NER&quot;, &quot;NE&quot;, true),</span>
+<span class="fc" id="L172">    NGA(&quot;Nigeria&quot;, &quot;NGA&quot;, &quot;NG&quot;, true),</span>
+<span class="fc" id="L173">    NIC(&quot;Nicaragua&quot;, &quot;NIC&quot;, &quot;NI&quot;, true),</span>
+<span class="fc" id="L174">    NIU(&quot;Niue&quot;, &quot;NIU&quot;, &quot;NU&quot;, true),</span>
+<span class="fc" id="L175">    NLD(&quot;Netherlands&quot;, &quot;NLD&quot;, &quot;NL&quot;, true),</span>
+<span class="fc" id="L176">    NOR(&quot;Norway&quot;, &quot;NOR&quot;, &quot;NO&quot;, true),</span>
+<span class="fc" id="L177">    NPL(&quot;Nepal&quot;, &quot;NPL&quot;, &quot;NP&quot;, false),</span>
+<span class="fc" id="L178">    NRU(&quot;Nauru&quot;, &quot;NRU&quot;, &quot;NR&quot;, false),</span>
+<span class="fc" id="L179">    NZL(&quot;New Zealand&quot;, &quot;NZL&quot;, &quot;NZ&quot;, false),</span>
+<span class="fc" id="L180">    OMN(&quot;Oman&quot;, &quot;OMN&quot;, &quot;OM&quot;, true),</span>
+<span class="fc" id="L181">    PAK(&quot;Pakistan&quot;, &quot;PAK&quot;, &quot;PK&quot;, false),</span>
+<span class="fc" id="L182">    PAN(&quot;Panama&quot;, &quot;PAN&quot;, &quot;PA&quot;, true),</span>
+<span class="fc" id="L183">    PCN(&quot;Pitcairn Islands&quot;, &quot;PCN&quot;, &quot;PN&quot;, false),</span>
+<span class="fc" id="L184">    PER(&quot;Peru&quot;, &quot;PER&quot;, &quot;PE&quot;, true),</span>
+<span class="fc" id="L185">    PHL(&quot;Philippines&quot;, &quot;PHL&quot;, &quot;PH&quot;, true),</span>
+<span class="fc" id="L186">    PLW(&quot;Palau&quot;, &quot;PLW&quot;, &quot;PW&quot;, true),</span>
+<span class="fc" id="L187">    PNG(&quot;Papua New Guinea&quot;, &quot;PNG&quot;, &quot;PG&quot;, false),</span>
+<span class="fc" id="L188">    POL(&quot;Poland&quot;, &quot;POL&quot;, &quot;PL&quot;, true),</span>
+<span class="fc" id="L189">    PRK(&quot;North Korea&quot;, &quot;PRK&quot;, &quot;KP&quot;, true),</span>
+<span class="fc" id="L190">    PRT(&quot;Portugal&quot;, &quot;PRT&quot;, &quot;PT&quot;, true),</span>
+<span class="fc" id="L191">    PRY(&quot;Paraguay&quot;, &quot;PRY&quot;, &quot;PY&quot;, true),</span>
+<span class="fc" id="L192">    PSE(&quot;Palestinian Territories&quot;, &quot;PSE&quot;, &quot;PS&quot;, true),</span>
+<span class="fc" id="L193">    QAT(&quot;Qatar&quot;, &quot;QAT&quot;, &quot;QA&quot;, true),</span>
+<span class="fc" id="L194">    ROU(&quot;Romania&quot;, &quot;ROU&quot;, &quot;RO&quot;, true),</span>
+<span class="fc" id="L195">    RUS(&quot;Russia&quot;, &quot;RUS&quot;, &quot;RU&quot;, true),</span>
+<span class="fc" id="L196">    RWA(&quot;Rwanda&quot;, &quot;RWA&quot;, &quot;RW&quot;, true),</span>
+<span class="fc" id="L197">    SAU(&quot;Saudi Arabia&quot;, &quot;SAU&quot;, &quot;SA&quot;, true),</span>
+<span class="fc" id="L198">    SDN(&quot;Sudan&quot;, &quot;SDN&quot;, &quot;SD&quot;, true),</span>
+<span class="fc" id="L199">    SEN(&quot;Senegal&quot;, &quot;SEN&quot;, &quot;SN&quot;, true),</span>
+<span class="fc" id="L200">    SGP(&quot;Singapore&quot;, &quot;SGP&quot;, &quot;SG&quot;, false),</span>
+<span class="fc" id="L201">    SGS(&quot;South Georgia and the South Sandwich Islands&quot;, &quot;SGS&quot;, &quot;GS&quot;, true),</span>
+<span class="fc" id="L202">    SHN(&quot;Saint Helena, Ascension and Tristan da Cunha&quot;, &quot;SHN&quot;, &quot;SH&quot;, true),</span>
+<span class="fc" id="L203">    SLB(&quot;Solomon Islands&quot;, &quot;SLB&quot;, &quot;SB&quot;, false),</span>
+<span class="fc" id="L204">    SLE(&quot;Sierra Leone&quot;, &quot;SLE&quot;, &quot;SL&quot;, true),</span>
+<span class="fc" id="L205">    SLV(&quot;El Salvador&quot;, &quot;SLV&quot;, &quot;SV&quot;, true),</span>
+<span class="fc" id="L206">    SMR(&quot;San Marino&quot;, &quot;SMR&quot;, &quot;SM&quot;, true),</span>
+<span class="fc" id="L207">    SOM(&quot;Somalia&quot;, &quot;SOM&quot;, &quot;SO&quot;, true),</span>
+<span class="fc" id="L208">    SRB(&quot;Serbia&quot;, &quot;SRB&quot;, &quot;RS&quot;, true),</span>
+<span class="fc" id="L209">    SSD(&quot;South Sudan&quot;, &quot;SSD&quot;, &quot;SS&quot;, true),</span>
+<span class="fc" id="L210">    STP(&quot;São Tomé and Príncipe&quot;, &quot;STP&quot;, &quot;ST&quot;, true),</span>
+<span class="fc" id="L211">    SUR(&quot;Suriname&quot;, &quot;SUR&quot;, &quot;SR&quot;, false),</span>
+<span class="fc" id="L212">    SVK(&quot;Slovakia&quot;, &quot;SVK&quot;, &quot;SK&quot;, true),</span>
+<span class="fc" id="L213">    SVN(&quot;Slovenia&quot;, &quot;SVN&quot;, &quot;SI&quot;, true),</span>
+<span class="fc" id="L214">    SWE(&quot;Sweden&quot;, &quot;SWE&quot;, &quot;SE&quot;, true),</span>
+<span class="fc" id="L215">    SWZ(&quot;Eswatini&quot;, &quot;SWZ&quot;, &quot;SZ&quot;, false),</span>
+<span class="fc" id="L216">    SYC(&quot;Seychelles&quot;, &quot;SYC&quot;, &quot;SC&quot;, false),</span>
+<span class="fc" id="L217">    SYR(&quot;Syria&quot;, &quot;SYR&quot;, &quot;SY&quot;, true),</span>
+<span class="fc" id="L218">    TCA(&quot;Turks and Caicos Islands&quot;, &quot;TCA&quot;, &quot;TC&quot;, false),</span>
+<span class="fc" id="L219">    TCD(&quot;Chad&quot;, &quot;TCD&quot;, &quot;TD&quot;, true),</span>
+<span class="fc" id="L220">    TGO(&quot;Togo&quot;, &quot;TGO&quot;, &quot;TG&quot;, true),</span>
+<span class="fc" id="L221">    THA(&quot;Thailand&quot;, &quot;THA&quot;, &quot;TH&quot;, false),</span>
+<span class="fc" id="L222">    TJK(&quot;Tajikistan&quot;, &quot;TJK&quot;, &quot;TJ&quot;, true),</span>
+<span class="fc" id="L223">    TKL(&quot;Tokelau&quot;, &quot;TKL&quot;, &quot;TK&quot;, true),</span>
+<span class="fc" id="L224">    TKM(&quot;Turkmenistan&quot;, &quot;TKM&quot;, &quot;TM&quot;, true),</span>
+<span class="fc" id="L225">    TLS(&quot;Timor-Leste&quot;, &quot;TLS&quot;, &quot;TL&quot;, false), // East Timor</span>
+<span class="fc" id="L226">    TON(&quot;Tonga&quot;, &quot;TON&quot;, &quot;TO&quot;, false),</span>
+<span class="fc" id="L227">    TTO(&quot;Trinidad and Tobago&quot;, &quot;TTO&quot;, &quot;TT&quot;, false),</span>
+<span class="fc" id="L228">    TUN(&quot;Tunisia&quot;, &quot;TUN&quot;, &quot;TN&quot;, true),</span>
+<span class="fc" id="L229">    TUR(&quot;Turkey&quot;, &quot;TUR&quot;, &quot;TR&quot;, true),</span>
+<span class="fc" id="L230">    TUV(&quot;Tuvalu&quot;, &quot;TUV&quot;, &quot;TV&quot;, false),</span>
+<span class="fc" id="L231">    TWN(&quot;Taiwan&quot;, &quot;TWN&quot;, &quot;TW&quot;, true),</span>
+<span class="fc" id="L232">    TZA(&quot;Tanzania&quot;, &quot;TZA&quot;, &quot;TZ&quot;, false),</span>
+<span class="fc" id="L233">    UGA(&quot;Uganda&quot;, &quot;UGA&quot;, &quot;UG&quot;, false),</span>
+<span class="fc" id="L234">    UKR(&quot;Ukraine&quot;, &quot;UKR&quot;, &quot;UA&quot;, true),</span>
+<span class="fc" id="L235">    URY(&quot;Uruguay&quot;, &quot;URY&quot;, &quot;UY&quot;, true),</span>
+<span class="fc" id="L236">    USA(&quot;United States&quot;, &quot;USA&quot;, &quot;US&quot;,</span>
+            true, US_AL, US_AK, US_AZ, US_AR, US_CA, US_CO, US_CT, US_DE, US_DC, US_FL,
+            US_GA, US_HI, US_ID, US_IL, US_IN, US_IA, US_KS, US_KY, US_LA, US_ME,
+            US_MD, US_MA, US_MI, US_MN, US_MS, US_MO, US_MT, US_NE, US_NV, US_NH,
+            US_NJ, US_NM, US_NY, US_NC, US_ND, US_OH, US_OK, US_OR, US_PA, US_RI,
+            US_SC, US_SD, US_TN, US_TX, US_UT, US_VT, US_VA, US_WA, US_WV, US_WI, US_WY),
+<span class="fc" id="L242">    UZB(&quot;Uzbekistan&quot;, &quot;UZB&quot;, &quot;UZ&quot;, true),</span>
+<span class="fc" id="L243">    VAT(&quot;Vatican City&quot;, &quot;VAT&quot;, &quot;VA&quot;, true),</span>
+<span class="fc" id="L244">    VCT(&quot;Saint Vincent and the Grenadines&quot;, &quot;VCT&quot;, &quot;VC&quot;, false),</span>
+<span class="fc" id="L245">    VEN(&quot;Venezuela&quot;, &quot;VEN&quot;, &quot;VE&quot;, true),</span>
+<span class="fc" id="L246">    VGB(&quot;British Virgin Islands&quot;, &quot;VGB&quot;, &quot;VG&quot;, false),</span>
+<span class="fc" id="L247">    VNM(&quot;Vietnam&quot;, &quot;VNM&quot;, &quot;VN&quot;, true),</span>
+<span class="fc" id="L248">    VUT(&quot;Vanuatu&quot;, &quot;VUT&quot;, &quot;VU&quot;, true),</span>
+<span class="fc" id="L249">    WSM(&quot;Samoa&quot;, &quot;WSM&quot;, &quot;WS&quot;, false),</span>
+<span class="fc" id="L250">    XKX(&quot;Kosovo&quot;, &quot;XKX&quot;, &quot;XK&quot;, true),</span>
+<span class="fc" id="L251">    YEM(&quot;Yemen&quot;, &quot;YEM&quot;, &quot;YE&quot;, true),</span>
+<span class="fc" id="L252">    ZAF(&quot;South Africa&quot;, &quot;ZAF&quot;, &quot;ZA&quot;, false),</span>
+<span class="fc" id="L253">    ZMB(&quot;Zambia&quot;, &quot;ZMB&quot;, &quot;ZM&quot;, false),</span>
+<span class="fc" id="L254">    ZWE(&quot;Zimbabwe&quot;, &quot;ZWE&quot;, &quot;ZW&quot;, false);</span>
+
+    public static final String KEY = &quot;country&quot;;
+
+<span class="fc" id="L258">    private static final Map&lt;String, Country&gt; ALPHA2_MAP = new HashMap&lt;&gt;();</span>
+
+    static {
+<span class="fc bfc" id="L261" title="All 2 branches covered.">        for (Country country : values()) {</span>
+<span class="fc bfc" id="L262" title="All 2 branches covered.">            if (country == MISSING)</span>
+<span class="fc" id="L263">                continue;</span>
+
+<span class="fc" id="L265">            ALPHA2_MAP.put(country.alpha2, country);</span>
+        }
+<span class="fc" id="L267">    }</span>
+
+    private final String countryName;
+    private final String alpha2;
+    // ISO 3166-1 alpha3
+    private final String alpha3;
+    private final List&lt;State&gt; states;
+    private final boolean isRightHandTraffic;
+
+<span class="fc" id="L276">    Country(String countryName, String alpha3, String alpha2, boolean isRightHandTraffic, State... states) {</span>
+<span class="fc" id="L277">        this.countryName = countryName;</span>
+<span class="fc" id="L278">        this.alpha2 = alpha2;</span>
+<span class="fc" id="L279">        this.alpha3 = alpha3;</span>
+<span class="fc" id="L280">        this.isRightHandTraffic = isRightHandTraffic;</span>
+<span class="fc" id="L281">        this.states = Arrays.asList(states);</span>
+<span class="fc" id="L282">    }</span>
+
+    /**
+     * @return the name of this country. Avoids clash with name() method of this enum.
+     */
+    public String getCountryName() {
+<span class="nc" id="L288">        return countryName;</span>
+    }
+
+    /**
+     * @return the ISO 3166-1:alpha2 code of this country
+     */
+    public String getAlpha2() {
+<span class="fc" id="L295">        return alpha2;</span>
+    }
+
+    public String getAlpha3() {
+<span class="nc" id="L299">        return alpha3;</span>
+    }
+
+    public boolean isRightHandTraffic() {
+<span class="nc" id="L303">        return isRightHandTraffic;</span>
+    }
+
+    public List&lt;State&gt; getStates() {
+<span class="fc" id="L307">        return states;</span>
+    }
+
+    public static EnumEncodedValue&lt;Country&gt; create() {
+<span class="fc" id="L311">        return new EnumEncodedValue&lt;&gt;(Country.KEY, Country.class);</span>
+    }
+
+    /**
+     * @param iso should be ISO 3166-1 alpha-2
+     */
+    public static Country find(String iso) {
+<span class="fc" id="L318">        return ALPHA2_MAP.get(iso);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L323">        return alpha3; // for background compatibility</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

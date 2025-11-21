@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RacingBikeAverageSpeedParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">RacingBikeAverageSpeedParser.java</span></div><h1>RacingBikeAverageSpeedParser.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.routing.ev.*;
+
+public class RacingBikeAverageSpeedParser extends BikeCommonAverageSpeedParser {
+
+    public RacingBikeAverageSpeedParser(EncodedValueLookup lookup) {
+<span class="fc" id="L8">        this(lookup.getDecimalEncodedValue(VehicleSpeed.key(&quot;racingbike&quot;)),</span>
+<span class="fc" id="L9">                lookup.getEnumEncodedValue(Smoothness.KEY, Smoothness.class),</span>
+<span class="fc" id="L10">                lookup.getDecimalEncodedValue(FerrySpeed.KEY));</span>
+<span class="fc" id="L11">    }</span>
+
+    protected RacingBikeAverageSpeedParser(DecimalEncodedValue speedEnc, EnumEncodedValue&lt;Smoothness&gt; smoothnessEnc, DecimalEncodedValue ferrySpeedEnc) {
+<span class="fc" id="L14">        super(speedEnc, smoothnessEnc, ferrySpeedEnc);</span>
+
+<span class="fc" id="L16">        setTrackTypeSpeed(&quot;grade1&quot;, 20); // paved</span>
+<span class="fc" id="L17">        setTrackTypeSpeed(&quot;grade2&quot;, 10); // now unpaved ...</span>
+<span class="fc" id="L18">        setTrackTypeSpeed(&quot;grade3&quot;, PUSHING_SECTION_SPEED);</span>
+<span class="fc" id="L19">        setTrackTypeSpeed(&quot;grade4&quot;, PUSHING_SECTION_SPEED);</span>
+<span class="fc" id="L20">        setTrackTypeSpeed(&quot;grade5&quot;, PUSHING_SECTION_SPEED);</span>
+
+<span class="fc" id="L22">        setSurfaceSpeed(&quot;paved&quot;, 20);</span>
+<span class="fc" id="L23">        setSurfaceSpeed(&quot;asphalt&quot;, 20);</span>
+<span class="fc" id="L24">        setSurfaceSpeed(&quot;concrete&quot;, 20);</span>
+<span class="fc" id="L25">        setSurfaceSpeed(&quot;concrete:lanes&quot;, 16);</span>
+<span class="fc" id="L26">        setSurfaceSpeed(&quot;concrete:plates&quot;, 16);</span>
+<span class="fc" id="L27">        setSurfaceSpeed(&quot;unpaved&quot;, MIN_SPEED);</span>
+<span class="fc" id="L28">        setSurfaceSpeed(&quot;compacted&quot;, MIN_SPEED);</span>
+<span class="fc" id="L29">        setSurfaceSpeed(&quot;dirt&quot;, MIN_SPEED);</span>
+<span class="fc" id="L30">        setSurfaceSpeed(&quot;earth&quot;, MIN_SPEED);</span>
+<span class="fc" id="L31">        setSurfaceSpeed(&quot;fine_gravel&quot;, PUSHING_SECTION_SPEED);</span>
+<span class="fc" id="L32">        setSurfaceSpeed(&quot;grass&quot;, MIN_SPEED);</span>
+<span class="fc" id="L33">        setSurfaceSpeed(&quot;grass_paver&quot;, MIN_SPEED);</span>
+<span class="fc" id="L34">        setSurfaceSpeed(&quot;gravel&quot;, MIN_SPEED);</span>
+<span class="fc" id="L35">        setSurfaceSpeed(&quot;ground&quot;, MIN_SPEED);</span>
+<span class="fc" id="L36">        setSurfaceSpeed(&quot;ice&quot;, MIN_SPEED);</span>
+<span class="fc" id="L37">        setSurfaceSpeed(&quot;metal&quot;, MIN_SPEED);</span>
+<span class="fc" id="L38">        setSurfaceSpeed(&quot;mud&quot;, MIN_SPEED);</span>
+<span class="fc" id="L39">        setSurfaceSpeed(&quot;pebblestone&quot;, PUSHING_SECTION_SPEED);</span>
+<span class="fc" id="L40">        setSurfaceSpeed(&quot;salt&quot;, MIN_SPEED);</span>
+<span class="fc" id="L41">        setSurfaceSpeed(&quot;sand&quot;, MIN_SPEED);</span>
+<span class="fc" id="L42">        setSurfaceSpeed(&quot;wood&quot;, MIN_SPEED);</span>
+
+<span class="fc" id="L44">        setHighwaySpeed(&quot;path&quot;, 8);</span>
+<span class="fc" id="L45">        setHighwaySpeed(&quot;footway&quot;, PUSHING_SECTION_SPEED);</span>
+<span class="fc" id="L46">        setHighwaySpeed(&quot;track&quot;, MIN_SPEED); // assume unpaved</span>
+
+<span class="fc" id="L48">        setHighwaySpeed(&quot;trunk&quot;, 20);</span>
+<span class="fc" id="L49">        setHighwaySpeed(&quot;trunk_link&quot;, 20);</span>
+<span class="fc" id="L50">        setHighwaySpeed(&quot;primary&quot;, 20);</span>
+<span class="fc" id="L51">        setHighwaySpeed(&quot;primary_link&quot;, 20);</span>
+<span class="fc" id="L52">        setHighwaySpeed(&quot;secondary&quot;, 20);</span>
+<span class="fc" id="L53">        setHighwaySpeed(&quot;secondary_link&quot;, 20);</span>
+<span class="fc" id="L54">        setHighwaySpeed(&quot;tertiary&quot;, 20);</span>
+<span class="fc" id="L55">        setHighwaySpeed(&quot;tertiary_link&quot;, 20);</span>
+
+<span class="fc" id="L57">        addPushingSection(&quot;path&quot;);</span>
+
+        // overwite map from BikeCommon
+<span class="fc" id="L60">        setSmoothnessSpeedFactor(com.graphhopper.routing.ev.Smoothness.EXCELLENT, 1.2d);</span>
+<span class="fc" id="L61">        setSmoothnessSpeedFactor(com.graphhopper.routing.ev.Smoothness.VERY_BAD, 0.1);</span>
+<span class="fc" id="L62">        setSmoothnessSpeedFactor(com.graphhopper.routing.ev.Smoothness.HORRIBLE, 0.1);</span>
+<span class="fc" id="L63">        setSmoothnessSpeedFactor(com.graphhopper.routing.ev.Smoothness.VERY_HORRIBLE, 0.1);</span>
+<span class="fc" id="L64">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

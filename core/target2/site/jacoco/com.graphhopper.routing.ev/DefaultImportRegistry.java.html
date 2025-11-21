@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DefaultImportRegistry.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">DefaultImportRegistry.java</span></div><h1>DefaultImportRegistry.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.ev;
+
+import com.graphhopper.routing.util.*;
+import com.graphhopper.routing.util.parsers.*;
+import com.graphhopper.util.PMap;
+
+<span class="fc" id="L25">public class DefaultImportRegistry implements ImportRegistry {</span>
+    @Override
+    public ImportUnit createImportUnit(String name) {
+<span class="fc bfc" id="L28" title="All 2 branches covered.">        if (Roundabout.KEY.equals(name))</span>
+<span class="fc" id="L29">            return ImportUnit.create(name, props -&gt; Roundabout.create(),</span>
+<span class="fc" id="L30">                    (lookup, props) -&gt; new OSMRoundaboutParser(</span>
+<span class="fc" id="L31">                            lookup.getBooleanEncodedValue(Roundabout.KEY))</span>
+            );
+<span class="pc bpc" id="L33" title="1 of 2 branches missed.">        else if (GetOffBike.KEY.equals(name))</span>
+<span class="nc" id="L34">            return ImportUnit.create(name, props -&gt; GetOffBike.create(),</span>
+<span class="nc" id="L35">                    (lookup, pros) -&gt; new OSMGetOffBikeParser(</span>
+<span class="nc" id="L36">                            lookup.getBooleanEncodedValue(GetOffBike.KEY),</span>
+<span class="nc" id="L37">                            lookup.getBooleanEncodedValue(&quot;bike_access&quot;)</span>
+                    ), &quot;bike_access&quot;);
+<span class="fc bfc" id="L39" title="All 2 branches covered.">        else if (RoadClass.KEY.equals(name))</span>
+<span class="fc" id="L40">            return ImportUnit.create(name, props -&gt; RoadClass.create(),</span>
+<span class="fc" id="L41">                    (lookup, props) -&gt; new OSMRoadClassParser(</span>
+<span class="fc" id="L42">                            lookup.getEnumEncodedValue(RoadClass.KEY, RoadClass.class))</span>
+            );
+<span class="fc bfc" id="L44" title="All 2 branches covered.">        else if (RoadClassLink.KEY.equals(name))</span>
+<span class="fc" id="L45">            return ImportUnit.create(name, props -&gt; RoadClassLink.create(),</span>
+<span class="fc" id="L46">                    (lookup, props) -&gt; new OSMRoadClassLinkParser(</span>
+<span class="fc" id="L47">                            lookup.getBooleanEncodedValue(RoadClassLink.KEY))</span>
+            );
+<span class="fc bfc" id="L49" title="All 2 branches covered.">        else if (RoadEnvironment.KEY.equals(name))</span>
+<span class="fc" id="L50">            return ImportUnit.create(name, props -&gt; RoadEnvironment.create(),</span>
+<span class="fc" id="L51">                    (lookup, props) -&gt; new OSMRoadEnvironmentParser(</span>
+<span class="fc" id="L52">                            lookup.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class))</span>
+            );
+<span class="fc bfc" id="L54" title="All 2 branches covered.">        else if (FootRoadAccess.KEY.equals(name))</span>
+<span class="fc" id="L55">            return ImportUnit.create(name, props -&gt; FootRoadAccess.create(),</span>
+<span class="fc" id="L56">                    (lookup, props) -&gt; new OSMRoadAccessParser&lt;&gt;(</span>
+<span class="fc" id="L57">                            lookup.getEnumEncodedValue(FootRoadAccess.KEY, FootRoadAccess.class),</span>
+<span class="fc" id="L58">                            OSMRoadAccessParser.toOSMRestrictions(TransportationMode.FOOT),</span>
+<span class="fc" id="L59">                            (readerWay, accessValue) -&gt; accessValue,</span>
+                            FootRoadAccess::find)
+            );
+<span class="fc bfc" id="L62" title="All 2 branches covered.">        else if (BikeRoadAccess.KEY.equals(name))</span>
+<span class="fc" id="L63">            return ImportUnit.create(name, props -&gt; BikeRoadAccess.create(),</span>
+<span class="fc" id="L64">                    (lookup, props) -&gt; new OSMRoadAccessParser&lt;&gt;(</span>
+<span class="fc" id="L65">                            lookup.getEnumEncodedValue(BikeRoadAccess.KEY, BikeRoadAccess.class),</span>
+<span class="fc" id="L66">                            OSMRoadAccessParser.toOSMRestrictions(TransportationMode.BIKE),</span>
+<span class="fc" id="L67">                            (readerWay, accessValue) -&gt; accessValue,</span>
+                            BikeRoadAccess::find)
+            );
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        else if (RoadAccess.KEY.equals(name))</span>
+<span class="fc" id="L71">            return ImportUnit.create(name, props -&gt; RoadAccess.create(),</span>
+<span class="fc" id="L72">                    (lookup, props) -&gt; new OSMRoadAccessParser&lt;&gt;(</span>
+<span class="fc" id="L73">                            lookup.getEnumEncodedValue(RoadAccess.KEY, RoadAccess.class),</span>
+<span class="fc" id="L74">                            OSMRoadAccessParser.toOSMRestrictions(TransportationMode.CAR),</span>
+                            RoadAccess::countryHook, RoadAccess::find)
+            );
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        else if (MaxSpeed.KEY.equals(name))</span>
+<span class="fc" id="L78">            return ImportUnit.create(name, props -&gt; MaxSpeed.create(),</span>
+<span class="fc" id="L79">                    (lookup, props) -&gt; new OSMMaxSpeedParser(</span>
+<span class="fc" id="L80">                            lookup.getDecimalEncodedValue(MaxSpeed.KEY))</span>
+            );
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">        else if (MaxSpeedEstimated.KEY.equals(name))</span>
+<span class="nc" id="L83">            return ImportUnit.create(name, props -&gt; MaxSpeedEstimated.create(),</span>
+                    null, Country.KEY, UrbanDensity.KEY);
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">        else if (UrbanDensity.KEY.equals(name))</span>
+<span class="nc" id="L86">            return ImportUnit.create(name, props -&gt; UrbanDensity.create(),</span>
+                    null);
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        else if (MaxWeight.KEY.equals(name))</span>
+<span class="fc" id="L89">            return ImportUnit.create(name, props -&gt; MaxWeight.create(),</span>
+<span class="fc" id="L90">                    (lookup, props) -&gt; new OSMMaxWeightParser(</span>
+<span class="fc" id="L91">                            lookup.getDecimalEncodedValue(MaxWeight.KEY))</span>
+            );
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">        else if (MaxWeightExcept.KEY.equals(name))</span>
+<span class="nc" id="L94">            return ImportUnit.create(name, props -&gt; MaxWeightExcept.create(),</span>
+<span class="nc" id="L95">                    (lookup, props) -&gt; new MaxWeightExceptParser(</span>
+<span class="nc" id="L96">                            lookup.getEnumEncodedValue(MaxWeightExcept.KEY, MaxWeightExcept.class))</span>
+            );
+<span class="fc bfc" id="L98" title="All 2 branches covered.">        else if (MaxHeight.KEY.equals(name))</span>
+<span class="fc" id="L99">            return ImportUnit.create(name, props -&gt; MaxHeight.create(),</span>
+<span class="fc" id="L100">                    (lookup, props) -&gt; new OSMMaxHeightParser(</span>
+<span class="fc" id="L101">                            lookup.getDecimalEncodedValue(MaxHeight.KEY))</span>
+            );
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        else if (MaxWidth.KEY.equals(name))</span>
+<span class="fc" id="L104">            return ImportUnit.create(name, props -&gt; MaxWidth.create(),</span>
+<span class="fc" id="L105">                    (lookup, props) -&gt; new OSMMaxWidthParser(</span>
+<span class="fc" id="L106">                            lookup.getDecimalEncodedValue(MaxWidth.KEY))</span>
+            );
+<span class="pc bpc" id="L108" title="1 of 2 branches missed.">        else if (MaxAxleLoad.KEY.equals(name))</span>
+<span class="nc" id="L109">            return ImportUnit.create(name, props -&gt; MaxAxleLoad.create(),</span>
+<span class="nc" id="L110">                    (lookup, props) -&gt; new OSMMaxAxleLoadParser(</span>
+<span class="nc" id="L111">                            lookup.getDecimalEncodedValue(MaxAxleLoad.KEY))</span>
+            );
+<span class="pc bpc" id="L113" title="1 of 2 branches missed.">        else if (MaxLength.KEY.equals(name))</span>
+<span class="nc" id="L114">            return ImportUnit.create(name, props -&gt; MaxLength.create(),</span>
+<span class="nc" id="L115">                    (lookup, props) -&gt; new OSMMaxLengthParser(</span>
+<span class="nc" id="L116">                            lookup.getDecimalEncodedValue(MaxLength.KEY))</span>
+            );
+<span class="pc bpc" id="L118" title="1 of 2 branches missed.">        else if (Orientation.KEY.equals(name))</span>
+<span class="nc" id="L119">            return ImportUnit.create(name, props -&gt; Orientation.create(),</span>
+<span class="nc" id="L120">                    (lookup, props) -&gt; new OrientationCalculator(</span>
+<span class="nc" id="L121">                            lookup.getDecimalEncodedValue(Orientation.KEY))</span>
+            );
+<span class="fc bfc" id="L123" title="All 2 branches covered.">        else if (Surface.KEY.equals(name))</span>
+<span class="fc" id="L124">            return ImportUnit.create(name, props -&gt; Surface.create(),</span>
+<span class="fc" id="L125">                    (lookup, props) -&gt; new OSMSurfaceParser(</span>
+<span class="fc" id="L126">                            lookup.getEnumEncodedValue(Surface.KEY, Surface.class))</span>
+            );
+<span class="fc bfc" id="L128" title="All 2 branches covered.">        else if (Smoothness.KEY.equals(name))</span>
+<span class="fc" id="L129">            return ImportUnit.create(name, props -&gt; Smoothness.create(),</span>
+<span class="fc" id="L130">                    (lookup, props) -&gt; new OSMSmoothnessParser(</span>
+<span class="fc" id="L131">                            lookup.getEnumEncodedValue(Smoothness.KEY, Smoothness.class))</span>
+            );
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">        else if (Hgv.KEY.equals(name))</span>
+<span class="nc" id="L134">            return ImportUnit.create(name, props -&gt; Hgv.create(),</span>
+<span class="nc" id="L135">                    (lookup, props) -&gt; new OSMHgvParser(</span>
+<span class="nc" id="L136">                            lookup.getEnumEncodedValue(Hgv.KEY, Hgv.class)</span>
+                    ));
+<span class="pc bpc" id="L138" title="1 of 2 branches missed.">        else if (Toll.KEY.equals(name))</span>
+<span class="nc" id="L139">            return ImportUnit.create(name, props -&gt; Toll.create(),</span>
+<span class="nc" id="L140">                    (lookup, props) -&gt; new OSMTollParser(</span>
+<span class="nc" id="L141">                            lookup.getEnumEncodedValue(Toll.KEY, Toll.class))</span>
+            );
+<span class="fc bfc" id="L143" title="All 2 branches covered.">        else if (TrackType.KEY.equals(name))</span>
+<span class="fc" id="L144">            return ImportUnit.create(name, props -&gt; TrackType.create(),</span>
+<span class="fc" id="L145">                    (lookup, props) -&gt; new OSMTrackTypeParser(</span>
+<span class="fc" id="L146">                            lookup.getEnumEncodedValue(TrackType.KEY, TrackType.class))</span>
+            );
+<span class="pc bpc" id="L148" title="1 of 2 branches missed.">        else if (Hazmat.KEY.equals(name))</span>
+<span class="nc" id="L149">            return ImportUnit.create(name, props -&gt; Hazmat.create(),</span>
+<span class="nc" id="L150">                    (lookup, props) -&gt; new OSMHazmatParser(</span>
+<span class="nc" id="L151">                            lookup.getEnumEncodedValue(Hazmat.KEY, Hazmat.class))</span>
+            );
+<span class="pc bpc" id="L153" title="1 of 2 branches missed.">        else if (HazmatTunnel.KEY.equals(name))</span>
+<span class="nc" id="L154">            return ImportUnit.create(name, props -&gt; HazmatTunnel.create(),</span>
+<span class="nc" id="L155">                    (lookup, props) -&gt; new OSMHazmatTunnelParser(</span>
+<span class="nc" id="L156">                            lookup.getEnumEncodedValue(HazmatTunnel.KEY, HazmatTunnel.class))</span>
+            );
+<span class="pc bpc" id="L158" title="1 of 2 branches missed.">        else if (HazmatWater.KEY.equals(name))</span>
+<span class="nc" id="L159">            return ImportUnit.create(name, props -&gt; HazmatWater.create(),</span>
+<span class="nc" id="L160">                    (lookup, props) -&gt; new OSMHazmatWaterParser(</span>
+<span class="nc" id="L161">                            lookup.getEnumEncodedValue(HazmatWater.KEY, HazmatWater.class))</span>
+            );
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">        else if (Lanes.KEY.equals(name))</span>
+<span class="nc" id="L164">            return ImportUnit.create(name, props -&gt; Lanes.create(),</span>
+<span class="nc" id="L165">                    (lookup, props) -&gt; new OSMLanesParser(</span>
+<span class="nc" id="L166">                            lookup.getIntEncodedValue(Lanes.KEY))</span>
+            );
+<span class="pc bpc" id="L168" title="1 of 2 branches missed.">        else if (Footway.KEY.equals(name))</span>
+<span class="nc" id="L169">            return ImportUnit.create(name, props -&gt; Footway.create(),</span>
+<span class="nc" id="L170">                    (lookup, props) -&gt; new OSMFootwayParser(</span>
+<span class="nc" id="L171">                            lookup.getEnumEncodedValue(Footway.KEY, Footway.class))</span>
+            );
+<span class="pc bpc" id="L173" title="1 of 2 branches missed.">        else if (OSMWayID.KEY.equals(name))</span>
+<span class="nc" id="L174">            return ImportUnit.create(name, props -&gt; OSMWayID.create(),</span>
+<span class="nc" id="L175">                    (lookup, props) -&gt; new OSMWayIDParser(</span>
+<span class="nc" id="L176">                            lookup.getIntEncodedValue(OSMWayID.KEY))</span>
+            );
+<span class="fc bfc" id="L178" title="All 2 branches covered.">        else if (MtbRating.KEY.equals(name))</span>
+<span class="fc" id="L179">            return ImportUnit.create(name, props -&gt; MtbRating.create(),</span>
+<span class="fc" id="L180">                    (lookup, props) -&gt; new OSMMtbRatingParser(</span>
+<span class="fc" id="L181">                            lookup.getIntEncodedValue(MtbRating.KEY))</span>
+            );
+<span class="fc bfc" id="L183" title="All 2 branches covered.">        else if (HikeRating.KEY.equals(name))</span>
+<span class="fc" id="L184">            return ImportUnit.create(name, props -&gt; HikeRating.create(),</span>
+<span class="fc" id="L185">                    (lookup, props) -&gt; new OSMHikeRatingParser(</span>
+<span class="fc" id="L186">                            lookup.getIntEncodedValue(HikeRating.KEY))</span>
+            );
+<span class="pc bpc" id="L188" title="1 of 2 branches missed.">        else if (HorseRating.KEY.equals(name))</span>
+<span class="nc" id="L189">            return ImportUnit.create(name, props -&gt; HorseRating.create(),</span>
+<span class="nc" id="L190">                    (lookup, props) -&gt; new OSMHorseRatingParser(</span>
+<span class="nc" id="L191">                            lookup.getIntEncodedValue(HorseRating.KEY))</span>
+            );
+<span class="fc bfc" id="L193" title="All 2 branches covered.">        else if (Country.KEY.equals(name))</span>
+<span class="fc" id="L194">            return ImportUnit.create(name, props -&gt; Country.create(),</span>
+<span class="fc" id="L195">                    (lookup, props) -&gt; new CountryParser(</span>
+<span class="fc" id="L196">                            lookup.getEnumEncodedValue(Country.KEY, Country.class))</span>
+            );
+<span class="pc bpc" id="L198" title="1 of 2 branches missed.">        else if (State.KEY.equals(name))</span>
+<span class="nc" id="L199">            return ImportUnit.create(name, props -&gt; State.create(),</span>
+<span class="nc" id="L200">                    (lookup, props) -&gt; new StateParser(</span>
+<span class="nc" id="L201">                            lookup.getEnumEncodedValue(State.KEY, State.class))</span>
+            );
+<span class="pc bpc" id="L203" title="1 of 2 branches missed.">        else if (Crossing.KEY.equals(name))</span>
+<span class="nc" id="L204">            return ImportUnit.create(name, props -&gt; Crossing.create(),</span>
+<span class="nc" id="L205">                    (lookup, props) -&gt; new OSMCrossingParser(</span>
+<span class="nc" id="L206">                            lookup.getEnumEncodedValue(Crossing.KEY, Crossing.class))</span>
+            );
+<span class="fc bfc" id="L208" title="All 2 branches covered.">        else if (FerrySpeed.KEY.equals(name))</span>
+<span class="fc" id="L209">            return ImportUnit.create(name, props -&gt; FerrySpeed.create(),</span>
+<span class="fc" id="L210">                    (lookup, props) -&gt; new FerrySpeedCalculator(</span>
+<span class="fc" id="L211">                            lookup.getDecimalEncodedValue(FerrySpeed.KEY)));</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">        else if (Curvature.KEY.equals(name))</span>
+<span class="fc" id="L213">            return ImportUnit.create(name, props -&gt; Curvature.create(),</span>
+<span class="fc" id="L214">                    (lookup, props) -&gt; new CurvatureCalculator(</span>
+<span class="fc" id="L215">                            lookup.getDecimalEncodedValue(Curvature.KEY))</span>
+            );
+<span class="fc bfc" id="L217" title="All 2 branches covered.">        else if (AverageSlope.KEY.equals(name))</span>
+<span class="fc" id="L218">            return ImportUnit.create(name, props -&gt; AverageSlope.create(), null, &quot;slope_calculator&quot;);</span>
+<span class="fc bfc" id="L219" title="All 2 branches covered.">        else if (MaxSlope.KEY.equals(name))</span>
+<span class="fc" id="L220">            return ImportUnit.create(name, props -&gt; MaxSlope.create(), null, &quot;slope_calculator&quot;);</span>
+<span class="fc bfc" id="L221" title="All 2 branches covered.">        else if (&quot;slope_calculator&quot;.equals(name))</span>
+<span class="fc" id="L222">            return ImportUnit.create(name, null,</span>
+<span class="fc" id="L223">                    (lookup, props) -&gt; new SlopeCalculator(</span>
+<span class="pc bpc" id="L224" title="1 of 2 branches missed.">                            lookup.hasEncodedValue(MaxSlope.KEY) ? lookup.getDecimalEncodedValue(MaxSlope.KEY) : null,</span>
+<span class="pc bpc" id="L225" title="1 of 2 branches missed.">                            lookup.hasEncodedValue(AverageSlope.KEY) ? lookup.getDecimalEncodedValue(AverageSlope.KEY) : null</span>
+                    ));
+<span class="pc bpc" id="L227" title="1 of 6 branches missed.">        else if (BikeNetwork.KEY.equals(name) || MtbNetwork.KEY.equals(name) || FootNetwork.KEY.equals(name))</span>
+<span class="fc" id="L228">            return ImportUnit.create(name, props -&gt; RouteNetwork.create(name), null);</span>
+
+<span class="pc bpc" id="L230" title="1 of 2 branches missed.">        else if (BusAccess.KEY.equals(name))</span>
+<span class="nc" id="L231">            return ImportUnit.create(name, props -&gt; BusAccess.create(),</span>
+<span class="nc" id="L232">                    (lookup, props) -&gt; new ModeAccessParser(OSMRoadAccessParser.toOSMRestrictions(TransportationMode.BUS),</span>
+<span class="nc" id="L233">                            lookup.getBooleanEncodedValue(name), true, lookup.getBooleanEncodedValue(Roundabout.KEY),</span>
+<span class="nc" id="L234">                            PMap.toSet(props.getString(&quot;restrictions&quot;, &quot;&quot;)), PMap.toSet(props.getString(&quot;barriers&quot;, &quot;&quot;))),</span>
+                    &quot;roundabout&quot;
+            );
+
+<span class="pc bpc" id="L238" title="1 of 2 branches missed.">        else if (HovAccess.KEY.equals(name))</span>
+<span class="nc" id="L239">            return ImportUnit.create(name, props -&gt; HovAccess.create(),</span>
+<span class="nc" id="L240">                    (lookup, props) -&gt; new ModeAccessParser(OSMRoadAccessParser.toOSMRestrictions(TransportationMode.HOV),</span>
+<span class="nc" id="L241">                            lookup.getBooleanEncodedValue(name), true, lookup.getBooleanEncodedValue(Roundabout.KEY),</span>
+<span class="nc" id="L242">                            PMap.toSet(props.getString(&quot;restrictions&quot;, &quot;&quot;)), PMap.toSet(props.getString(&quot;barriers&quot;, &quot;&quot;))),</span>
+                    &quot;roundabout&quot;
+            );
+<span class="fc bfc" id="L245" title="All 2 branches covered.">        else if (FootTemporalAccess.KEY.equals(name))</span>
+<span class="fc" id="L246">            return ImportUnit.create(name, props -&gt; FootTemporalAccess.create(),</span>
+                    (lookup, props) -&gt; {
+<span class="fc" id="L248">                        EnumEncodedValue&lt;FootTemporalAccess&gt; enc = lookup.getEnumEncodedValue(FootTemporalAccess.KEY, FootTemporalAccess.class);</span>
+<span class="pc bpc" id="L249" title="1 of 2 branches missed.">                        OSMTemporalAccessParser.Setter fct = (edgeId, edgeIntAccess, b) -&gt; enc.setEnum(false, edgeId, edgeIntAccess, b ? FootTemporalAccess.YES : FootTemporalAccess.NO);</span>
+<span class="fc" id="L250">                        return new OSMTemporalAccessParser(FootTemporalAccess.CONDITIONALS, fct, props.getString(&quot;date_range_parser_day&quot;, &quot;&quot;));</span>
+                    }
+            );
+
+<span class="pc bpc" id="L254" title="1 of 2 branches missed.">        else if (BikeTemporalAccess.KEY.equals(name))</span>
+<span class="nc" id="L255">            return ImportUnit.create(name, props -&gt; BikeTemporalAccess.create(),</span>
+                    (lookup, props) -&gt; {
+<span class="nc" id="L257">                        EnumEncodedValue&lt;BikeTemporalAccess&gt; enc = lookup.getEnumEncodedValue(BikeTemporalAccess.KEY, BikeTemporalAccess.class);</span>
+<span class="nc bnc" id="L258" title="All 2 branches missed.">                        OSMTemporalAccessParser.Setter fct = (edgeId, edgeIntAccess, b) -&gt; enc.setEnum(false, edgeId, edgeIntAccess, b ? BikeTemporalAccess.YES : BikeTemporalAccess.NO);</span>
+<span class="nc" id="L259">                        return new OSMTemporalAccessParser(BikeTemporalAccess.CONDITIONALS, fct, props.getString(&quot;date_range_parser_day&quot;, &quot;&quot;));</span>
+                    }
+            );
+
+<span class="pc bpc" id="L263" title="1 of 2 branches missed.">        else if (CarTemporalAccess.KEY.equals(name))</span>
+<span class="nc" id="L264">            return ImportUnit.create(name, props -&gt; CarTemporalAccess.create(),</span>
+                    (lookup, props) -&gt; {
+<span class="nc" id="L266">                        EnumEncodedValue&lt;CarTemporalAccess&gt; enc = lookup.getEnumEncodedValue(CarTemporalAccess.KEY, CarTemporalAccess.class);</span>
+<span class="nc bnc" id="L267" title="All 2 branches missed.">                        OSMTemporalAccessParser.Setter fct = (edgeId, edgeIntAccess, b) -&gt; enc.setEnum(false, edgeId, edgeIntAccess, b ? CarTemporalAccess.YES : CarTemporalAccess.NO);</span>
+<span class="nc" id="L268">                        return new OSMTemporalAccessParser(CarTemporalAccess.CONDITIONALS, fct, props.getString(&quot;date_range_parser_day&quot;, &quot;&quot;));</span>
+                    }
+            );
+
+<span class="fc bfc" id="L272" title="All 2 branches covered.">        else if (VehicleAccess.key(&quot;car&quot;).equals(name))</span>
+<span class="fc" id="L273">            return ImportUnit.create(name, props -&gt; VehicleAccess.create(&quot;car&quot;),</span>
+                    CarAccessParser::new,
+                    &quot;roundabout&quot;
+            );
+<span class="pc bpc" id="L277" title="1 of 2 branches missed.">        else if (VehicleAccess.key(&quot;roads&quot;).equals(name))</span>
+<span class="nc" id="L278">            throw new IllegalArgumentException(&quot;roads_access parser no longer necessary, see docs/migration/config-migration-08-09.md&quot;);</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">        else if (VehicleAccess.key(&quot;bike&quot;).equals(name))</span>
+<span class="fc" id="L280">            return ImportUnit.create(name, props -&gt; VehicleAccess.create(&quot;bike&quot;),</span>
+                    BikeAccessParser::new,
+                    &quot;roundabout&quot;
+            );
+<span class="fc bfc" id="L284" title="All 2 branches covered.">        else if (VehicleAccess.key(&quot;racingbike&quot;).equals(name))</span>
+<span class="fc" id="L285">            return ImportUnit.create(name, props -&gt; VehicleAccess.create(&quot;racingbike&quot;),</span>
+                    RacingBikeAccessParser::new,
+                    &quot;roundabout&quot;
+            );
+<span class="fc bfc" id="L289" title="All 2 branches covered.">        else if (VehicleAccess.key(&quot;mtb&quot;).equals(name))</span>
+<span class="fc" id="L290">            return ImportUnit.create(name, props -&gt; VehicleAccess.create(&quot;mtb&quot;),</span>
+                    MountainBikeAccessParser::new,
+                    &quot;roundabout&quot;
+            );
+<span class="fc bfc" id="L294" title="All 2 branches covered.">        else if (VehicleAccess.key(&quot;foot&quot;).equals(name))</span>
+<span class="fc" id="L295">            return ImportUnit.create(name, props -&gt; VehicleAccess.create(&quot;foot&quot;),</span>
+                    FootAccessParser::new);
+
+<span class="fc bfc" id="L298" title="All 2 branches covered.">        else if (VehicleSpeed.key(&quot;car&quot;).equals(name))</span>
+<span class="fc" id="L299">            return ImportUnit.create(name, props -&gt; new DecimalEncodedValueImpl(</span>
+<span class="fc" id="L300">                            name, props.getInt(&quot;speed_bits&quot;, 7), props.getDouble(&quot;speed_factor&quot;, 2), true),</span>
+<span class="fc" id="L301">                    (lookup, props) -&gt; new CarAverageSpeedParser(lookup),</span>
+                    &quot;ferry_speed&quot;
+            );
+<span class="pc bpc" id="L304" title="1 of 2 branches missed.">        else if (VehicleSpeed.key(&quot;roads&quot;).equals(name))</span>
+<span class="nc" id="L305">            throw new IllegalArgumentException(&quot;roads_average_speed parser no longer necessary, see docs/migration/config-migration-08-09.md&quot;);</span>
+<span class="fc bfc" id="L306" title="All 2 branches covered.">        else if (VehicleSpeed.key(&quot;bike&quot;).equals(name))</span>
+<span class="fc" id="L307">            return ImportUnit.create(name, props -&gt; new DecimalEncodedValueImpl(</span>
+<span class="fc" id="L308">                            name, props.getInt(&quot;speed_bits&quot;, 4), props.getDouble(&quot;speed_factor&quot;, 2), false),</span>
+<span class="fc" id="L309">                    (lookup, props) -&gt; new BikeAverageSpeedParser(lookup),</span>
+                    &quot;ferry_speed&quot;, &quot;smoothness&quot;
+            );
+<span class="fc bfc" id="L312" title="All 2 branches covered.">        else if (VehicleSpeed.key(&quot;racingbike&quot;).equals(name))</span>
+<span class="fc" id="L313">            return ImportUnit.create(name, props -&gt; new DecimalEncodedValueImpl(</span>
+<span class="fc" id="L314">                            name, props.getInt(&quot;speed_bits&quot;, 4), props.getDouble(&quot;speed_factor&quot;, 2), false),</span>
+<span class="fc" id="L315">                    (lookup, props) -&gt; new RacingBikeAverageSpeedParser(lookup),</span>
+                    &quot;ferry_speed&quot;, &quot;smoothness&quot;
+            );
+<span class="fc bfc" id="L318" title="All 2 branches covered.">        else if (VehicleSpeed.key(&quot;mtb&quot;).equals(name))</span>
+<span class="fc" id="L319">            return ImportUnit.create(name, props -&gt; new DecimalEncodedValueImpl(</span>
+<span class="fc" id="L320">                            name, props.getInt(&quot;speed_bits&quot;, 4), props.getDouble(&quot;speed_factor&quot;, 2), false),</span>
+<span class="fc" id="L321">                    (lookup, props) -&gt; new MountainBikeAverageSpeedParser(lookup),</span>
+                    &quot;ferry_speed&quot;, &quot;smoothness&quot;
+            );
+<span class="fc bfc" id="L324" title="All 2 branches covered.">        else if (VehicleSpeed.key(&quot;foot&quot;).equals(name))</span>
+<span class="fc" id="L325">            return ImportUnit.create(name, props -&gt; new DecimalEncodedValueImpl(</span>
+<span class="fc" id="L326">                            name, props.getInt(&quot;speed_bits&quot;, 4), props.getDouble(&quot;speed_factor&quot;, 1), false),</span>
+<span class="fc" id="L327">                    (lookup, props) -&gt; new FootAverageSpeedParser(lookup),</span>
+                    &quot;ferry_speed&quot;
+            );
+<span class="fc bfc" id="L330" title="All 2 branches covered.">        else if (VehiclePriority.key(&quot;foot&quot;).equals(name))</span>
+<span class="fc" id="L331">            return ImportUnit.create(name, props -&gt; VehiclePriority.create(&quot;foot&quot;, 4, PriorityCode.getFactor(1), false),</span>
+<span class="fc" id="L332">                    (lookup, props) -&gt; new FootPriorityParser(lookup),</span>
+<span class="fc" id="L333">                    RouteNetwork.key(&quot;foot&quot;)</span>
+            );
+<span class="fc bfc" id="L335" title="All 2 branches covered.">        else if (VehiclePriority.key(&quot;bike&quot;).equals(name))</span>
+<span class="fc" id="L336">            return ImportUnit.create(name, props -&gt; VehiclePriority.create(&quot;bike&quot;, 4, PriorityCode.getFactor(1), false),</span>
+<span class="fc" id="L337">                    (lookup, props) -&gt; new BikePriorityParser(lookup),</span>
+<span class="fc" id="L338">                    VehicleSpeed.key(&quot;bike&quot;), BikeNetwork.KEY</span>
+            );
+<span class="fc bfc" id="L340" title="All 2 branches covered.">        else if (VehiclePriority.key(&quot;racingbike&quot;).equals(name))</span>
+<span class="fc" id="L341">            return ImportUnit.create(name, props -&gt; VehiclePriority.create(&quot;racingbike&quot;, 4, PriorityCode.getFactor(1), false),</span>
+<span class="fc" id="L342">                    (lookup, props) -&gt; new RacingBikePriorityParser(lookup),</span>
+<span class="fc" id="L343">                    VehicleSpeed.key(&quot;racingbike&quot;), BikeNetwork.KEY</span>
+            );
+<span class="pc bpc" id="L345" title="1 of 2 branches missed.">        else if (VehiclePriority.key(&quot;mtb&quot;).equals(name))</span>
+<span class="fc" id="L346">            return ImportUnit.create(name, props -&gt; VehiclePriority.create(&quot;mtb&quot;, 4, PriorityCode.getFactor(1), false),</span>
+<span class="fc" id="L347">                    (lookup, props) -&gt; new MountainBikePriorityParser(lookup),</span>
+<span class="fc" id="L348">                    VehicleSpeed.key(&quot;mtb&quot;), BikeNetwork.KEY</span>
+            );
+<span class="nc" id="L350">        return null;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

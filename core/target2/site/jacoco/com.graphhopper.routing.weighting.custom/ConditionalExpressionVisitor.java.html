@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ConditionalExpressionVisitor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting.custom</a> &gt; <span class="el_source">ConditionalExpressionVisitor.java</span></div><h1>ConditionalExpressionVisitor.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.weighting.custom;
+
+import com.graphhopper.util.Helper;
+import org.codehaus.janino.Scanner;
+import org.codehaus.janino.*;
+
+import java.io.StringReader;
+import java.util.*;
+
+import static com.graphhopper.routing.weighting.custom.CustomModelParser.IN_AREA_PREFIX;
+
+/**
+ * Expression visitor for the if or else_if condition.
+ */
+class ConditionalExpressionVisitor implements Visitor.AtomVisitor&lt;Boolean, Exception&gt; {
+
+<span class="fc" id="L34">    private static final Set&lt;String&gt; allowedMethodParents = new HashSet&lt;&gt;(Arrays.asList(&quot;edge&quot;, &quot;Math&quot;, &quot;country&quot;));</span>
+<span class="fc" id="L35">    private static final Set&lt;String&gt; allowedMethods = new HashSet&lt;&gt;(Arrays.asList(&quot;ordinal&quot;, &quot;getDistance&quot;, &quot;getName&quot;,</span>
+            &quot;contains&quot;, &quot;sqrt&quot;, &quot;abs&quot;, &quot;isRightHandTraffic&quot;));
+    private final ParseResult result;
+<span class="fc" id="L38">    private final TreeMap&lt;Integer, Replacement&gt; replacements = new TreeMap&lt;&gt;();</span>
+    private final NameValidator variableValidator;
+    private final ClassHelper classHelper;
+    private String invalidMessage;
+
+<span class="fc" id="L43">    public ConditionalExpressionVisitor(ParseResult result, NameValidator variableValidator, ClassHelper classHelper) {</span>
+<span class="fc" id="L44">        this.result = result;</span>
+<span class="fc" id="L45">        this.variableValidator = variableValidator;</span>
+<span class="fc" id="L46">        this.classHelper = classHelper;</span>
+<span class="fc" id="L47">    }</span>
+
+    // allow only methods and other identifiers (constants and encoded values)
+    boolean isValidIdentifier(String identifier) {
+<span class="fc bfc" id="L51" title="All 2 branches covered.">        if (variableValidator.isValid(identifier)) {</span>
+<span class="fc bfc" id="L52" title="All 2 branches covered.">            if (!Character.isUpperCase(identifier.charAt(0)))</span>
+<span class="fc" id="L53">                result.guessedVariables.add(identifier);</span>
+<span class="fc" id="L54">            return true;</span>
+        }
+<span class="fc" id="L56">        return false;</span>
+    }
+
+    @Override
+    public Boolean visitRvalue(Java.Rvalue rv) throws Exception {
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        if (rv instanceof Java.AmbiguousName) {</span>
+<span class="fc" id="L62">            Java.AmbiguousName n = (Java.AmbiguousName) rv;</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">            if (n.identifiers.length == 1) {</span>
+<span class="fc" id="L64">                String arg = n.identifiers[0];</span>
+<span class="fc bfc" id="L65" title="All 2 branches covered.">                if (arg.startsWith(IN_AREA_PREFIX)) {</span>
+<span class="fc" id="L66">                    int start = rv.getLocation().getColumnNumber() - 1;</span>
+<span class="fc" id="L67">                    replacements.put(start, new Replacement(start, arg.length(),</span>
+<span class="fc" id="L68">                            CustomWeightingHelper.class.getSimpleName() + &quot;.in(this.&quot; + arg + &quot;, edge)&quot;));</span>
+<span class="fc" id="L69">                    result.guessedVariables.add(arg);</span>
+<span class="fc" id="L70">                    return true;</span>
+                } else {
+                    // e.g. like road_class
+<span class="fc bfc" id="L73" title="All 2 branches covered.">                    if (isValidIdentifier(arg)) return true;</span>
+<span class="fc" id="L74">                    invalidMessage = &quot;'&quot; + arg + &quot;' not available&quot;;</span>
+<span class="fc" id="L75">                    return false;</span>
+                }
+            }
+<span class="fc" id="L78">            invalidMessage = &quot;identifier &quot; + n + &quot; invalid&quot;;</span>
+<span class="fc" id="L79">            return false;</span>
+        }
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        if (rv instanceof Java.Literal) {</span>
+<span class="fc" id="L82">            return true;</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">        } else if (rv instanceof Java.UnaryOperation) {</span>
+<span class="fc" id="L84">            Java.UnaryOperation uo = (Java.UnaryOperation) rv;</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">            if (uo.operator.equals(&quot;!&quot;)) return uo.operand.accept(this);</span>
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">            if (uo.operator.equals(&quot;-&quot;)) return uo.operand.accept(this);</span>
+<span class="nc" id="L87">            return false;</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        } else if (rv instanceof Java.MethodInvocation) {</span>
+<span class="fc" id="L89">            Java.MethodInvocation mi = (Java.MethodInvocation) rv;</span>
+<span class="pc bpc" id="L90" title="1 of 4 branches missed.">            if (allowedMethods.contains(mi.methodName) &amp;&amp; mi.target != null) {</span>
+<span class="fc" id="L91">                Java.AmbiguousName n = (Java.AmbiguousName) mi.target.toRvalue();</span>
+<span class="pc bpc" id="L92" title="1 of 2 branches missed.">                if (n.identifiers.length == 2) {</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">                    if (allowedMethodParents.contains(n.identifiers[0])) {</span>
+                        // edge.getDistance(), Math.sqrt(x) =&gt; check target name i.e. edge or Math
+<span class="fc bfc" id="L95" title="All 2 branches covered.">                        if (mi.arguments.length == 0) {</span>
+<span class="fc" id="L96">                            result.guessedVariables.add(n.identifiers[0]); // return &quot;edge&quot;</span>
+<span class="fc" id="L97">                            return true;</span>
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">                        } else if (mi.arguments.length == 1) {</span>
+                            // return &quot;x&quot; but verify before
+<span class="fc" id="L100">                            return mi.arguments[0].accept(this);</span>
+                        }
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">                    } else if (variableValidator.isValid(n.identifiers[0])) {</span>
+                        // road_class.ordinal()
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">                        if (mi.arguments.length == 0) {</span>
+<span class="fc" id="L105">                            result.guessedVariables.add(n.identifiers[0]); // return road_class</span>
+<span class="fc" id="L106">                            return true;</span>
+                        }
+                    }
+                }
+            }
+<span class="fc" id="L111">            invalidMessage = mi.methodName + &quot; is an illegal method in a conditional expression&quot;;</span>
+<span class="fc" id="L112">            return false;</span>
+<span class="fc bfc" id="L113" title="All 2 branches covered.">        } else if (rv instanceof Java.ParenthesizedExpression) {</span>
+<span class="fc" id="L114">            return ((Java.ParenthesizedExpression) rv).value.accept(this);</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">        } else if (rv instanceof Java.BinaryOperation) {</span>
+<span class="fc" id="L116">            Java.BinaryOperation binOp = (Java.BinaryOperation) rv;</span>
+<span class="fc" id="L117">            int startRH = binOp.rhs.getLocation().getColumnNumber() - 1;</span>
+<span class="pc bpc" id="L118" title="1 of 4 branches missed.">            if (binOp.lhs instanceof Java.AmbiguousName &amp;&amp; ((Java.AmbiguousName) binOp.lhs).identifiers.length == 1) {</span>
+<span class="fc" id="L119">                String lhVarAsString = ((Java.AmbiguousName) binOp.lhs).identifiers[0];</span>
+<span class="fc bfc" id="L120" title="All 4 branches covered.">                boolean eqOps = binOp.operator.equals(&quot;==&quot;) || binOp.operator.equals(&quot;!=&quot;);</span>
+<span class="fc bfc" id="L121" title="All 4 branches covered.">                if (binOp.rhs instanceof Java.AmbiguousName &amp;&amp; ((Java.AmbiguousName) binOp.rhs).identifiers.length == 1) {</span>
+                    // Make enum explicit as NO or OTHER can occur in other enums so convert &quot;toll == NO&quot; to &quot;toll == Toll.NO&quot;
+<span class="fc" id="L123">                    String rhValueAsString = ((Java.AmbiguousName) binOp.rhs).identifiers[0];</span>
+<span class="fc bfc" id="L124" title="All 4 branches covered.">                    if (variableValidator.isValid(lhVarAsString) &amp;&amp; Helper.toUpperCase(rhValueAsString).equals(rhValueAsString)) {</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">                        if (!eqOps)</span>
+<span class="nc" id="L126">                            throw new IllegalArgumentException(&quot;Operator &quot; + binOp.operator + &quot; not allowed for enum&quot;);</span>
+<span class="fc" id="L127">                        String value = classHelper.getClassName(binOp.lhs.toString());</span>
+<span class="fc" id="L128">                        replacements.put(startRH, new Replacement(startRH, rhValueAsString.length(), value + &quot;.&quot; + rhValueAsString));</span>
+                    }
+                }
+            }
+<span class="fc bfc" id="L132" title="All 4 branches covered.">            return binOp.lhs.accept(this) &amp;&amp; binOp.rhs.accept(this);</span>
+        }
+<span class="fc" id="L134">        return false;</span>
+    }
+
+    @Override
+    public Boolean visitPackage(Java.Package p) {
+<span class="nc" id="L139">        return false;</span>
+    }
+
+    @Override
+    public Boolean visitType(Java.Type t) {
+<span class="nc" id="L144">        return false;</span>
+    }
+
+    @Override
+    public Boolean visitConstructorInvocation(Java.ConstructorInvocation ci) {
+<span class="nc" id="L149">        return false;</span>
+    }
+
+    /**
+     * Enforce simple expressions of user input to increase security.
+     *
+     * @return ParseResult with ok if it is a valid and &quot;simple&quot; expression. It contains all guessed variables and a
+     * converted expression that includes class names for constants to avoid conflicts e.g. when doing &quot;toll == Toll.NO&quot;
+     * instead of &quot;toll == NO&quot;.
+     */
+    static ParseResult parse(String expression, NameValidator validator, ClassHelper helper) {
+<span class="fc" id="L160">        ParseResult result = new ParseResult();</span>
+        try {
+<span class="fc" id="L162">            Parser parser = new Parser(new Scanner(&quot;ignore&quot;, new StringReader(expression)));</span>
+<span class="fc" id="L163">            Java.Atom atom = parser.parseConditionalExpression();</span>
+            // after parsing the expression the input should end (otherwise it is not &quot;simple&quot;)
+<span class="fc bfc" id="L165" title="All 2 branches covered.">            if (parser.peek().type == TokenType.END_OF_INPUT) {</span>
+<span class="fc" id="L166">                result.guessedVariables = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc" id="L167">                ConditionalExpressionVisitor visitor = new ConditionalExpressionVisitor(result, validator, helper);</span>
+<span class="fc" id="L168">                result.ok = atom.accept(visitor);</span>
+<span class="fc" id="L169">                result.invalidMessage = visitor.invalidMessage;</span>
+<span class="fc bfc" id="L170" title="All 2 branches covered.">                if (result.ok) {</span>
+<span class="fc" id="L171">                    result.converted = new StringBuilder(expression.length());</span>
+<span class="fc" id="L172">                    int start = 0;</span>
+<span class="fc bfc" id="L173" title="All 2 branches covered.">                    for (Replacement replace : visitor.replacements.values()) {</span>
+<span class="fc" id="L174">                        result.converted.append(expression, start, replace.start).append(replace.newString);</span>
+<span class="fc" id="L175">                        start = replace.start + replace.oldLength;</span>
+<span class="fc" id="L176">                    }</span>
+<span class="fc" id="L177">                    result.converted.append(expression.substring(start));</span>
+                }
+            }
+<span class="fc" id="L180">        } catch (Exception ex) {</span>
+<span class="fc" id="L181">        }</span>
+<span class="fc" id="L182">        return result;</span>
+    }
+
+    static class Replacement {
+        int start;
+        int oldLength;
+        String newString;
+
+<span class="fc" id="L190">        public Replacement(int start, int oldLength, String newString) {</span>
+<span class="fc" id="L191">            this.start = start;</span>
+<span class="fc" id="L192">            this.oldLength = oldLength;</span>
+<span class="fc" id="L193">            this.newString = newString;</span>
+<span class="fc" id="L194">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

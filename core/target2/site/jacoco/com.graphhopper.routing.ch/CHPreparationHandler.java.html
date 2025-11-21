@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CHPreparationHandler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ch</a> &gt; <span class="el_source">CHPreparationHandler.java</span></div><h1>CHPreparationHandler.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ch;
+
+import com.graphhopper.GraphHopperConfig;
+import com.graphhopper.config.CHProfile;
+import com.graphhopper.storage.*;
+import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.PMap;
+import com.graphhopper.util.Parameters.CH;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+import java.util.stream.Stream;
+
+import static com.graphhopper.util.Helper.createFormatter;
+import static com.graphhopper.util.Helper.getMemInfo;
+
+/**
+ * This class handles the different CH preparations
+ *
+ * @author Peter Karich
+ * @author easbar
+ */
+public class CHPreparationHandler {
+<span class="fc" id="L42">    private static final Logger LOGGER = LoggerFactory.getLogger(CHPreparationHandler.class);</span>
+    // we first add the profiles and later read them to create the config objects (because they require
+    // the actual Weightings)
+<span class="fc" id="L45">    private final List&lt;CHProfile&gt; chProfiles = new ArrayList&lt;&gt;();</span>
+    private int preparationThreads;
+<span class="fc" id="L47">    private PMap pMap = new PMap();</span>
+
+<span class="fc" id="L49">    public CHPreparationHandler() {</span>
+<span class="fc" id="L50">        setPreparationThreads(1);</span>
+<span class="fc" id="L51">    }</span>
+
+    public void init(GraphHopperConfig ghConfig) {
+        // throw explicit error for deprecated configs
+<span class="pc bpc" id="L55" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;prepare.threads&quot;))</span>
+<span class="nc" id="L56">            throw new IllegalStateException(&quot;Use &quot; + CH.PREPARE + &quot;threads instead of prepare.threads&quot;);</span>
+<span class="pc bpc" id="L57" title="3 of 6 branches missed.">        if (ghConfig.has(&quot;prepare.chWeighting&quot;) || ghConfig.has(&quot;prepare.chWeightings&quot;) || ghConfig.has(&quot;prepare.ch.weightings&quot;))</span>
+<span class="nc" id="L58">            throw new IllegalStateException(&quot;Use profiles_ch instead of prepare.chWeighting, prepare.chWeightings or prepare.ch.weightings, see #1922 and docs/core/profiles.md&quot;);</span>
+<span class="pc bpc" id="L59" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;prepare.ch.edge_based&quot;))</span>
+<span class="nc" id="L60">            throw new IllegalStateException(&quot;Use profiles_ch instead of prepare.ch.edge_based, see #1922 and docs/core/profiles.md&quot;);</span>
+
+<span class="fc" id="L62">        setPreparationThreads(ghConfig.getInt(CH.PREPARE + &quot;threads&quot;, getPreparationThreads()));</span>
+<span class="fc" id="L63">        setCHProfiles(ghConfig.getCHProfiles());</span>
+<span class="fc" id="L64">        pMap = ghConfig.asPMap();</span>
+<span class="fc" id="L65">    }</span>
+
+    public final boolean isEnabled() {
+<span class="fc bfc" id="L68" title="All 2 branches covered.">        return !chProfiles.isEmpty();</span>
+    }
+
+    public CHPreparationHandler setCHProfiles(CHProfile... chProfiles) {
+<span class="fc" id="L72">        setCHProfiles(Arrays.asList(chProfiles));</span>
+<span class="fc" id="L73">        return this;</span>
+    }
+
+    public CHPreparationHandler setCHProfiles(Collection&lt;CHProfile&gt; chProfiles) {
+<span class="fc" id="L77">        this.chProfiles.clear();</span>
+<span class="fc" id="L78">        this.chProfiles.addAll(chProfiles);</span>
+<span class="fc" id="L79">        return this;</span>
+    }
+
+    public List&lt;CHProfile&gt; getCHProfiles() {
+<span class="fc" id="L83">        return chProfiles;</span>
+    }
+
+    public int getPreparationThreads() {
+<span class="fc" id="L87">        return preparationThreads;</span>
+    }
+
+    /**
+     * This method changes the number of threads used for preparation on import. Default is 1. Make
+     * sure that you have enough memory when increasing this number!
+     */
+    public void setPreparationThreads(int preparationThreads) {
+<span class="fc" id="L95">        this.preparationThreads = preparationThreads;</span>
+<span class="fc" id="L96">    }</span>
+
+    public Map&lt;String, RoutingCHGraph&gt; load(BaseGraph graph, List&lt;CHConfig&gt; chConfigs) {
+<span class="fc" id="L99">        Map&lt;String, RoutingCHGraph&gt; loaded = Collections.synchronizedMap(new LinkedHashMap&lt;&gt;());</span>
+<span class="fc" id="L100">        Stream&lt;Runnable&gt; runnables = chConfigs.stream()</span>
+<span class="fc" id="L101">                .map(c -&gt; () -&gt; {</span>
+<span class="fc" id="L102">                    CHStorage chStorage = new CHStorage(graph.getDirectory(), c.getName(), graph.getSegmentSize(), c.isEdgeBased());</span>
+<span class="fc bfc" id="L103" title="All 2 branches covered.">                    if (chStorage.loadExisting())</span>
+<span class="fc" id="L104">                        loaded.put(c.getName(), RoutingCHGraphImpl.fromGraph(graph, chStorage, c));</span>
+                    else {
+                        // todo: this is ugly, see comments in LMPreparationHandler
+<span class="fc" id="L107">                        graph.getDirectory().remove(&quot;nodes_ch_&quot; + c.getName());</span>
+<span class="fc" id="L108">                        graph.getDirectory().remove(&quot;shortcuts_&quot; + c.getName());</span>
+                    }
+<span class="fc" id="L110">                });</span>
+<span class="fc" id="L111">        GHUtility.runConcurrently(runnables, preparationThreads);</span>
+<span class="fc" id="L112">        return loaded;</span>
+    }
+
+    public Map&lt;String, PrepareContractionHierarchies.Result&gt; prepare(BaseGraph baseGraph, StorableProperties properties, List&lt;CHConfig&gt; chConfigs, final boolean closeEarly) {
+<span class="fc bfc" id="L116" title="All 2 branches covered.">        if (chConfigs.isEmpty()) {</span>
+<span class="fc" id="L117">            LOGGER.info(&quot;There are no CHs to prepare&quot;);</span>
+<span class="fc" id="L118">            return Collections.emptyMap();</span>
+        }
+<span class="fc" id="L120">        LOGGER.info(&quot;Creating CH preparations, {}&quot;, getMemInfo());</span>
+<span class="fc" id="L121">        Map&lt;String, PrepareContractionHierarchies.Result&gt; results = Collections.synchronizedMap(new LinkedHashMap&lt;&gt;());</span>
+<span class="fc" id="L122">        List&lt;Runnable&gt; runnables = new ArrayList&lt;&gt;(chConfigs.size());</span>
+<span class="fc bfc" id="L123" title="All 2 branches covered.">        for (int i = 0; i &lt; chConfigs.size(); ++i) {</span>
+<span class="fc" id="L124">            CHConfig chConfig = chConfigs.get(i);</span>
+<span class="fc" id="L125">            LOGGER.info((i + 1) + &quot;/&quot; + chConfigs.size() + &quot; Setting up CH preparation for profile &quot; +</span>
+<span class="fc" id="L126">                    &quot;'&quot; + chConfig.getName() + &quot;' &quot; + chConfig.getTraversalMode() + &quot; ... (&quot; + getMemInfo() + &quot;)&quot;);</span>
+<span class="fc" id="L127">            runnables.add(() -&gt; {</span>
+<span class="fc" id="L128">                final String name = chConfig.getName();</span>
+                // toString is not taken into account so we need to cheat, see http://stackoverflow.com/q/6113746/194609 for other options
+<span class="fc" id="L130">                Thread.currentThread().setName(name);</span>
+<span class="fc" id="L131">                PrepareContractionHierarchies prepare = PrepareContractionHierarchies.fromGraph(baseGraph, chConfig);</span>
+<span class="fc" id="L132">                prepare.setParams(pMap);</span>
+<span class="fc" id="L133">                PrepareContractionHierarchies.Result result = prepare.doWork();</span>
+<span class="fc" id="L134">                results.put(name, result);</span>
+<span class="fc" id="L135">                prepare.flush();</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">                if (closeEarly)</span>
+<span class="fc" id="L137">                    prepare.close();</span>
+<span class="fc" id="L138">                properties.put(CH.PREPARE + &quot;date.&quot; + name, createFormatter().format(new Date()));</span>
+<span class="fc" id="L139">            });</span>
+        }
+<span class="fc" id="L141">        GHUtility.runConcurrently(runnables.stream(), preparationThreads);</span>
+<span class="fc" id="L142">        LOGGER.info(&quot;Finished CH preparation, {}&quot;, getMemInfo());</span>
+<span class="fc" id="L143">        return results;</span>
+    }
+
+    private PrepareContractionHierarchies createCHPreparation(BaseGraph graph, CHConfig chConfig) {
+<span class="nc" id="L147">        PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraph(graph, chConfig);</span>
+<span class="nc" id="L148">        pch.setParams(pMap);</span>
+<span class="nc" id="L149">        return pch;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

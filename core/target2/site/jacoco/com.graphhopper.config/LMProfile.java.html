@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LMProfile.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.config</a> &gt; <span class="el_source">LMProfile.java</span></div><h1>LMProfile.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.config;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import static com.graphhopper.config.Profile.validateProfileName;
+
+/**
+ * Corresponds to an entry in the `profiles_lm` section in config.yml and specifies a routing profile that shall be
+ * prepared using Landmarks (LM)
+ *
+ * @see Profile
+ */
+public class LMProfile {
+<span class="pc" id="L32">    private String profile = &quot;&quot;;</span>
+<span class="pc" id="L33">    private String preparationProfile = &quot;this&quot;;</span>
+<span class="pc" id="L34">    private double maximumLMWeight = -1;</span>
+
+<span class="nc" id="L36">    private LMProfile() {</span>
+        // default constructor needed for jackson
+<span class="nc" id="L38">    }</span>
+
+<span class="nc" id="L40">    public LMProfile(LMProfile profile) {</span>
+<span class="nc" id="L41">        this.profile = profile.profile;</span>
+<span class="nc" id="L42">        this.preparationProfile = profile.preparationProfile;</span>
+<span class="nc" id="L43">        this.maximumLMWeight = profile.maximumLMWeight;</span>
+<span class="nc" id="L44">    }</span>
+
+<span class="fc" id="L46">    public LMProfile(String profile) {</span>
+<span class="fc" id="L47">        setProfile(profile);</span>
+<span class="fc" id="L48">    }</span>
+
+    public String getProfile() {
+<span class="fc" id="L51">        return profile;</span>
+    }
+
+    void setProfile(String profile) {
+<span class="fc" id="L55">        validateProfileName(profile);</span>
+<span class="fc" id="L56">        this.profile = profile;</span>
+<span class="fc" id="L57">    }</span>
+
+    public boolean usesOtherPreparation() {
+<span class="fc bfc" id="L60" title="All 2 branches covered.">        return !preparationProfile.equals(&quot;this&quot;);</span>
+    }
+
+    public String getPreparationProfile() {
+<span class="fc" id="L64">        return preparationProfile;</span>
+    }
+
+    public LMProfile setPreparationProfile(String preparationProfile) {
+<span class="fc" id="L68">        validateProfileName(preparationProfile);</span>
+<span class="pc bpc" id="L69" title="1 of 2 branches missed.">        if (maximumLMWeight &gt;= 0)</span>
+<span class="nc" id="L70">            throw new IllegalArgumentException(&quot;Using non-default maximum_lm_weight and preparation_profile at the same time is not allowed&quot;);</span>
+<span class="fc" id="L71">        this.preparationProfile = preparationProfile;</span>
+<span class="fc" id="L72">        return this;</span>
+    }
+
+    public double getMaximumLMWeight() {
+<span class="fc" id="L76">        return maximumLMWeight;</span>
+    }
+
+    @JsonProperty(&quot;maximum_lm_weight&quot;)
+    public LMProfile setMaximumLMWeight(double maximumLMWeight) {
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">        if (usesOtherPreparation())</span>
+<span class="nc" id="L82">            throw new IllegalArgumentException(&quot;Using non-default maximum_lm_weight and preparation_profile at the same time is not allowed&quot;);</span>
+<span class="fc" id="L83">        this.maximumLMWeight = maximumLMWeight;</span>
+<span class="fc" id="L84">        return this;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L89">        return profile + &quot;|preparation_profile=&quot; + preparationProfile + &quot;|maximum_lm_weight=&quot; + maximumLMWeight;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

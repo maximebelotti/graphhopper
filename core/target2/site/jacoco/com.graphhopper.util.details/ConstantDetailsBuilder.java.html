@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ConstantDetailsBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util.details</a> &gt; <span class="el_source">ConstantDetailsBuilder.java</span></div><h1>ConstantDetailsBuilder.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.util.details;
+
+import com.graphhopper.coll.MapEntry;
+import com.graphhopper.util.EdgeIteratorState;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Simply returns the same value everywhere, useful to represent values that are the same between two (via-)points
+ */
+public class ConstantDetailsBuilder extends AbstractPathDetailsBuilder {
+    private final Object value;
+<span class="fc" id="L33">    private boolean firstEdge = true;</span>
+<span class="fc" id="L34">    private int lastIndex = -1;</span>
+
+    public ConstantDetailsBuilder(String name, Object value) {
+<span class="fc" id="L37">        super(name);</span>
+<span class="fc" id="L38">        this.value = value;</span>
+<span class="fc" id="L39">    }</span>
+
+    @Override
+    protected Object getCurrentValue() {
+<span class="fc" id="L43">        return value;</span>
+    }
+
+    @Override
+    public boolean isEdgeDifferentToLastEdge(EdgeIteratorState edge) {
+<span class="pc bpc" id="L48" title="1 of 2 branches missed.">        if (firstEdge) {</span>
+<span class="fc" id="L49">            firstEdge = false;</span>
+<span class="fc" id="L50">            return true;</span>
+        } else
+<span class="nc" id="L52">            return false;</span>
+    }
+
+    @Override
+    public void endInterval(int lastIndex) {
+<span class="fc" id="L57">        this.lastIndex = lastIndex;</span>
+<span class="fc" id="L58">        super.endInterval(lastIndex);</span>
+<span class="fc" id="L59">    }</span>
+
+    @Override
+    public Map.Entry&lt;String, List&lt;PathDetail&gt;&gt; build() {
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        if (firstEdge) {</span>
+            // #2915 if there was no edge at all we need to add a single entry manually here
+            // #3007 we need to set the value but also the (empty) interval (first/last)
+<span class="fc" id="L66">            PathDetail p = new PathDetail(value);</span>
+<span class="fc" id="L67">            p.setFirst(lastIndex);</span>
+<span class="fc" id="L68">            p.setLast(lastIndex);</span>
+<span class="fc" id="L69">            return new MapEntry&lt;&gt;(getName(), new ArrayList&lt;&gt;(List.of(p)));</span>
+        }
+<span class="fc" id="L71">        return super.build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>JTSTriangulator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.isochrone.algorithm</a> &gt; <span class="el_source">JTSTriangulator.java</span></div><h1>JTSTriangulator.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.isochrone.algorithm;
+
+import com.graphhopper.routing.RouterConfig;
+import com.graphhopper.routing.querygraph.QueryGraph;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.storage.index.Snap;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.FetchMode;
+import com.graphhopper.util.PointList;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.triangulate.DelaunayTriangulationBuilder;
+import org.locationtech.jts.triangulate.quadedge.QuadEdgeSubdivision;
+import org.locationtech.jts.triangulate.quadedge.Vertex;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.function.ToDoubleFunction;
+
+public class JTSTriangulator implements Triangulator {
+
+    private final RouterConfig routerConfig;
+
+<span class="nc" id="L44">    public JTSTriangulator(RouterConfig routerConfig) {</span>
+<span class="nc" id="L45">        this.routerConfig = routerConfig;</span>
+<span class="nc" id="L46">    }</span>
+
+    public Result triangulate(Snap snap, QueryGraph queryGraph, ShortestPathTree shortestPathTree, ToDoubleFunction&lt;ShortestPathTree.IsoLabel&gt; fz, double tolerance) {
+<span class="nc" id="L49">        final NodeAccess na = queryGraph.getNodeAccess();</span>
+<span class="nc" id="L50">        Collection&lt;Coordinate&gt; sites = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L51">        shortestPathTree.search(snap.getClosestNode(), label -&gt; {</span>
+<span class="nc" id="L52">            double exploreValue = fz.applyAsDouble(label);</span>
+<span class="nc" id="L53">            double lat = na.getLat(label.node);</span>
+<span class="nc" id="L54">            double lon = na.getLon(label.node);</span>
+<span class="nc" id="L55">            Coordinate site = new Coordinate(lon, lat);</span>
+<span class="nc" id="L56">            site.z = exploreValue;</span>
+<span class="nc" id="L57">            sites.add(site);</span>
+
+            // add a pillar node to increase precision a bit for longer roads
+<span class="nc bnc" id="L60" title="All 2 branches missed.">            if (label.parent != null) {</span>
+<span class="nc" id="L61">                EdgeIteratorState edge = queryGraph.getEdgeIteratorState(label.edge, label.node);</span>
+<span class="nc" id="L62">                PointList innerPoints = edge.fetchWayGeometry(FetchMode.PILLAR_ONLY);</span>
+<span class="nc bnc" id="L63" title="All 2 branches missed.">                if (innerPoints.size() &gt; 0) {</span>
+<span class="nc" id="L64">                    int midIndex = innerPoints.size() / 2;</span>
+<span class="nc bnc" id="L65" title="All 4 branches missed.">                    if (innerPoints.size() % 2 == 0 &amp;&amp; edge.get(EdgeIteratorState.REVERSE_STATE))</span>
+                        // For edge-based routing we might have explored the same edge in two different directions.
+                        // Here we make sure we only include the **same** point twice instead of two different ones.
+<span class="nc" id="L68">                        midIndex -= 1;</span>
+<span class="nc" id="L69">                    double lat2 = innerPoints.getLat(midIndex);</span>
+<span class="nc" id="L70">                    double lon2 = innerPoints.getLon(midIndex);</span>
+<span class="nc" id="L71">                    Coordinate site2 = new Coordinate(lon2, lat2);</span>
+<span class="nc" id="L72">                    site2.z = exploreValue;</span>
+<span class="nc" id="L73">                    sites.add(site2);</span>
+                }
+            }
+<span class="nc" id="L76">        });</span>
+
+<span class="nc bnc" id="L78" title="All 2 branches missed.">        if (sites.size() &gt; routerConfig.getMaxVisitedNodes() / 3)</span>
+<span class="nc" id="L79">            throw new IllegalArgumentException(&quot;Too many nodes would be included in post processing (&quot; + sites.size() + &quot;). Let us know if you need this increased.&quot;);</span>
+
+        // Sites may contain repeated coordinates. Especially for edge-based traversal, that's expected -- we visit
+        // each node multiple times.
+        // But that's okay, the triangulator de-dupes by itself, and it keeps the first z-value it sees, which is
+        // what we want.
+
+<span class="nc" id="L86">        DelaunayTriangulationBuilder triangulationBuilder = new DelaunayTriangulationBuilder();</span>
+<span class="nc" id="L87">        triangulationBuilder.setSites(sites);</span>
+<span class="nc" id="L88">        triangulationBuilder.setTolerance(tolerance);</span>
+<span class="nc" id="L89">        Geometry convexHull = triangulationBuilder.getEdges(new GeometryFactory()).convexHull();</span>
+
+        // If there's only one site (and presumably also if the convex hull is otherwise degenerated),
+        // the triangulation only contains the frame, and not the site within the frame. Not sure if I agree with that.
+        // See ConformingDelaunayTriangulator, it does include a buffer for the frame, but that buffer is zero
+        // in these cases.
+        // It leads to the following follow-up defect:
+        // computeIsoline fails (returns an empty Multipolygon). This is clearly wrong, since
+        // the idea is that every real (non-frame) vertex has positive-length-edges around it that can be traversed
+        // to get a non-empty polygon.
+        // So we exclude this case for now (it is indeed only a corner-case).
+
+<span class="nc bnc" id="L101" title="All 2 branches missed.">        if (!(convexHull instanceof Polygon)) {</span>
+<span class="nc" id="L102">            throw new IllegalArgumentException(&quot;Too few points found. &quot;</span>
+                    + &quot;Please try a different 'point' or a larger 'time_limit'.&quot;);
+        }
+
+<span class="nc" id="L106">        QuadEdgeSubdivision tin = triangulationBuilder.getSubdivision();</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">        for (Vertex vertex : (Collection&lt;Vertex&gt;) tin.getVertices(true)) {</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">            if (tin.isFrameVertex(vertex)) {</span>
+<span class="nc" id="L109">                vertex.setZ(Double.MAX_VALUE);</span>
+            }
+<span class="nc" id="L111">        }</span>
+<span class="nc" id="L112">        ReadableTriangulation triangulation = ReadableTriangulation.wrap(tin);</span>
+<span class="nc" id="L113">        return new Result(triangulation, triangulation.getEdges());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

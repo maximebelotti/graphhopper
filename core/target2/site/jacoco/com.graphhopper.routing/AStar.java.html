@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AStar.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AStar.java</span></div><h1>AStar.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.coll.GHIntObjectHashMap;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.BeelineWeightApproximator;
+import com.graphhopper.routing.weighting.WeightApproximator;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.*;
+
+import java.util.PriorityQueue;
+
+import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
+import static com.graphhopper.util.EdgeIterator.NO_EDGE;
+
+/**
+ * This class implements the A* algorithm according to
+ * http://en.wikipedia.org/wiki/A*_search_algorithm
+ * &lt;p&gt;
+ * Different distance calculations can be used via setApproximation.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class AStar extends AbstractRoutingAlgorithm implements EdgeToEdgeRoutingAlgorithm {
+    private GHIntObjectHashMap&lt;AStarEntry&gt; fromMap;
+    private PriorityQueue&lt;AStarEntry&gt; fromHeap;
+    private AStarEntry currEdge;
+    private int visitedNodes;
+<span class="fc" id="L47">    private int to = -1;</span>
+    private WeightApproximator weightApprox;
+    private int fromOutEdge;
+    private int toInEdge;
+
+    public AStar(Graph graph, Weighting weighting, TraversalMode tMode) {
+<span class="fc" id="L53">        super(graph, weighting, tMode);</span>
+<span class="fc" id="L54">        int size = Math.min(Math.max(200, graph.getNodes() / 10), 2000);</span>
+<span class="fc" id="L55">        initCollections(size);</span>
+<span class="fc" id="L56">        BeelineWeightApproximator defaultApprox = new BeelineWeightApproximator(nodeAccess, weighting);</span>
+<span class="fc" id="L57">        defaultApprox.setDistanceCalc(DistancePlaneProjection.DIST_PLANE);</span>
+<span class="fc" id="L58">        setApproximation(defaultApprox);</span>
+<span class="fc" id="L59">    }</span>
+
+    /**
+     * @param approx defines how distance to goal Node is approximated
+     */
+    public AStar setApproximation(WeightApproximator approx) {
+<span class="fc" id="L65">        weightApprox = approx;</span>
+<span class="fc" id="L66">        return this;</span>
+    }
+
+    protected void initCollections(int size) {
+<span class="fc" id="L70">        fromMap = new GHIntObjectHashMap&lt;&gt;();</span>
+<span class="fc" id="L71">        fromHeap = new PriorityQueue&lt;&gt;(size);</span>
+<span class="fc" id="L72">    }</span>
+
+    @Override
+    public Path calcPath(int from, int to) {
+<span class="fc" id="L76">        return calcPath(from, to, EdgeIterator.ANY_EDGE, EdgeIterator.ANY_EDGE);</span>
+    }
+
+    @Override
+    public Path calcPath(int from, int to, int fromOutEdge, int toInEdge) {
+<span class="pc bpc" id="L81" title="1 of 6 branches missed.">        if ((fromOutEdge != ANY_EDGE || toInEdge != ANY_EDGE) &amp;&amp; !traversalMode.isEdgeBased()) {</span>
+<span class="nc" id="L82">            throw new IllegalArgumentException(&quot;Restricting the start/target edges is only possible for edge-based graph traversal&quot;);</span>
+        }
+<span class="fc" id="L84">        this.fromOutEdge = fromOutEdge;</span>
+<span class="fc" id="L85">        this.toInEdge = toInEdge;</span>
+<span class="fc" id="L86">        checkAlreadyRun();</span>
+<span class="fc" id="L87">        setupFinishTime();</span>
+<span class="fc" id="L88">        this.to = to;</span>
+<span class="fc bfc" id="L89" title="All 4 branches covered.">        if (fromOutEdge == NO_EDGE || toInEdge == NO_EDGE)</span>
+<span class="fc" id="L90">            return extractPath();</span>
+<span class="fc" id="L91">        weightApprox.setTo(to);</span>
+<span class="fc" id="L92">        double weightToGoal = weightApprox.approximate(from);</span>
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">        if (Double.isInfinite(weightToGoal))</span>
+<span class="nc" id="L94">            return extractPath();</span>
+<span class="fc" id="L95">        AStarEntry startEntry = new AStarEntry(EdgeIterator.NO_EDGE, from, 0 + weightToGoal, 0);</span>
+<span class="fc" id="L96">        fromHeap.add(startEntry);</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (!traversalMode.isEdgeBased())</span>
+<span class="fc" id="L98">            fromMap.put(from, currEdge);</span>
+<span class="fc" id="L99">        runAlgo();</span>
+<span class="fc" id="L100">        return extractPath();</span>
+    }
+
+    private void runAlgo() {
+        double currWeightToGoal, estimationFullWeight;
+<span class="fc bfc" id="L105" title="All 2 branches covered.">        while (!fromHeap.isEmpty()) {</span>
+<span class="fc" id="L106">            currEdge = fromHeap.poll();</span>
+<span class="fc bfc" id="L107" title="All 2 branches covered.">            if (currEdge.isDeleted())</span>
+<span class="fc" id="L108">                continue;</span>
+<span class="fc" id="L109">            visitedNodes++;</span>
+<span class="fc bfc" id="L110" title="All 6 branches covered.">            if (isMaxVisitedNodesExceeded() || finished() || isTimeoutExceeded())</span>
+<span class="fc" id="L111">                break;</span>
+
+<span class="fc" id="L113">            int currNode = currEdge.adjNode;</span>
+<span class="fc" id="L114">            EdgeIterator iter = edgeExplorer.setBaseNode(currNode);</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">            while (iter.next()) {</span>
+<span class="fc bfc" id="L116" title="All 8 branches covered.">                if (!accept(iter, currEdge.edge) || (currEdge.edge == NO_EDGE &amp;&amp; fromOutEdge != ANY_EDGE &amp;&amp; iter.getEdge() != fromOutEdge))</span>
+<span class="fc" id="L117">                    continue;</span>
+
+<span class="fc" id="L119">                double tmpWeight = GHUtility.calcWeightWithTurnWeight(weighting, iter, false, currEdge.edge) + currEdge.weightOfVisitedPath;</span>
+<span class="fc bfc" id="L120" title="All 2 branches covered.">                if (Double.isInfinite(tmpWeight)) {</span>
+<span class="fc" id="L121">                    continue;</span>
+                }
+<span class="fc" id="L123">                int traversalId = traversalMode.createTraversalId(iter, false);</span>
+
+<span class="fc" id="L125">                AStarEntry ase = fromMap.get(traversalId);</span>
+<span class="fc bfc" id="L126" title="All 4 branches covered.">                if (ase == null || ase.weightOfVisitedPath &gt; tmpWeight) {</span>
+<span class="fc" id="L127">                    int neighborNode = iter.getAdjNode();</span>
+<span class="fc" id="L128">                    currWeightToGoal = weightApprox.approximate(neighborNode);</span>
+<span class="pc bpc" id="L129" title="1 of 2 branches missed.">                    if (Double.isInfinite(currWeightToGoal))</span>
+<span class="nc" id="L130">                        continue;</span>
+<span class="fc" id="L131">                    estimationFullWeight = tmpWeight + currWeightToGoal;</span>
+<span class="fc bfc" id="L132" title="All 2 branches covered.">                    if (ase == null) {</span>
+<span class="fc" id="L133">                        ase = new AStarEntry(iter.getEdge(), neighborNode, estimationFullWeight, tmpWeight, currEdge);</span>
+<span class="fc" id="L134">                        fromMap.put(traversalId, ase);</span>
+                    } else {
+//                        assert (ase.weight &gt; 0.9999999 * estimationFullWeight) : &quot;Inconsistent distance estimate. It is expected weight &gt;= estimationFullWeight but was &quot;
+//                                + ase.weight + &quot; &lt; &quot; + estimationFullWeight + &quot; (&quot; + ase.weight / estimationFullWeight + &quot;), and weightOfVisitedPath:&quot;
+//                                + ase.weightOfVisitedPath + &quot; vs. alreadyVisitedWeight:&quot; + alreadyVisitedWeight + &quot; (&quot; + ase.weightOfVisitedPath / alreadyVisitedWeight + &quot;)&quot;;
+<span class="fc" id="L139">                        ase.setDeleted();</span>
+<span class="fc" id="L140">                        ase = new AStarEntry(iter.getEdge(), neighborNode, estimationFullWeight, tmpWeight, currEdge);</span>
+<span class="fc" id="L141">                        fromMap.put(traversalId, ase);</span>
+                    }
+<span class="fc" id="L143">                    fromHeap.add(ase);</span>
+<span class="fc" id="L144">                    updateBestPath(iter, ase, traversalId);</span>
+                }
+<span class="fc" id="L146">            }</span>
+<span class="fc" id="L147">        }</span>
+<span class="fc" id="L148">    }</span>
+
+    private boolean finished() {
+<span class="pc bpc" id="L151" title="1 of 10 branches missed.">        return currEdge.adjNode == to &amp;&amp; (toInEdge == ANY_EDGE || currEdge.edge == toInEdge) &amp;&amp; (fromOutEdge == ANY_EDGE || currEdge.edge != NO_EDGE);</span>
+    }
+
+    protected Path extractPath() {
+<span class="fc bfc" id="L155" title="All 4 branches covered.">        if (currEdge == null || !finished())</span>
+<span class="fc" id="L156">            return createEmptyPath();</span>
+
+<span class="fc" id="L158">        return PathExtractor.extractPath(graph, weighting, currEdge)</span>
+                // the path extractor uses currEdge.weight to set the weight, but this is the one that includes the
+                // A* approximation, not the weight of the visited path! this is still correct, because the approximation
+                // at the to-node (the end of the route) must be zero. Still it seems clearer to set the weight explicitly.
+<span class="fc" id="L162">                .setWeight(currEdge.getWeightOfVisitedPath());</span>
+    }
+
+    @Override
+    public int getVisitedNodes() {
+<span class="fc" id="L167">        return visitedNodes;</span>
+    }
+
+    protected void updateBestPath(EdgeIteratorState edgeState, SPTEntry bestSPTEntry, int traversalId) {
+<span class="fc" id="L171">    }</span>
+
+    public static class AStarEntry extends SPTEntry {
+        double weightOfVisitedPath;
+
+        public AStarEntry(int edgeId, int adjNode, double weightForHeap, double weightOfVisitedPath) {
+<span class="fc" id="L177">            this(edgeId, adjNode, weightForHeap, weightOfVisitedPath, null);</span>
+<span class="fc" id="L178">        }</span>
+
+        public AStarEntry(int edgeId, int adjNode, double weightForHeap, double weightOfVisitedPath, SPTEntry parent) {
+<span class="fc" id="L181">            super(edgeId, adjNode, weightForHeap, parent);</span>
+<span class="fc" id="L182">            this.weightOfVisitedPath = weightOfVisitedPath;</span>
+<span class="fc" id="L183">        }</span>
+
+        @Override
+        public final double getWeightOfVisitedPath() {
+<span class="fc" id="L187">            return weightOfVisitedPath;</span>
+        }
+
+        @Override
+        public AStarEntry getParent() {
+<span class="fc" id="L192">            return (AStarEntry) parent;</span>
+        }
+    }
+
+    @Override
+    public String getName() {
+<span class="fc" id="L198">        return Parameters.Algorithms.ASTAR + &quot;|&quot; + weightApprox;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

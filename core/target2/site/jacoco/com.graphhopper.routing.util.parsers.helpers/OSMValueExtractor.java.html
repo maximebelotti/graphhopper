@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OSMValueExtractor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers.helpers</a> &gt; <span class="el_source">OSMValueExtractor.java</span></div><h1>OSMValueExtractor.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util.parsers.helpers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.regex.Pattern;
+
+import static com.graphhopper.util.Helper.toLowerCase;
+
+public class OSMValueExtractor {
+
+<span class="fc" id="L16">    private static final Pattern TON_PATTERN = Pattern.compile(&quot;tons?&quot;);</span>
+<span class="fc" id="L17">    private static final Pattern MGW_PATTERN = Pattern.compile(&quot;mgw&quot;);</span>
+<span class="fc" id="L18">    private static final Pattern WSPACE_PATTERN = Pattern.compile(&quot;\\s&quot;);</span>
+<span class="fc" id="L19">    private static final Pattern METER_PATTERN = Pattern.compile(&quot;meters?|mtrs?|mt|m\\.&quot;);</span>
+<span class="fc" id="L20">    private static final Pattern INCH_PATTERN = Pattern.compile(&quot;\&quot;|\'\'&quot;);</span>
+<span class="fc" id="L21">    private static final Pattern FEET_PATTERN = Pattern.compile(&quot;\'|feet&quot;);</span>
+<span class="fc" id="L22">    private static final Pattern APPROX_PATTERN = Pattern.compile(&quot;~|approx&quot;);</span>
+<span class="fc" id="L23">    private static final Logger logger = LoggerFactory.getLogger(OSMValueExtractor.class);</span>
+
+    private OSMValueExtractor() {
+        // utility class
+    }
+
+    public static void extractTons(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, DecimalEncodedValue valueEncoder, List&lt;String&gt; keys) {
+<span class="fc" id="L30">        final String rawValue = way.getFirstValue(keys);</span>
+<span class="fc" id="L31">        double value = stringToTons(rawValue);</span>
+
+<span class="fc bfc" id="L33" title="All 2 branches covered.">        if (Double.isNaN(value)) value = Double.POSITIVE_INFINITY;</span>
+
+<span class="fc" id="L35">        valueEncoder.setDecimal(false, edgeId, edgeIntAccess, value);</span>
+        // too many
+//        if (value - valueEncoder.getDecimal(false, edgeFlags) &gt; 2)
+//            logger.warn(&quot;Value &quot; + value + &quot; for &quot; + valueEncoder.getName() + &quot; was too large and truncated to &quot; + valueEncoder.getDecimal(false, edgeFlags));
+<span class="fc" id="L39">    }</span>
+
+    /**
+     * This parses the weight for a conditional value like &quot;delivery @ (weight &gt; 7.5)&quot;
+     */
+    public static double conditionalWeightToTons(String value) {
+        try {
+<span class="fc" id="L46">            int index = value.indexOf(&quot;weight&gt;&quot;); // maxweight or weight</span>
+<span class="fc bfc" id="L47" title="All 2 branches covered.">            if (index &lt; 0) {</span>
+<span class="fc" id="L48">                index = value.indexOf(&quot;weight &gt;&quot;);</span>
+<span class="pc bpc" id="L49" title="1 of 2 branches missed.">                if (index &gt; 0) index += &quot;weight &gt;&quot;.length();</span>
+            } else {
+<span class="fc" id="L51">                index += &quot;weight&gt;&quot;.length();</span>
+            }
+<span class="pc bpc" id="L53" title="1 of 2 branches missed.">            if (index &gt; 0) {</span>
+<span class="fc" id="L54">                int lastIndex = value.indexOf(')', index); // (value) or value</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">                if (lastIndex &lt; 0) lastIndex = value.length();</span>
+<span class="pc bpc" id="L56" title="1 of 2 branches missed.">                if (lastIndex &gt; index)</span>
+<span class="fc" id="L57">                    return OSMValueExtractor.stringToTons(value.substring(index, lastIndex));</span>
+            }
+<span class="nc" id="L59">            return Double.NaN;</span>
+<span class="nc" id="L60">        } catch (Exception ex) {</span>
+<span class="nc" id="L61">            throw new RuntimeException(&quot;value &quot; + value, ex);</span>
+        }
+    }
+
+    public static double stringToTons(String value) {
+<span class="fc" id="L66">        value = TON_PATTERN.matcher(toLowerCase(value)).replaceAll(&quot;t&quot;);</span>
+<span class="fc" id="L67">        value = MGW_PATTERN.matcher(value).replaceAll(&quot;&quot;).trim();</span>
+<span class="fc bfc" id="L68" title="All 2 branches covered.">        if (isInvalidValue(value))</span>
+<span class="fc" id="L69">            return Double.NaN;</span>
+
+<span class="fc" id="L71">        double factor = 1;</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        if (value.endsWith(&quot;st&quot;)) {</span>
+<span class="fc" id="L73">            value = value.substring(0, value.length() - 2);</span>
+<span class="fc" id="L74">            factor = 0.907194048807;</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        } else if (value.endsWith(&quot;t&quot;)) {</span>
+<span class="fc" id="L76">            value = value.substring(0, value.length() - 1);</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        } else if (value.endsWith(&quot;lbs&quot;)) {</span>
+<span class="fc" id="L78">            value = value.substring(0, value.length() - 3);</span>
+<span class="fc" id="L79">            factor = 0.00045359237;</span>
+<span class="fc bfc" id="L80" title="All 2 branches covered.">        } else if (value.endsWith(&quot;kg&quot;)) {</span>
+<span class="fc" id="L81">            value = value.substring(0, value.length() - 2);</span>
+<span class="fc" id="L82">            factor = 0.001;</span>
+        }
+
+        try {
+<span class="fc" id="L86">            return Double.parseDouble(value) * factor;</span>
+<span class="fc" id="L87">        } catch (NumberFormatException e) {</span>
+<span class="fc" id="L88">            return Double.NaN;</span>
+        }
+    }
+
+    public static void extractMeter(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, DecimalEncodedValue valueEncoder, List&lt;String&gt; keys) {
+<span class="fc" id="L93">        final String rawValue = way.getFirstValue(keys);</span>
+<span class="fc" id="L94">        double value = stringToMeter(rawValue);</span>
+
+<span class="fc bfc" id="L96" title="All 2 branches covered.">        if (Double.isNaN(value)) value = Double.POSITIVE_INFINITY;</span>
+
+<span class="fc" id="L98">        valueEncoder.setDecimal(false, edgeId, edgeIntAccess, value);</span>
+        // too many
+//        if (value - valueEncoder.getDecimal(false, edgeFlags) &gt; 2)
+//            logger.warn(&quot;Value &quot; + value + &quot; for &quot; + valueEncoder.getName() + &quot; was too large and truncated to &quot; + valueEncoder.getDecimal(false, edgeFlags));
+<span class="fc" id="L102">    }</span>
+
+    public static double stringToMeter(String value) {
+<span class="fc" id="L105">        value = WSPACE_PATTERN.matcher(toLowerCase(value)).replaceAll(&quot;&quot;);</span>
+<span class="fc" id="L106">        value = METER_PATTERN.matcher(value).replaceAll(&quot;m&quot;);</span>
+<span class="fc" id="L107">        value = INCH_PATTERN.matcher(value).replaceAll(&quot;in&quot;);</span>
+<span class="fc" id="L108">        value = FEET_PATTERN.matcher(value).replaceAll(&quot;ft&quot;);</span>
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        if (isInvalidValue(value))</span>
+<span class="fc" id="L110">            return Double.NaN;</span>
+<span class="fc" id="L111">        double factor = 1;</span>
+<span class="fc" id="L112">        double offset = 0;</span>
+<span class="fc bfc" id="L113" title="All 4 branches covered.">        if (value.startsWith(&quot;~&quot;) || value.contains(&quot;approx&quot;)) {</span>
+<span class="fc" id="L114">            value = APPROX_PATTERN.matcher(value).replaceAll(&quot;&quot;).trim();</span>
+<span class="fc" id="L115">            factor = 0.8;</span>
+        }
+
+<span class="fc bfc" id="L118" title="All 2 branches covered.">        if (value.endsWith(&quot;in&quot;)) {</span>
+<span class="fc" id="L119">            int startIndex = value.indexOf(&quot;ft&quot;);</span>
+            String inchValue;
+<span class="pc bpc" id="L121" title="1 of 2 branches missed.">            if (startIndex &lt; 0) {</span>
+<span class="nc" id="L122">                startIndex = 0;</span>
+            } else {
+<span class="fc" id="L124">                startIndex += 2;</span>
+            }
+
+<span class="fc" id="L127">            inchValue = value.substring(startIndex, value.length() - 2);</span>
+<span class="fc" id="L128">            value = value.substring(0, startIndex);</span>
+            try {
+<span class="fc" id="L130">                offset = Double.parseDouble(inchValue) * 0.0254;</span>
+<span class="nc" id="L131">            } catch (NumberFormatException e) {</span>
+<span class="nc" id="L132">                return Double.NaN;</span>
+<span class="fc" id="L133">            }</span>
+        }
+
+<span class="fc bfc" id="L136" title="All 2 branches covered.">        if (value.endsWith(&quot;ft&quot;)) {</span>
+<span class="fc" id="L137">            value = value.substring(0, value.length() - 2);</span>
+<span class="fc" id="L138">            factor *= 0.3048;</span>
+<span class="fc bfc" id="L139" title="All 2 branches covered.">        } else if (value.endsWith(&quot;cm&quot;)) {</span>
+<span class="fc" id="L140">            value = value.substring(0, value.length() - 2);</span>
+<span class="fc" id="L141">            factor *= 0.01;</span>
+<span class="fc bfc" id="L142" title="All 2 branches covered.">        } else if (value.endsWith(&quot;m&quot;)) {</span>
+<span class="fc" id="L143">            value = value.substring(0, value.length() - 1);</span>
+        }
+
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">        if (value.isEmpty()) {</span>
+<span class="nc" id="L147">            return offset;</span>
+        }
+
+        try {
+<span class="fc" id="L151">            return Double.parseDouble(value) * factor + offset;</span>
+<span class="fc" id="L152">        } catch (NumberFormatException e) {</span>
+<span class="fc" id="L153">            return Double.NaN;</span>
+        }
+    }
+
+    public static boolean isInvalidValue(String value) {
+<span class="fc" id="L158">        value = toLowerCase(value);</span>
+<span class="pc bpc" id="L159" title="2 of 8 branches missed.">        return value.isEmpty() || value.startsWith(&quot;default&quot;) || value.equals(&quot;none&quot;) || value.equals(&quot;unknown&quot;)</span>
+<span class="pc bpc" id="L160" title="2 of 4 branches missed.">                || value.contains(&quot;unrestricted&quot;) || value.startsWith(&quot;〜&quot;)</span>
+<span class="pc bpc" id="L161" title="4 of 8 branches missed.">                || value.contains(&quot;narrow&quot;) || value.equals(&quot;unsigned&quot;) || value.equals(&quot;fixme&quot;) || value.equals(&quot;small&quot;)</span>
+<span class="pc bpc" id="L162" title="3 of 6 branches missed.">                || value.contains(&quot;;&quot;) || value.contains(&quot;:&quot;) || value.contains(&quot;(&quot;)</span>
+<span class="pc bpc" id="L163" title="3 of 6 branches missed.">                || value.contains(&quot;&gt;&quot;) || value.contains(&quot;&lt;&quot;) || value.contains(&quot;-&quot;)</span>
+                // only support '.' and no German decimals
+<span class="pc bpc" id="L165" title="1 of 2 branches missed.">                || value.contains(&quot;,&quot;);</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

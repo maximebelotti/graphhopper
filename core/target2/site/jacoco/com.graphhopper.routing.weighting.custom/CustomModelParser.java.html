@@ -1,0 +1,541 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CustomModelParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting.custom</a> &gt; <span class="el_source">CustomModelParser.java</span></div><h1>CustomModelParser.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.weighting.custom;
+
+import com.graphhopper.json.Statement;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.weighting.TurnCostProvider;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.BBox;
+import com.graphhopper.util.shapes.Polygon;
+import org.codehaus.commons.compiler.CompileException;
+import org.codehaus.commons.compiler.Location;
+import org.codehaus.commons.compiler.io.Readers;
+import org.codehaus.janino.Scanner;
+import org.codehaus.janino.*;
+import org.codehaus.janino.util.DeepCopier;
+import org.locationtech.jts.geom.Polygonal;
+import org.locationtech.jts.geom.prep.PreparedPolygon;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static com.graphhopper.json.Statement.Keyword.IF;
+
+public class CustomModelParser {
+<span class="fc" id="L43">    private static final AtomicLong longVal = new AtomicLong(1);</span>
+    static final String IN_AREA_PREFIX = &quot;in_&quot;;
+    static final String BACKWARD_PREFIX = &quot;backward_&quot;;
+<span class="fc" id="L46">    private static final boolean JANINO_DEBUG = Boolean.getBoolean(Scanner.SYSTEM_PROPERTY_SOURCE_DEBUGGING_ENABLE);</span>
+<span class="fc" id="L47">    private static final String SCRIPT_FILE_DIR = System.getProperty(Scanner.SYSTEM_PROPERTY_SOURCE_DEBUGGING_DIR, &quot;./src/main/java/com/graphhopper/routing/weighting/custom&quot;);</span>
+
+    // Without a cache the class creation takes 10-40ms which makes routingLM8 requests 20% slower on average.
+    // CH requests and preparation is unaffected as cached weighting from preparation is used.
+    // Use accessOrder==true to remove oldest accessed entry, not oldest inserted.
+<span class="fc" id="L52">    private static final int CACHE_SIZE = Integer.getInteger(&quot;graphhopper.custom_weighting.cache_size&quot;, 1000);</span>
+<span class="fc" id="L53">    private static final Map&lt;String, Class&lt;?&gt;&gt; CACHE = Collections.synchronizedMap(</span>
+<span class="fc" id="L54">            new LinkedHashMap&lt;&gt;(CACHE_SIZE, 0.75f, true) {</span>
+                protected boolean removeEldestEntry(Map.Entry eldest) {
+<span class="pc bpc" id="L56" title="1 of 2 branches missed.">                    return size() &gt; CACHE_SIZE;</span>
+                }
+            });
+
+    // This internal cache ensures that the &quot;internal&quot; Weighting classes specified in the profiles, are never removed regardless
+    // of how frequent other Weightings are created and accessed. We only need to synchronize the get and put methods alone.
+    // E.g. we do not care for the race condition where two identical classes are requested and one of them is overwritten.
+    // TODO perf compare with ConcurrentHashMap, but I guess, if there is a difference at all, it is not big for small maps
+<span class="fc" id="L64">    private static final Map&lt;String, Class&lt;?&gt;&gt; INTERNAL_CACHE = Collections.synchronizedMap(new HashMap&lt;&gt;());</span>
+
+    private CustomModelParser() {
+        // utility class
+    }
+
+    /**
+     * This method creates a weighting from a CustomModel that must limit the speed. Either as an
+     * unconditional statement &lt;code&gt;{ &quot;if&quot;: &quot;true&quot;, &quot;limit_to&quot;: &quot;car_average_speed&quot; }&lt;code/&gt; or as
+     * an if-elseif-else group.
+     */
+    public static CustomWeighting createWeighting(EncodedValueLookup lookup, TurnCostProvider turnCostProvider, CustomModel customModel) {
+<span class="pc bpc" id="L76" title="1 of 2 branches missed.">        if (customModel == null)</span>
+<span class="nc" id="L77">            throw new IllegalStateException(&quot;CustomModel cannot be null&quot;);</span>
+<span class="fc" id="L78">        CustomWeighting.Parameters parameters = createWeightingParameters(customModel, lookup);</span>
+<span class="fc" id="L79">        return new CustomWeighting(turnCostProvider, parameters);</span>
+    }
+
+    public static CustomWeighting2 createWeighting2(EncodedValueLookup lookup, TurnCostProvider turnCostProvider, CustomModel customModel) {
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        if (customModel == null)</span>
+<span class="nc" id="L84">            throw new IllegalStateException(&quot;CustomModel cannot be null&quot;);</span>
+<span class="nc" id="L85">        CustomWeighting.Parameters parameters = createWeightingParameters(customModel, lookup);</span>
+<span class="nc" id="L86">        return new CustomWeighting2(turnCostProvider, parameters);</span>
+    }
+
+    /**
+     * This method compiles a new subclass of CustomWeightingHelper composed of the provided CustomModel caches this
+     * and returns an instance.
+     */
+    public static CustomWeighting.Parameters createWeightingParameters(CustomModel customModel, EncodedValueLookup lookup) {
+<span class="fc" id="L94">        String key = customModel.toString();</span>
+<span class="pc bpc" id="L95" title="1 of 2 branches missed.">        Class&lt;?&gt; clazz = customModel.isInternal() ? INTERNAL_CACHE.get(key) : null;</span>
+<span class="pc bpc" id="L96" title="2 of 4 branches missed.">        if (CACHE_SIZE &gt; 0 &amp;&amp; clazz == null)</span>
+<span class="fc" id="L97">            clazz = CACHE.get(key);</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">        if (clazz == null) {</span>
+<span class="fc" id="L99">            clazz = createClazz(customModel, lookup);</span>
+<span class="pc bpc" id="L100" title="1 of 2 branches missed.">            if (customModel.isInternal()) {</span>
+<span class="nc" id="L101">                INTERNAL_CACHE.put(key, clazz);</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">                if (INTERNAL_CACHE.size() &gt; 100) {</span>
+<span class="nc" id="L103">                    CACHE.putAll(INTERNAL_CACHE);</span>
+<span class="nc" id="L104">                    INTERNAL_CACHE.clear();</span>
+<span class="nc" id="L105">                    LoggerFactory.getLogger(CustomModelParser.class).warn(&quot;Internal cache must stay small but was &quot;</span>
+<span class="nc" id="L106">                            + INTERNAL_CACHE.size() + &quot;. Cleared it. Misuse of CustomModel::internal?&quot;);</span>
+                }
+<span class="pc bpc" id="L108" title="1 of 2 branches missed.">            } else if (CACHE_SIZE &gt; 0) {</span>
+<span class="fc" id="L109">                CACHE.put(key, clazz);</span>
+            }
+        }
+
+        try {
+            // The class does not need to be thread-safe as we create an instance per request
+<span class="fc" id="L115">            CustomWeightingHelper prio = (CustomWeightingHelper) clazz.getDeclaredConstructor().newInstance();</span>
+<span class="fc" id="L116">            prio.init(customModel, lookup, CustomModel.getAreasAsMap(customModel.getAreas()));</span>
+<span class="fc" id="L117">            return new CustomWeighting.Parameters(</span>
+<span class="fc" id="L118">                    prio::getSpeed, prio::calcMaxSpeed,</span>
+<span class="fc" id="L119">                    prio::getPriority, prio::calcMaxPriority,</span>
+<span class="fc bfc" id="L120" title="All 2 branches covered.">                    customModel.getDistanceInfluence() == null ? 0 : customModel.getDistanceInfluence(),</span>
+<span class="fc bfc" id="L121" title="All 2 branches covered.">                    customModel.getHeadingPenalty() == null ? Parameters.Routing.DEFAULT_HEADING_PENALTY : customModel.getHeadingPenalty());</span>
+<span class="nc" id="L122">        } catch (ReflectiveOperationException ex) {</span>
+<span class="nc" id="L123">            throw new IllegalArgumentException(&quot;Cannot compile expression &quot; + ex.getMessage(), ex);</span>
+        }
+    }
+
+    /**
+     * This method does the following:
+     * &lt;ul&gt;
+     * &lt;li&gt;
+     *     1. parse the value expressions (RHS) to know about additional encoded values ('findVariables')
+     *     and check for multiplications with negative values.
+     * &lt;/li&gt;
+     * &lt;li&gt;2. parse conditional expression of priority and speed statements -&gt; done in ConditionalExpressionVisitor (don't parse RHS expressions again)
+     * &lt;/li&gt;
+     * &lt;li&gt;3. create class template as String, inject the created statements and create the Class
+     * &lt;/li&gt;
+     * &lt;/ul&gt;
+     */
+    private static Class&lt;?&gt; createClazz(CustomModel customModel, EncodedValueLookup lookup) {
+        try {
+<span class="fc" id="L142">            Set&lt;String&gt; priorityVariables = ValueExpressionVisitor.findVariables(customModel.getPriority(), lookup);</span>
+<span class="fc" id="L143">            List&lt;Java.BlockStatement&gt; priorityStatements = createGetPriorityStatements(priorityVariables, customModel, lookup);</span>
+
+<span class="pc bpc" id="L145" title="1 of 2 branches missed.">            if (customModel.getSpeed().isEmpty())</span>
+<span class="nc" id="L146">                throw new IllegalArgumentException(&quot;At least one initial statement under 'speed' is required.&quot;);</span>
+
+<span class="fc" id="L148">            List&lt;Statement&gt; firstGroup = splitIntoGroup(customModel.getSpeed()).get(0);</span>
+<span class="fc bfc" id="L149" title="All 2 branches covered.">            if (firstGroup.size() &gt; 1) {</span>
+<span class="fc" id="L150">                Statement lastSt = firstGroup.get(firstGroup.size() - 1);</span>
+<span class="pc bpc" id="L151" title="2 of 4 branches missed.">                if (lastSt.operation() != Statement.Op.LIMIT || lastSt.keyword() != Statement.Keyword.ELSE)</span>
+<span class="nc" id="L152">                    throw new IllegalArgumentException(&quot;The first group needs to end with an 'else' (or contain a single unconditional 'if' statement).&quot;);</span>
+<span class="fc" id="L153">            } else {</span>
+<span class="fc" id="L154">                Statement firstSt = firstGroup.get(0);</span>
+<span class="pc bpc" id="L155" title="3 of 6 branches missed.">                if (!&quot;true&quot;.equals(firstSt.condition()) || firstSt.operation() != Statement.Op.LIMIT || firstSt.keyword() != Statement.Keyword.IF)</span>
+<span class="nc" id="L156">                    throw new IllegalArgumentException(&quot;The first group needs to contain a single unconditional 'if' statement (or end with an 'else').&quot;);</span>
+            }
+
+<span class="fc" id="L159">            Set&lt;String&gt; speedVariables = ValueExpressionVisitor.findVariables(customModel.getSpeed(), lookup);</span>
+<span class="fc" id="L160">            List&lt;Java.BlockStatement&gt; speedStatements = createGetSpeedStatements(speedVariables, customModel, lookup);</span>
+
+            // Create different class name, which is required only for debugging.
+            // TODO does it improve performance too? I.e. it could be that the JIT is confused if different classes
+            //  have the same name and it mixes performance stats. See https://github.com/janino-compiler/janino/issues/137
+<span class="fc" id="L165">            long counter = longVal.incrementAndGet();</span>
+<span class="fc" id="L166">            String classTemplate = createClassTemplate(counter, priorityVariables, speedVariables, lookup, CustomModel.getAreasAsMap(customModel.getAreas()));</span>
+<span class="fc" id="L167">            Java.CompilationUnit cu = (Java.CompilationUnit) new Parser(new Scanner(&quot;source&quot;, new StringReader(classTemplate))).</span>
+<span class="fc" id="L168">                    parseAbstractCompilationUnit();</span>
+<span class="fc" id="L169">            cu = injectStatements(priorityStatements, speedStatements, cu);</span>
+<span class="fc" id="L170">            SimpleCompiler sc = createCompiler(counter, cu);</span>
+<span class="fc" id="L171">            return sc.getClassLoader().loadClass(&quot;com.graphhopper.routing.weighting.custom.JaninoCustomWeightingHelperSubclass&quot; + counter);</span>
+<span class="fc" id="L172">        } catch (Exception ex) {</span>
+<span class="fc" id="L173">            String errString = &quot;Cannot compile expression&quot;;</span>
+<span class="fc" id="L174">            throw new IllegalArgumentException(errString + &quot;: &quot; + ex.getMessage(), ex);</span>
+        }
+    }
+
+    public static List&lt;String&gt; findVariablesForEncodedValuesString(CustomModel model, NameValidator nameValidator, ClassHelper classHelper) {
+<span class="fc" id="L179">        Set&lt;String&gt; variables = new LinkedHashSet&lt;&gt;();</span>
+        // avoid parsing exception for backward_xy or in_xy ...
+<span class="fc" id="L181">        NameValidator nameValidatorIntern = s -&gt; {</span>
+            // some literals are no variables and would throw an exception (encoded value not found)
+<span class="pc bpc" id="L183" title="1 of 6 branches missed.">            if (Character.isUpperCase(s.charAt(0)) || s.startsWith(BACKWARD_PREFIX) || s.startsWith(IN_AREA_PREFIX))</span>
+<span class="fc" id="L184">                return true;</span>
+<span class="pc bpc" id="L185" title="1 of 2 branches missed.">            if (nameValidator.isValid(s)) {</span>
+<span class="fc" id="L186">                variables.add(s);</span>
+<span class="fc" id="L187">                return true;</span>
+            }
+<span class="nc" id="L189">            return false;</span>
+        };
+<span class="fc" id="L191">        findVariablesForEncodedValuesString(model.getPriority(), nameValidatorIntern, classHelper);</span>
+<span class="fc" id="L192">        findVariablesForEncodedValuesString(model.getSpeed(), nameValidatorIntern, classHelper);</span>
+<span class="fc" id="L193">        return new ArrayList&lt;&gt;(variables);</span>
+    }
+
+    private static void findVariablesForEncodedValuesString(List&lt;Statement&gt; statements, NameValidator nameValidator, ClassHelper classHelper) {
+<span class="fc" id="L197">        List&lt;List&lt;Statement&gt;&gt; groups = CustomModelParser.splitIntoGroup(statements);</span>
+<span class="fc bfc" id="L198" title="All 2 branches covered.">        for (List&lt;Statement&gt; group : groups) {</span>
+<span class="fc bfc" id="L199" title="All 2 branches covered.">            for (Statement statement : group) {</span>
+<span class="pc bpc" id="L200" title="1 of 2 branches missed.">                if (statement.isBlock()) {</span>
+<span class="nc" id="L201">                    findVariablesForEncodedValuesString(statement.doBlock(), nameValidator, classHelper);</span>
+                } else {
+                    // ignore potential problems; collect only variables in this step
+<span class="fc" id="L204">                    ConditionalExpressionVisitor.parse(statement.condition(), nameValidator, classHelper);</span>
+<span class="fc" id="L205">                    ValueExpressionVisitor.parse(statement.value(), nameValidator);</span>
+                }
+<span class="fc" id="L207">            }</span>
+<span class="fc" id="L208">        }</span>
+<span class="fc" id="L209">    }</span>
+
+    /**
+     * Splits the specified list into several lists of statements starting with if.
+     * I.e. a group consists of one 'if' and zero or more 'else_if' and 'else' statements.
+     */
+    static List&lt;List&lt;Statement&gt;&gt; splitIntoGroup(List&lt;Statement&gt; statements) {
+<span class="fc" id="L216">        List&lt;List&lt;Statement&gt;&gt; result = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L217">        List&lt;Statement&gt; group = null;</span>
+<span class="fc bfc" id="L218" title="All 2 branches covered.">        for (Statement st : statements) {</span>
+<span class="fc bfc" id="L219" title="All 2 branches covered.">            if (IF.equals(st.keyword())) result.add(group = new ArrayList&lt;&gt;());</span>
+<span class="fc bfc" id="L220" title="All 2 branches covered.">            if (group == null)</span>
+<span class="fc" id="L221">                throw new IllegalArgumentException(&quot;Every group must start with an if-statement&quot;);</span>
+<span class="fc" id="L222">            group.add(st);</span>
+<span class="fc" id="L223">        }</span>
+<span class="fc" id="L224">        return result;</span>
+    }
+
+    /**
+     * Parse the expressions from CustomModel relevant for the method getSpeed - see createClassTemplate.
+     *
+     * @return the created statements (parsed expressions)
+     */
+    private static List&lt;Java.BlockStatement&gt; createGetSpeedStatements(Set&lt;String&gt; speedVariables,
+                                                                      CustomModel customModel, EncodedValueLookup lookup) throws Exception {
+<span class="fc" id="L234">        List&lt;Java.BlockStatement&gt; speedStatements = new ArrayList&lt;&gt;(verifyExpressions(new StringBuilder(),</span>
+<span class="fc" id="L235">                &quot;speed entry&quot;, speedVariables, customModel.getSpeed(), lookup));</span>
+<span class="fc" id="L236">        String speedMethodStartBlock = &quot;double value = &quot; + CustomWeightingHelper.GLOBAL_MAX_SPEED + &quot;;\n&quot;;</span>
+        // potentially we fetch EncodedValues twice (one time here and one time for priority)
+<span class="fc bfc" id="L238" title="All 2 branches covered.">        for (String arg : speedVariables) {</span>
+<span class="fc" id="L239">            speedMethodStartBlock += getVariableDeclaration(lookup, arg);</span>
+<span class="fc" id="L240">        }</span>
+<span class="fc" id="L241">        speedStatements.addAll(0, new Parser(new org.codehaus.janino.Scanner(&quot;getSpeed&quot;, new StringReader(speedMethodStartBlock))).</span>
+<span class="fc" id="L242">                parseBlockStatements());</span>
+<span class="fc" id="L243">        return speedStatements;</span>
+    }
+
+    /**
+     * Parse the expressions from CustomModel relevant for the method getPriority - see createClassTemplate.
+     *
+     * @return the created statements (parsed expressions)
+     */
+    private static List&lt;Java.BlockStatement&gt; createGetPriorityStatements(Set&lt;String&gt; priorityVariables,
+                                                                         CustomModel customModel, EncodedValueLookup lookup) throws Exception {
+<span class="fc" id="L253">        List&lt;Java.BlockStatement&gt; priorityStatements = new ArrayList&lt;&gt;(verifyExpressions(new StringBuilder(),</span>
+<span class="fc" id="L254">                &quot;priority entry&quot;, priorityVariables, customModel.getPriority(), lookup));</span>
+<span class="fc" id="L255">        String priorityMethodStartBlock = &quot;double value = &quot; + CustomWeightingHelper.GLOBAL_PRIORITY + &quot;;\n&quot;;</span>
+<span class="fc bfc" id="L256" title="All 2 branches covered.">        for (String arg : priorityVariables) {</span>
+<span class="fc" id="L257">            priorityMethodStartBlock += getVariableDeclaration(lookup, arg);</span>
+<span class="fc" id="L258">        }</span>
+<span class="fc" id="L259">        priorityStatements.addAll(0, new Parser(new org.codehaus.janino.Scanner(&quot;getPriority&quot;, new StringReader(priorityMethodStartBlock))).</span>
+<span class="fc" id="L260">                parseBlockStatements());</span>
+<span class="fc" id="L261">        return priorityStatements;</span>
+    }
+
+    /**
+     * For the methods getSpeed and getPriority we declare variables that contain the encoded value of the current edge
+     * or if an area contains the current edge.
+     */
+    private static String getVariableDeclaration(EncodedValueLookup lookup, final String arg) {
+<span class="fc bfc" id="L269" title="All 2 branches covered.">        if (lookup.hasEncodedValue(arg)) {</span>
+<span class="fc" id="L270">            EncodedValue enc = lookup.getEncodedValue(arg, EncodedValue.class);</span>
+<span class="fc" id="L271">            return getReturnType(enc) + &quot; &quot; + arg + &quot; = (&quot; + getReturnType(enc) + &quot;) (reverse ? &quot; +</span>
+<span class="fc" id="L272">                    &quot;edge.getReverse((&quot; + getInterface(enc) + &quot;) this.&quot; + arg + &quot;_enc) : &quot; +</span>
+<span class="fc" id="L273">                    &quot;edge.get((&quot; + getInterface(enc) + &quot;) this.&quot; + arg + &quot;_enc));\n&quot;;</span>
+<span class="fc bfc" id="L274" title="All 2 branches covered.">        } else if (arg.startsWith(BACKWARD_PREFIX)) {</span>
+<span class="fc" id="L275">            final String argSubstr = arg.substring(BACKWARD_PREFIX.length());</span>
+<span class="pc bpc" id="L276" title="1 of 2 branches missed.">            if (lookup.hasEncodedValue(argSubstr)) {</span>
+<span class="fc" id="L277">                EncodedValue enc = lookup.getEncodedValue(argSubstr, EncodedValue.class);</span>
+<span class="fc" id="L278">                return getReturnType(enc) + &quot; &quot; + arg + &quot; = (&quot; + getReturnType(enc) + &quot;) (reverse ? &quot; +</span>
+<span class="fc" id="L279">                        &quot;edge.get((&quot; + getInterface(enc) + &quot;) this.&quot; + argSubstr + &quot;_enc) : &quot; +</span>
+<span class="fc" id="L280">                        &quot;edge.getReverse((&quot; + getInterface(enc) + &quot;) this.&quot; + argSubstr + &quot;_enc));\n&quot;;</span>
+            } else {
+<span class="nc" id="L282">                throw new IllegalArgumentException(&quot;Not supported for backward: &quot; + argSubstr);</span>
+            }
+<span class="pc bpc" id="L284" title="1 of 2 branches missed.">        } else if (arg.startsWith(IN_AREA_PREFIX)) {</span>
+<span class="fc" id="L285">            return &quot;&quot;;</span>
+        } else {
+<span class="nc" id="L287">            throw new IllegalArgumentException(&quot;Not supported &quot; + arg);</span>
+        }
+    }
+
+    /**
+     * @return the interface as string of the provided EncodedValue, e.g. IntEncodedValue (only interface) or
+     * BooleanEncodedValue (first interface). For StringEncodedValue we return IntEncodedValue to return the index
+     * instead of the String for faster comparison.
+     */
+    private static String getInterface(EncodedValue enc) {
+<span class="pc bpc" id="L297" title="1 of 2 branches missed.">        if (enc instanceof StringEncodedValue) return IntEncodedValue.class.getSimpleName();</span>
+<span class="fc bfc" id="L298" title="All 2 branches covered.">        if (enc.getClass().getInterfaces().length == 0) return enc.getClass().getSimpleName();</span>
+<span class="fc" id="L299">        return enc.getClass().getInterfaces()[0].getSimpleName();</span>
+    }
+
+    private static String getReturnType(EncodedValue encodedValue) {
+        // order is important
+<span class="fc bfc" id="L304" title="All 2 branches covered.">        if (encodedValue instanceof EnumEncodedValue) {</span>
+<span class="fc" id="L305">            Class cl = ((EnumEncodedValue) encodedValue).getEnumType();</span>
+            // use getSimpleName for inbuilt EncodedValues and more readability of generated source
+<span class="pc bpc" id="L307" title="1 of 2 branches missed.">            return cl.getPackage().equals(EnumEncodedValue.class.getPackage()) ? cl.getSimpleName() : cl.getName();</span>
+        }
+<span class="pc bpc" id="L309" title="1 of 2 branches missed.">        if (encodedValue instanceof StringEncodedValue) return &quot;int&quot;; // we use indexOf</span>
+<span class="fc bfc" id="L310" title="All 2 branches covered.">        if (encodedValue instanceof DecimalEncodedValue) return &quot;double&quot;;</span>
+<span class="fc bfc" id="L311" title="All 2 branches covered.">        if (encodedValue instanceof BooleanEncodedValue) return &quot;boolean&quot;;</span>
+<span class="pc bpc" id="L312" title="1 of 2 branches missed.">        if (encodedValue instanceof IntEncodedValue) return &quot;int&quot;;</span>
+<span class="nc" id="L313">        throw new IllegalArgumentException(&quot;Unsupported EncodedValue: &quot; + encodedValue.getClass());</span>
+    }
+
+    /**
+     * Create the class source file from the detected variables (priorityVariables and speedVariables). We assume that
+     * these variables are safe although they are user input because we collected them from parsing via Janino. This
+     * means that the source file is free from user input and could be directly compiled. Before we do this we still
+     * have to inject that parsed and safe user expressions in a later step.
+     */
+    private static String createClassTemplate(long counter,
+                                              Set&lt;String&gt; priorityVariables, Set&lt;String&gt; speedVariables,
+                                              EncodedValueLookup lookup, Map&lt;String, JsonFeature&gt; areas) {
+<span class="fc" id="L325">        final StringBuilder importSourceCode = new StringBuilder(&quot;import com.graphhopper.routing.ev.*;\n&quot;);</span>
+<span class="fc" id="L326">        importSourceCode.append(&quot;import java.util.Map;\n&quot;);</span>
+<span class="fc" id="L327">        importSourceCode.append(&quot;import &quot; + CustomModel.class.getName() + &quot;;\n&quot;);</span>
+<span class="fc" id="L328">        final StringBuilder classSourceCode = new StringBuilder(100);</span>
+<span class="fc" id="L329">        boolean includedAreaImports = false;</span>
+
+<span class="fc" id="L331">        final StringBuilder initSourceCode = new StringBuilder(&quot;this.lookup = lookup;\n&quot;);</span>
+<span class="fc" id="L332">        initSourceCode.append(&quot;this.customModel = customModel;\n&quot;);</span>
+<span class="fc" id="L333">        Set&lt;String&gt; set = new HashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L334" title="All 2 branches covered.">        for (String prioVar : priorityVariables)</span>
+<span class="fc bfc" id="L335" title="All 2 branches covered.">            set.add(prioVar.startsWith(BACKWARD_PREFIX) ? prioVar.substring(BACKWARD_PREFIX.length()) : prioVar);</span>
+<span class="fc bfc" id="L336" title="All 2 branches covered.">        for (String speedVar : speedVariables)</span>
+<span class="fc bfc" id="L337" title="All 2 branches covered.">            set.add(speedVar.startsWith(BACKWARD_PREFIX) ? speedVar.substring(BACKWARD_PREFIX.length()) : speedVar);</span>
+
+<span class="fc bfc" id="L339" title="All 2 branches covered.">        for (String arg : set) {</span>
+<span class="fc bfc" id="L340" title="All 2 branches covered.">            if (lookup.hasEncodedValue(arg)) {</span>
+<span class="fc" id="L341">                EncodedValue enc = lookup.getEncodedValue(arg, EncodedValue.class);</span>
+<span class="fc" id="L342">                classSourceCode.append(&quot;protected &quot; + getInterface(enc) + &quot; &quot; + arg + &quot;_enc;\n&quot;);</span>
+<span class="fc" id="L343">                initSourceCode.append(&quot;this.&quot; + arg + &quot;_enc = (&quot; + getInterface(enc)</span>
+                        + &quot;) lookup.getEncodedValue(\&quot;&quot; + arg + &quot;\&quot;, EncodedValue.class);\n&quot;);
+<span class="pc bpc" id="L345" title="1 of 2 branches missed.">            } else if (arg.startsWith(IN_AREA_PREFIX)) {</span>
+<span class="fc bfc" id="L346" title="All 2 branches covered.">                if (!includedAreaImports) {</span>
+<span class="fc" id="L347">                    importSourceCode.append(&quot;import &quot; + BBox.class.getName() + &quot;;\n&quot;);</span>
+<span class="fc" id="L348">                    importSourceCode.append(&quot;import &quot; + GHUtility.class.getName() + &quot;;\n&quot;);</span>
+<span class="fc" id="L349">                    importSourceCode.append(&quot;import &quot; + PreparedPolygon.class.getName() + &quot;;\n&quot;);</span>
+<span class="fc" id="L350">                    importSourceCode.append(&quot;import &quot; + Polygonal.class.getName() + &quot;;\n&quot;);</span>
+<span class="fc" id="L351">                    importSourceCode.append(&quot;import &quot; + JsonFeature.class.getName() + &quot;;\n&quot;);</span>
+<span class="fc" id="L352">                    importSourceCode.append(&quot;import &quot; + Polygon.class.getName() + &quot;;\n&quot;);</span>
+<span class="fc" id="L353">                    includedAreaImports = true;</span>
+                }
+
+<span class="pc bpc" id="L356" title="1 of 2 branches missed.">                if (!JsonFeature.isValidId(arg))</span>
+<span class="nc" id="L357">                    throw new IllegalArgumentException(&quot;Area has invalid name: &quot; + arg);</span>
+<span class="fc" id="L358">                String id = arg.substring(IN_AREA_PREFIX.length());</span>
+<span class="fc" id="L359">                JsonFeature feature = areas.get(id);</span>
+<span class="fc bfc" id="L360" title="All 2 branches covered.">                if (feature == null)</span>
+<span class="fc" id="L361">                    throw new IllegalArgumentException(&quot;Area '&quot; + id + &quot;' wasn't found&quot;);</span>
+<span class="pc bpc" id="L362" title="1 of 2 branches missed.">                if (feature.getGeometry() == null)</span>
+<span class="nc" id="L363">                    throw new IllegalArgumentException(&quot;Area '&quot; + id + &quot;' does not contain a geometry&quot;);</span>
+<span class="pc bpc" id="L364" title="1 of 2 branches missed.">                if (!(feature.getGeometry() instanceof Polygonal))</span>
+<span class="nc" id="L365">                    throw new IllegalArgumentException(&quot;Currently only type=Polygon is supported for areas but was &quot; + feature.getGeometry().getGeometryType());</span>
+<span class="pc bpc" id="L366" title="1 of 2 branches missed.">                if (feature.getBBox() != null)</span>
+<span class="nc" id="L367">                    throw new IllegalArgumentException(&quot;Bounding box of area &quot; + id + &quot; must be empty&quot;);</span>
+<span class="fc" id="L368">                classSourceCode.append(&quot;protected &quot; + Polygon.class.getSimpleName() + &quot; &quot; + arg + &quot;;\n&quot;);</span>
+<span class="fc" id="L369">                initSourceCode.append(&quot;JsonFeature feature_&quot; + id + &quot; = (JsonFeature) areas.get(\&quot;&quot; + id + &quot;\&quot;);\n&quot;);</span>
+<span class="fc" id="L370">                initSourceCode.append(&quot;this.&quot; + arg + &quot; = new Polygon(new PreparedPolygon((Polygonal) feature_&quot; + id + &quot;.getGeometry()));\n&quot;);</span>
+<span class="fc" id="L371">            } else {</span>
+<span class="nc bnc" id="L372" title="All 2 branches missed.">                if (!arg.startsWith(IN_AREA_PREFIX))</span>
+<span class="nc" id="L373">                    throw new IllegalArgumentException(&quot;Variable not supported: &quot; + arg);</span>
+            }
+<span class="fc" id="L375">        }</span>
+
+<span class="fc" id="L377">        return &quot;&quot;</span>
+                + &quot;package com.graphhopper.routing.weighting.custom;\n&quot;
+<span class="fc" id="L379">                + &quot;import &quot; + CustomWeightingHelper.class.getName() + &quot;;\n&quot;</span>
+<span class="fc" id="L380">                + &quot;import &quot; + EncodedValueLookup.class.getName() + &quot;;\n&quot;</span>
+<span class="fc" id="L381">                + &quot;import &quot; + EdgeIteratorState.class.getName() + &quot;;\n&quot;</span>
+                + importSourceCode
+<span class="fc" id="L383">                + &quot;\npublic class JaninoCustomWeightingHelperSubclass&quot; + counter + &quot; extends &quot; + CustomWeightingHelper.class.getSimpleName() + &quot; {\n&quot;</span>
+                + classSourceCode
+                + &quot;   @Override\n&quot;
+<span class="fc" id="L386">                + &quot;   public void init(CustomModel customModel, EncodedValueLookup lookup, Map&lt;String, &quot; + JsonFeature.class.getName() + &quot;&gt; areas) {\n&quot;</span>
+                + initSourceCode
+                + &quot;   }\n\n&quot;
+                // we need these placeholder methods so that the hooks in DeepCopier are invoked
+                + &quot;   @Override\n&quot;
+                + &quot;   public double getPriority(EdgeIteratorState edge, boolean reverse) {\n&quot;
+                + &quot;      return 1; //will be overwritten by code injected in DeepCopier\n&quot;
+                + &quot;   }\n&quot;
+                + &quot;   @Override\n&quot;
+                + &quot;   public double getSpeed(EdgeIteratorState edge, boolean reverse) {\n&quot;
+                + &quot;      return 1; //will be overwritten by code injected in DeepCopier\n&quot;
+                + &quot;   }\n&quot;
+                + &quot;}&quot;;
+    }
+
+    /**
+     * This method does:
+     * 1. check user expressions via Parser.parseConditionalExpression and only allow whitelisted variables and methods.
+     * 2. while this check it also guesses the variable names and stores it in createObjects
+     * 3. creates if-then-elseif expressions from the checks and returns them as BlockStatements
+     *
+     * @return the created if-then, else and elseif statements
+     */
+    private static List&lt;Java.BlockStatement&gt; verifyExpressions(StringBuilder expressions, String info, Set&lt;String&gt; createObjects,
+                                                               List&lt;Statement&gt; list, EncodedValueLookup lookup) throws Exception {
+        // allow variables, all encoded values, constants and special variables like in_xyarea or backward_car_access
+<span class="fc bfc" id="L412" title="All 2 branches covered.">        NameValidator nameInConditionValidator = name -&gt; lookup.hasEncodedValue(name)</span>
+<span class="pc bpc" id="L413" title="1 of 4 branches missed.">                || name.toUpperCase(Locale.ROOT).equals(name) || name.startsWith(IN_AREA_PREFIX)</span>
+<span class="pc bpc" id="L414" title="2 of 4 branches missed.">                || name.startsWith(BACKWARD_PREFIX) &amp;&amp; lookup.hasEncodedValue(name.substring(BACKWARD_PREFIX.length()));</span>
+<span class="fc" id="L415">        ClassHelper helper = key -&gt; getReturnType(lookup.getEncodedValue(key, EncodedValue.class));</span>
+
+<span class="fc" id="L417">        parseExpressions(expressions, nameInConditionValidator, info, createObjects, list, helper, &quot;&quot;);</span>
+<span class="fc" id="L418">        expressions.append(&quot;return value;\n&quot;);</span>
+<span class="fc" id="L419">        return new Parser(new org.codehaus.janino.Scanner(info, new StringReader(expressions.toString()))).</span>
+<span class="fc" id="L420">                parseBlockStatements();</span>
+    }
+
+    static void parseExpressions(StringBuilder expressions, NameValidator nameInConditionValidator,
+                                 String exceptionInfo, Set&lt;String&gt; createObjects, List&lt;Statement&gt; list,
+                                 ClassHelper classHelper, String indentation) {
+
+<span class="fc bfc" id="L427" title="All 2 branches covered.">        for (Statement statement : list) {</span>
+            // avoid parsing the RHS value expression again as we just did it to get the maximum values in createClazz
+<span class="fc bfc" id="L429" title="All 2 branches covered.">            if (statement.keyword() == Statement.Keyword.ELSE) {</span>
+<span class="pc bpc" id="L430" title="1 of 2 branches missed.">                if (!Helper.isEmpty(statement.condition()))</span>
+<span class="nc" id="L431">                    throw new IllegalArgumentException(&quot;condition must be empty but was &quot; + statement.condition());</span>
+
+<span class="fc" id="L433">                expressions.append(indentation);</span>
+<span class="pc bpc" id="L434" title="1 of 2 branches missed.">                if (statement.isBlock()) {</span>
+<span class="nc" id="L435">                    expressions.append(&quot;else {&quot;);</span>
+<span class="nc" id="L436">                    parseExpressions(expressions, nameInConditionValidator, exceptionInfo, createObjects, statement.doBlock(), classHelper, indentation + &quot;  &quot;);</span>
+<span class="nc" id="L437">                    expressions.append(indentation).append(&quot;}\n&quot;);</span>
+                } else {
+<span class="fc" id="L439">                    expressions.append(&quot;else {&quot;).append(statement.operation().build(statement.value())).append(&quot;; }\n&quot;);</span>
+                }
+<span class="pc bpc" id="L441" title="1 of 4 branches missed.">            } else if (statement.keyword() == Statement.Keyword.ELSEIF || statement.keyword() == Statement.Keyword.IF) {</span>
+<span class="fc" id="L442">                ParseResult parseResult = ConditionalExpressionVisitor.parse(statement.condition(), nameInConditionValidator, classHelper);</span>
+<span class="fc bfc" id="L443" title="All 2 branches covered.">                if (!parseResult.ok)</span>
+<span class="fc" id="L444">                    throw new IllegalArgumentException(exceptionInfo + &quot; invalid condition \&quot;&quot; + statement.condition() + &quot;\&quot;&quot; +</span>
+<span class="pc bpc" id="L445" title="1 of 2 branches missed.">                            (parseResult.invalidMessage == null ? &quot;&quot; : &quot;: &quot; + parseResult.invalidMessage));</span>
+<span class="fc" id="L446">                createObjects.addAll(parseResult.guessedVariables);</span>
+<span class="fc bfc" id="L447" title="All 2 branches covered.">                if (statement.keyword() == Statement.Keyword.ELSEIF)</span>
+<span class="fc" id="L448">                    expressions.append(indentation).append(&quot;else &quot;);</span>
+
+<span class="fc" id="L450">                expressions.append(indentation);</span>
+<span class="fc bfc" id="L451" title="All 2 branches covered.">                if (statement.isBlock()) {</span>
+<span class="fc" id="L452">                    expressions.append(&quot;if (&quot;).append(parseResult.converted).append(&quot;) {\n&quot;);</span>
+<span class="fc" id="L453">                    parseExpressions(expressions, nameInConditionValidator, exceptionInfo, createObjects, statement.doBlock(), classHelper, indentation + &quot;  &quot;);</span>
+<span class="fc" id="L454">                    expressions.append(indentation).append(&quot;}\n&quot;);</span>
+                } else {
+<span class="fc" id="L456">                    expressions.append(&quot;if (&quot;).append(parseResult.converted).append(&quot;) {&quot;).</span>
+<span class="fc" id="L457">                            append(statement.operation().build(statement.value())).append(&quot;;}\n&quot;);</span>
+                }
+<span class="fc" id="L459">            } else {</span>
+<span class="nc" id="L460">                throw new IllegalArgumentException(&quot;The statement must be either 'if', 'else_if' or 'else'&quot;);</span>
+            }
+<span class="fc" id="L462">        }</span>
+<span class="fc" id="L463">    }</span>
+
+    /**
+     * Injects the already parsed expressions (converted to BlockStatement) via Janino's DeepCopier to the provided
+     * CompilationUnit cu (a class file).
+     */
+    private static Java.CompilationUnit injectStatements(List&lt;Java.BlockStatement&gt; priorityStatements,
+                                                         List&lt;Java.BlockStatement&gt; speedStatements,
+                                                         Java.CompilationUnit cu) throws CompileException {
+<span class="fc" id="L472">        cu = new DeepCopier() {</span>
+<span class="fc" id="L473">            boolean speedInjected = false;</span>
+<span class="fc" id="L474">            boolean priorityInjected = false;</span>
+
+            @Override
+            public Java.MethodDeclarator copyMethodDeclarator(Java.MethodDeclarator subject) throws CompileException {
+<span class="pc bpc" id="L478" title="2 of 6 branches missed.">                if (subject.name.equals(&quot;getSpeed&quot;) &amp;&amp; !speedStatements.isEmpty() &amp;&amp; !speedInjected) {</span>
+<span class="fc" id="L479">                    speedInjected = true;</span>
+<span class="fc" id="L480">                    return injectStatements(subject, this, speedStatements);</span>
+<span class="pc bpc" id="L481" title="2 of 6 branches missed.">                } else if (subject.name.equals(&quot;getPriority&quot;) &amp;&amp; !priorityStatements.isEmpty() &amp;&amp; !priorityInjected) {</span>
+<span class="fc" id="L482">                    priorityInjected = true;</span>
+<span class="fc" id="L483">                    return injectStatements(subject, this, priorityStatements);</span>
+                } else {
+<span class="fc" id="L485">                    return super.copyMethodDeclarator(subject);</span>
+                }
+            }
+<span class="fc" id="L488">        }.copyCompilationUnit(cu);</span>
+<span class="fc" id="L489">        return cu;</span>
+    }
+
+    private static Java.MethodDeclarator injectStatements(Java.MethodDeclarator subject, DeepCopier deepCopier,
+                                                          List&lt;Java.BlockStatement&gt; statements) {
+        try {
+<span class="pc bpc" id="L495" title="1 of 2 branches missed.">            if (statements.isEmpty())</span>
+<span class="nc" id="L496">                throw new IllegalArgumentException(&quot;Statements cannot be empty when copying method&quot;);</span>
+<span class="fc" id="L497">            Java.MethodDeclarator methodDecl = new Java.MethodDeclarator(</span>
+                    new Location(&quot;m1&quot;, 1, 1),
+<span class="fc" id="L499">                    subject.getDocComment(),</span>
+<span class="fc" id="L500">                    deepCopier.copyModifiers(subject.getModifiers()),</span>
+<span class="fc" id="L501">                    deepCopier.copyOptionalTypeParameters(subject.typeParameters),</span>
+<span class="fc" id="L502">                    deepCopier.copyType(subject.type),</span>
+                    subject.name,
+<span class="fc" id="L504">                    deepCopier.copyFormalParameters(subject.formalParameters),</span>
+<span class="fc" id="L505">                    deepCopier.copyTypes(subject.thrownExceptions),</span>
+<span class="fc" id="L506">                    deepCopier.copyOptionalElementValue(subject.defaultValue),</span>
+<span class="fc" id="L507">                    deepCopier.copyOptionalStatements(statements)</span>
+            );
+<span class="fc" id="L509">            statements.forEach(st -&gt; st.setEnclosingScope(methodDecl));</span>
+<span class="fc" id="L510">            return methodDecl;</span>
+<span class="nc" id="L511">        } catch (Exception ex) {</span>
+<span class="nc" id="L512">            throw new RuntimeException(ex);</span>
+        }
+    }
+
+    private static SimpleCompiler createCompiler(long counter, Java.AbstractCompilationUnit cu) throws CompileException {
+<span class="pc bpc" id="L517" title="1 of 2 branches missed.">        if (JANINO_DEBUG) {</span>
+            try {
+<span class="nc" id="L519">                StringWriter sw = new StringWriter();</span>
+<span class="nc" id="L520">                Unparser.unparse(cu, sw);</span>
+                // System.out.println(sw.toString());
+<span class="nc" id="L522">                File dir = new File(SCRIPT_FILE_DIR);</span>
+<span class="nc" id="L523">                File temporaryFile = new File(dir, &quot;JaninoCustomWeightingHelperSubclass&quot; + counter + &quot;.java&quot;);</span>
+<span class="nc" id="L524">                Reader reader = Readers.teeReader(</span>
+<span class="nc" id="L525">                        new StringReader(sw.toString()), // in</span>
+                        new FileWriter(temporaryFile),   // out
+                        true               // closeWriterOnEoi
+                );
+<span class="nc" id="L529">                return new SimpleCompiler(temporaryFile.getAbsolutePath(), reader);</span>
+<span class="nc" id="L530">            } catch (Exception ex) {</span>
+<span class="nc" id="L531">                throw new RuntimeException(ex);</span>
+            }
+        } else {
+<span class="fc" id="L534">            SimpleCompiler compiler = new SimpleCompiler();</span>
+            // compiler.setWarningHandler((handle, message, location) -&gt; System.out.println(handle + &quot;, &quot; + message + &quot;, &quot; + location));
+<span class="fc" id="L536">            compiler.cook(cu);</span>
+<span class="fc" id="L537">            return compiler;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

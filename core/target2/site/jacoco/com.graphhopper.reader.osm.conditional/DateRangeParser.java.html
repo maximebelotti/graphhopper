@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DateRangeParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.reader.osm.conditional</a> &gt; <span class="el_source">DateRangeParser.java</span></div><h1>DateRangeParser.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.reader.osm.conditional;
+
+import com.graphhopper.util.Helper;
+
+import java.text.DateFormat;
+import java.text.DateFormatSymbols;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.List;
+import java.util.Locale;
+
+import static com.graphhopper.util.Helper.createFormatter;
+
+/**
+ * Parses a DateRange from OpenStreetMap. Currently only DateRanges that last at least one day are
+ * supported. The Syntax is allowed inputs is described here:
+ * http://wiki.openstreetmap.org/wiki/Key:opening_hours.
+ * &lt;p&gt;
+ *
+ * @author Robin Boldt
+ */
+public class DateRangeParser implements ConditionalValueParser {
+<span class="fc" id="L42">    private static final DateFormat YEAR_MONTH_DAY_DF = create3CharMonthFormatter(&quot;yyyy MMM dd&quot;);</span>
+<span class="fc" id="L43">    private static final DateFormat MONTH_DAY_DF = create3CharMonthFormatter(&quot;MMM dd&quot;);</span>
+<span class="fc" id="L44">    private static final DateFormat MONTH_DAY2_DF = createFormatter(&quot;dd.MM&quot;);</span>
+<span class="fc" id="L45">    private static final DateFormat YEAR_MONTH_DF = create3CharMonthFormatter(&quot;yyyy MMM&quot;);</span>
+<span class="fc" id="L46">    private static final DateFormat MONTH_DF = create3CharMonthFormatter(&quot;MMM&quot;);</span>
+<span class="fc" id="L47">    private static final List&lt;String&gt; DAY_NAMES = Arrays.asList(&quot;Su&quot;, &quot;Mo&quot;, &quot;Tu&quot;, &quot;We&quot;, &quot;Th&quot;, &quot;Fr&quot;, &quot;Sa&quot;);</span>
+
+    private Calendar date;
+
+    DateRangeParser() {
+<span class="fc" id="L52">        this(createCalendar());</span>
+<span class="fc" id="L53">    }</span>
+
+<span class="fc" id="L55">    public DateRangeParser(Calendar date) {</span>
+<span class="fc" id="L56">        this.date = date;</span>
+<span class="fc" id="L57">    }</span>
+
+    public static Calendar createCalendar() {
+        // Use locale US as exception here (instead of UK) to match week order &quot;Su-Sa&quot; used in Calendar for day_of_week.
+        // Inconsistent but we should not use US for other date handling stuff like strange default formatting, related to #647.
+<span class="fc" id="L62">        return Calendar.getInstance(Helper.UTC, Locale.US);</span>
+    }
+
+    static ParsedCalendar parseDateString(String dateString) throws ParseException {
+        // Replace occurrences of public holidays
+<span class="fc" id="L67">        dateString = dateString.replaceAll(&quot;(,( )*)?(PH|SH)&quot;, &quot;&quot;);</span>
+<span class="fc" id="L68">        dateString = dateString.trim();</span>
+<span class="fc" id="L69">        Calendar calendar = createCalendar();</span>
+        ParsedCalendar parsedCalendar;
+        try {
+<span class="fc" id="L72">            calendar.setTime(YEAR_MONTH_DAY_DF.parse(dateString));</span>
+<span class="fc" id="L73">            parsedCalendar = new ParsedCalendar(ParsedCalendar.ParseType.YEAR_MONTH_DAY, calendar);</span>
+<span class="fc" id="L74">        } catch (ParseException e1) {</span>
+            try {
+<span class="fc" id="L76">                calendar.setTime(MONTH_DAY_DF.parse(dateString));</span>
+<span class="fc" id="L77">                parsedCalendar = new ParsedCalendar(ParsedCalendar.ParseType.MONTH_DAY, calendar);</span>
+<span class="fc" id="L78">            } catch (ParseException e2) {</span>
+                try {
+<span class="nc" id="L80">                    calendar.setTime(MONTH_DAY2_DF.parse(dateString));</span>
+<span class="nc" id="L81">                    parsedCalendar = new ParsedCalendar(ParsedCalendar.ParseType.MONTH_DAY, calendar);</span>
+<span class="fc" id="L82">                } catch (ParseException e3) {</span>
+                    try {
+<span class="fc" id="L84">                        calendar.setTime(YEAR_MONTH_DF.parse(dateString));</span>
+<span class="fc" id="L85">                        parsedCalendar = new ParsedCalendar(ParsedCalendar.ParseType.YEAR_MONTH, calendar);</span>
+<span class="fc" id="L86">                    } catch (ParseException e4) {</span>
+                        try {
+<span class="fc" id="L88">                            calendar.setTime(MONTH_DF.parse(dateString));</span>
+<span class="fc" id="L89">                            parsedCalendar = new ParsedCalendar(ParsedCalendar.ParseType.MONTH, calendar);</span>
+<span class="fc" id="L90">                        } catch (ParseException e5) {</span>
+<span class="fc" id="L91">                            int index = DAY_NAMES.indexOf(dateString);</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">                            if (index &lt; 0)</span>
+<span class="fc" id="L93">                                throw new ParseException(&quot;Unparsable date: \&quot;&quot; + dateString + &quot;\&quot;&quot;, 0);</span>
+
+                            // Ranges from 1-7
+<span class="fc" id="L96">                            calendar.set(Calendar.DAY_OF_WEEK, index + 1);</span>
+<span class="fc" id="L97">                            parsedCalendar = new ParsedCalendar(ParsedCalendar.ParseType.DAY, calendar);</span>
+<span class="fc" id="L98">                        }</span>
+
+<span class="fc" id="L100">                    }</span>
+<span class="nc" id="L101">                }</span>
+<span class="fc" id="L102">            }</span>
+<span class="fc" id="L103">        }</span>
+<span class="fc" id="L104">        return parsedCalendar;</span>
+    }
+
+    public static DateRange getRange(String dateRangeString) throws ParseException {
+<span class="pc bpc" id="L108" title="2 of 4 branches missed.">        if (dateRangeString == null || dateRangeString.isEmpty())</span>
+<span class="nc" id="L109">            return null;</span>
+
+<span class="fc" id="L111">        String[] dateArr = dateRangeString.split(&quot;-&quot;);</span>
+<span class="pc bpc" id="L112" title="2 of 4 branches missed.">        if (dateArr.length &gt; 2 || dateArr.length &lt; 1)</span>
+<span class="nc" id="L113">            return null;</span>
+        // throw new IllegalArgumentException(&quot;Only Strings containing two Date separated by a '-' or a single Date are allowed&quot;);
+
+<span class="fc" id="L116">        ParsedCalendar from = parseDateString(dateArr[0]);</span>
+        ParsedCalendar to;
+<span class="fc bfc" id="L118" title="All 2 branches covered.">        if (dateArr.length == 2)</span>
+<span class="fc" id="L119">            to = parseDateString(dateArr[1]);</span>
+        else
+            // faster and safe?
+            // to = new ParsedCalendar(from.parseType, (Calendar) from.parsedCalendar.clone());
+<span class="fc" id="L123">            to = parseDateString(dateArr[0]);</span>
+
+        try {
+<span class="fc" id="L126">            return new DateRange(from, to);</span>
+<span class="fc" id="L127">        } catch (IllegalArgumentException ex) {</span>
+<span class="fc" id="L128">            return null;</span>
+        }
+    }
+
+    @Override
+    public ConditionState checkCondition(String dateRangeString) throws ParseException {
+<span class="fc" id="L134">        DateRange dr = getRange(dateRangeString);</span>
+<span class="fc bfc" id="L135" title="All 2 branches covered.">        if (dr == null)</span>
+<span class="fc" id="L136">            return ConditionState.INVALID;</span>
+
+<span class="fc bfc" id="L138" title="All 2 branches covered.">        if (dr.isInRange(date))</span>
+<span class="fc" id="L139">            return ConditionState.TRUE;</span>
+        else
+<span class="fc" id="L141">            return ConditionState.FALSE;</span>
+    }
+
+    public static DateRangeParser createInstance(String day) {
+<span class="fc" id="L145">        Calendar calendar = createCalendar();</span>
+        try {
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">            if (!day.isEmpty())</span>
+<span class="fc" id="L148">                calendar.setTime(Helper.createFormatter(&quot;yyyy-MM-dd&quot;).parse(day));</span>
+<span class="nc" id="L149">        } catch (ParseException e) {</span>
+<span class="nc" id="L150">            throw new IllegalArgumentException(e);</span>
+<span class="fc" id="L151">        }</span>
+<span class="fc" id="L152">        return new DateRangeParser(calendar);</span>
+    }
+
+    private static SimpleDateFormat create3CharMonthFormatter(String pattern) {
+<span class="fc" id="L156">        DateFormatSymbols formatSymbols = new DateFormatSymbols(Locale.ENGLISH);</span>
+<span class="fc" id="L157">        formatSymbols.setShortMonths(new String[]{&quot;Jan&quot;, &quot;Feb&quot;, &quot;Mar&quot;, &quot;Apr&quot;, &quot;May&quot;, &quot;Jun&quot;, &quot;Jul&quot;, &quot;Aug&quot;, &quot;Sep&quot;, &quot;Oct&quot;, &quot;Nov&quot;, &quot;Dec&quot;});</span>
+<span class="fc" id="L158">        SimpleDateFormat df = new SimpleDateFormat(pattern, formatSymbols);</span>
+<span class="fc" id="L159">        df.setTimeZone(Helper.UTC);</span>
+<span class="fc" id="L160">        return df;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IndexStructureInfo.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage.index</a> &gt; <span class="el_source">IndexStructureInfo.java</span></div><h1>IndexStructureInfo.java</h1><pre class="source lang-java linenums">package com.graphhopper.storage.index;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.graphhopper.geohash.SpatialKeyAlgo;
+import com.graphhopper.util.shapes.BBox;
+
+import java.util.Arrays;
+
+import static com.graphhopper.util.DistanceCalcEarth.C;
+import static com.graphhopper.util.DistanceCalcEarth.DIST_EARTH;
+
+public class IndexStructureInfo {
+    private final int[] entries;
+    private final byte[] shifts;
+    private final PixelGridTraversal pixelGridTraversal;
+    private final SpatialKeyAlgo keyAlgo;
+    private final BBox bounds;
+    private final int parts;
+
+<span class="fc" id="L20">    public IndexStructureInfo(int[] entries, byte[] shifts, PixelGridTraversal pixelGridTraversal, SpatialKeyAlgo keyAlgo, BBox bounds, int parts) {</span>
+<span class="fc" id="L21">        this.entries = entries;</span>
+<span class="fc" id="L22">        this.shifts = shifts;</span>
+<span class="fc" id="L23">        this.pixelGridTraversal = pixelGridTraversal;</span>
+<span class="fc" id="L24">        this.keyAlgo = keyAlgo;</span>
+<span class="fc" id="L25">        this.bounds = bounds;</span>
+<span class="fc" id="L26">        this.parts = parts;</span>
+<span class="fc" id="L27">    }</span>
+
+    public static IndexStructureInfo create(BBox bounds, int minResolutionInMeter) {
+        // I still need to be able to save and load an empty LocationIndex, and I can't when the extent
+        // is zero.
+<span class="pc bpc" id="L32" title="1 of 2 branches missed.">        if (!bounds.isValid())</span>
+<span class="nc" id="L33">            bounds = new BBox(-10.0, 10.0, -10.0, 10.0);</span>
+
+<span class="fc" id="L35">        double lat = Math.min(Math.abs(bounds.maxLat), Math.abs(bounds.minLat));</span>
+<span class="fc" id="L36">        double maxDistInMeter = Math.max(</span>
+                (bounds.maxLat - bounds.minLat) / 360 * C,
+<span class="fc" id="L38">                (bounds.maxLon - bounds.minLon) / 360 * DIST_EARTH.calcCircumference(lat));</span>
+<span class="fc" id="L39">        double tmp = maxDistInMeter / minResolutionInMeter;</span>
+<span class="fc" id="L40">        tmp = tmp * tmp;</span>
+<span class="fc" id="L41">        IntArrayList tmpEntries = new IntArrayList();</span>
+        // the last one is always 4 to reduce costs if only a single entry
+<span class="fc" id="L43">        tmp /= 4;</span>
+<span class="fc bfc" id="L44" title="All 2 branches covered.">        while (tmp &gt; 1) {</span>
+            int tmpNo;
+<span class="fc bfc" id="L46" title="All 2 branches covered.">            if (tmp &gt;= 16) {</span>
+<span class="fc" id="L47">                tmpNo = 16;</span>
+<span class="fc bfc" id="L48" title="All 2 branches covered.">            } else if (tmp &gt;= 4) {</span>
+<span class="fc" id="L49">                tmpNo = 4;</span>
+            } else {
+                break;
+            }
+<span class="fc" id="L53">            tmpEntries.add(tmpNo);</span>
+<span class="fc" id="L54">            tmp /= tmpNo;</span>
+<span class="fc" id="L55">        }</span>
+<span class="fc" id="L56">        tmpEntries.add(4);</span>
+<span class="fc" id="L57">        int[] entries = tmpEntries.toArray();</span>
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">        if (entries.length &lt; 1) {</span>
+            // at least one depth should have been specified
+<span class="nc" id="L60">            throw new IllegalStateException(&quot;depth needs to be at least 1&quot;);</span>
+        }
+<span class="fc" id="L62">        int depth = entries.length;</span>
+<span class="fc" id="L63">        byte[] shifts = new byte[depth];</span>
+<span class="fc" id="L64">        int lastEntry = entries[0];</span>
+<span class="fc bfc" id="L65" title="All 2 branches covered.">        for (int i1 = 0; i1 &lt; depth; i1++) {</span>
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">            if (lastEntry &lt; entries[i1]) {</span>
+<span class="nc" id="L67">                throw new IllegalStateException(&quot;entries should decrease or stay but was:&quot;</span>
+<span class="nc" id="L68">                        + Arrays.toString(entries));</span>
+            }
+<span class="fc" id="L70">            lastEntry = entries[i1];</span>
+<span class="fc" id="L71">            shifts[i1] = getShift(entries[i1]);</span>
+        }
+<span class="fc" id="L73">        int shiftSum = 0;</span>
+<span class="fc" id="L74">        long parts = 1;</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        for (int i = 0; i &lt; shifts.length; i++) {</span>
+<span class="fc" id="L76">            shiftSum += shifts[i];</span>
+<span class="fc" id="L77">            parts *= entries[i];</span>
+        }
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        if (shiftSum &gt; 64)</span>
+<span class="nc" id="L80">            throw new IllegalStateException(&quot;sum of all shifts does not fit into a long variable&quot;);</span>
+<span class="fc" id="L81">        parts = (int) Math.round(Math.sqrt(parts));</span>
+
+<span class="fc" id="L83">        return new IndexStructureInfo(entries, shifts, new PixelGridTraversal((int) parts, bounds), new SpatialKeyAlgo(shiftSum, bounds), bounds, (int) parts);</span>
+    }
+
+    private static byte getShift(int entries) {
+<span class="fc" id="L87">        byte b = (byte) Math.round(Math.log(entries) / Math.log(2));</span>
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">        if (b &lt;= 0)</span>
+<span class="nc" id="L89">            throw new IllegalStateException(&quot;invalid shift:&quot; + b);</span>
+
+<span class="fc" id="L91">        return b;</span>
+    }
+
+    public int[] getEntries() {
+<span class="fc" id="L95">        return entries;</span>
+    }
+
+    public byte[] getShifts() {
+<span class="fc" id="L99">        return shifts;</span>
+    }
+
+    public PixelGridTraversal getPixelGridTraversal() {
+<span class="fc" id="L103">        return pixelGridTraversal;</span>
+    }
+
+    public SpatialKeyAlgo getKeyAlgo() {
+<span class="fc" id="L107">        return keyAlgo;</span>
+    }
+
+    public BBox getBounds() {
+<span class="nc" id="L111">        return bounds;</span>
+    }
+
+    public int getParts() {
+<span class="fc" id="L115">        return parts;</span>
+    }
+
+    public double getDeltaLat() {
+<span class="fc" id="L119">        return (bounds.maxLat - bounds.minLat) / parts;</span>
+    }
+
+    public double getDeltaLon() {
+<span class="fc" id="L123">        return (bounds.maxLon - bounds.minLon) / parts;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

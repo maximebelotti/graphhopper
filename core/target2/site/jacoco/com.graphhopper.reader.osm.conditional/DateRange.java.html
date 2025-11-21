@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DateRange.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.reader.osm.conditional</a> &gt; <span class="el_source">DateRange.java</span></div><h1>DateRange.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.reader.osm.conditional;
+
+import com.graphhopper.util.Helper;
+
+import java.text.DateFormat;
+import java.util.Calendar;
+
+/**
+ * This class represents a date range and is able to determine if a given date is in that range.
+ *
+ * @author Robin Boldt
+ */
+public class DateRange {
+    private final Calendar from;
+    private final Calendar to;
+    // Do not compare years
+<span class="fc" id="L34">    boolean yearless = false;</span>
+<span class="fc" id="L35">    boolean dayOnly = false;</span>
+<span class="fc" id="L36">    boolean reverse = false;</span>
+
+<span class="fc" id="L38">    public DateRange(ParsedCalendar from, ParsedCalendar to) {</span>
+<span class="fc" id="L39">        Calendar fromCal = from.parsedCalendar;</span>
+<span class="fc" id="L40">        Calendar toCal = to.parsedCalendar;</span>
+
+        // This should never happen
+<span class="pc bpc" id="L43" title="1 of 2 branches missed.">        if (fromCal.get(Calendar.ERA) != toCal.get(Calendar.ERA)) {</span>
+<span class="nc" id="L44">            throw new IllegalArgumentException(&quot;Different calendar eras are not allowed. From:&quot; + from + &quot; To:&quot; + to);</span>
+        }
+
+<span class="pc bpc" id="L47" title="1 of 4 branches missed.">        if (from.isYearless() &amp;&amp; to.isYearless()) {</span>
+<span class="fc" id="L48">            yearless = true;</span>
+        }
+
+<span class="pc bpc" id="L51" title="1 of 4 branches missed.">        if (from.isDayOnly() &amp;&amp; to.isDayOnly()) {</span>
+<span class="fc" id="L52">            dayOnly = true;</span>
+        }
+
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        if (fromCal.getTimeInMillis() &gt; toCal.getTimeInMillis()) {</span>
+<span class="fc bfc" id="L56" title="All 4 branches covered.">            if (!yearless &amp;&amp; !dayOnly) {</span>
+<span class="fc" id="L57">                throw new IllegalArgumentException(&quot;'from' after 'to' not allowed, except for isYearless and isDayOnly DateRanges. From:&quot; + from + &quot; To:&quot; + to);</span>
+            } else {
+<span class="fc" id="L59">                reverse = true;</span>
+            }
+        }
+
+<span class="fc" id="L63">        this.from = from.getMin();</span>
+<span class="fc" id="L64">        this.to = to.getMax();</span>
+<span class="fc" id="L65">    }</span>
+
+    public boolean isInRange(Calendar date) {
+<span class="fc bfc" id="L68" title="All 4 branches covered.">        if (!yearless &amp;&amp; !dayOnly)</span>
+<span class="pc bpc" id="L69" title="1 of 8 branches missed.">            return date.after(from) &amp;&amp; date.before(to) || date.equals(from) || date.equals(to);</span>
+
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        if (dayOnly) {</span>
+<span class="fc" id="L72">            int currentDayOfWeek = date.get(Calendar.DAY_OF_WEEK);</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">            if (reverse) {</span>
+<span class="fc bfc" id="L74" title="All 4 branches covered.">                return from.get(Calendar.DAY_OF_WEEK) &lt;= currentDayOfWeek || currentDayOfWeek &lt;= to.get(Calendar.DAY_OF_WEEK);</span>
+            } else {
+<span class="fc bfc" id="L76" title="All 4 branches covered.">                return from.get(Calendar.DAY_OF_WEEK) &lt;= currentDayOfWeek &amp;&amp; currentDayOfWeek &lt;= to.get(Calendar.DAY_OF_WEEK);</span>
+            }
+        }
+
+<span class="fc bfc" id="L80" title="All 2 branches covered.">        if (reverse)</span>
+<span class="fc" id="L81">            return isInRangeYearlessReverse(date);</span>
+        else
+<span class="fc" id="L83">            return isInRangeYearless(date);</span>
+    }
+
+    private boolean isInRangeYearless(Calendar date) {
+<span class="fc bfc" id="L87" title="All 4 branches covered.">        if (from.get(Calendar.MONTH) &lt; date.get(Calendar.MONTH) &amp;&amp; date.get(Calendar.MONTH) &lt; to.get(Calendar.MONTH))</span>
+<span class="fc" id="L88">            return true;</span>
+<span class="fc bfc" id="L89" title="All 4 branches covered.">        if (from.get(Calendar.MONTH) == date.get(Calendar.MONTH) &amp;&amp; to.get(Calendar.MONTH) == date.get(Calendar.MONTH)) {</span>
+<span class="fc bfc" id="L90" title="All 4 branches covered.">            if (from.get(Calendar.DAY_OF_MONTH) &lt;= date.get(Calendar.DAY_OF_MONTH) &amp;&amp; date.get(Calendar.DAY_OF_MONTH) &lt;= to.get(Calendar.DAY_OF_MONTH))</span>
+<span class="fc" id="L91">                return true;</span>
+            else
+<span class="fc" id="L93">                return false;</span>
+        }
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        if (from.get(Calendar.MONTH) == date.get(Calendar.MONTH)) {</span>
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">            if (from.get(Calendar.DAY_OF_MONTH) &lt;= date.get(Calendar.DAY_OF_MONTH))</span>
+<span class="fc" id="L97">                return true;</span>
+            else
+<span class="nc" id="L99">                return false;</span>
+        }
+<span class="fc bfc" id="L101" title="All 2 branches covered.">        if (to.get(Calendar.MONTH) == date.get(Calendar.MONTH)) {</span>
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">            if (date.get(Calendar.DAY_OF_MONTH) &lt;= to.get(Calendar.DAY_OF_MONTH))</span>
+<span class="fc" id="L103">                return true;</span>
+            else
+<span class="nc" id="L105">                return false;</span>
+        }
+<span class="fc" id="L107">        return false;</span>
+    }
+
+    private boolean isInRangeYearlessReverse(Calendar date) {
+<span class="fc" id="L111">        int currMonth = date.get(Calendar.MONTH);</span>
+<span class="fc bfc" id="L112" title="All 4 branches covered.">        if (from.get(Calendar.MONTH) &lt; currMonth || currMonth &lt; to.get(Calendar.MONTH))</span>
+<span class="fc" id="L113">            return true;</span>
+<span class="fc bfc" id="L114" title="All 4 branches covered.">        if (from.get(Calendar.MONTH) == currMonth &amp;&amp; to.get(Calendar.MONTH) == currMonth) {</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">            if (from.get(Calendar.DAY_OF_MONTH) &lt; date.get(Calendar.DAY_OF_MONTH)</span>
+<span class="fc bfc" id="L116" title="All 2 branches covered.">                    || date.get(Calendar.DAY_OF_MONTH) &lt; to.get(Calendar.DAY_OF_MONTH))</span>
+<span class="fc" id="L117">                return true;</span>
+            else
+<span class="fc" id="L119">                return false;</span>
+        }
+<span class="fc bfc" id="L121" title="All 2 branches covered.">        if (from.get(Calendar.MONTH) == currMonth) {</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">            if (from.get(Calendar.DAY_OF_MONTH) &lt;= date.get(Calendar.DAY_OF_MONTH))</span>
+<span class="fc" id="L123">                return true;</span>
+            else
+<span class="fc" id="L125">                return false;</span>
+        }
+<span class="fc bfc" id="L127" title="All 2 branches covered.">        if (to.get(Calendar.MONTH) == currMonth) {</span>
+<span class="pc bpc" id="L128" title="1 of 2 branches missed.">            if (date.get(Calendar.DAY_OF_MONTH) &lt;= to.get(Calendar.DAY_OF_MONTH))</span>
+<span class="fc" id="L129">                return true;</span>
+            else
+<span class="nc" id="L131">                return false;</span>
+        }
+<span class="fc" id="L133">        return false;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L138">        DateFormat f = Helper.createFormatter();</span>
+<span class="fc" id="L139">        return &quot;yearless:&quot; + yearless + &quot;, dayOnly:&quot; + dayOnly + &quot;, reverse:&quot; + reverse</span>
+<span class="fc" id="L140">                + &quot;, from:&quot; + f.format(from.getTime()) + &quot;, to:&quot; + f.format(to.getTime());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

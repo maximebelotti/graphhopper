@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Instructions.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">Instructions.java</span></div><h1>Instructions.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.util;
+
+<span class="nc" id="L21">public class Instructions {</span>
+
+    /**
+     * This method is useful for navigation devices to find the next instruction for the specified
+     * coordinate (e.g. the current position).
+     * &lt;p&gt;
+     *
+     * @param instructions the instructions to query
+     * @param maxDistance the maximum acceptable distance to the instruction (in meter)
+     * @return the next Instruction or null if too far away.
+     */
+    public static Instruction find(InstructionList instructions, double lat, double lon, double maxDistance) {
+        // handle special cases
+<span class="pc bpc" id="L34" title="1 of 2 branches missed.">        if (instructions.size() == 0) {</span>
+<span class="nc" id="L35">            return null;</span>
+        }
+<span class="fc" id="L37">        PointList points = instructions.get(0).getPoints();</span>
+<span class="fc" id="L38">        double prevLat = points.getLat(0);</span>
+<span class="fc" id="L39">        double prevLon = points.getLon(0);</span>
+<span class="fc" id="L40">        DistanceCalc distCalc = DistanceCalcEarth.DIST_EARTH;</span>
+<span class="fc" id="L41">        double foundMinDistance = distCalc.calcNormalizedDist(lat, lon, prevLat, prevLon);</span>
+<span class="fc" id="L42">        int foundInstruction = 0;</span>
+
+        // Search the closest edge to the query point
+<span class="pc bpc" id="L45" title="1 of 2 branches missed.">        if (instructions.size() &gt; 1) {</span>
+<span class="fc bfc" id="L46" title="All 2 branches covered.">            for (int instructionIndex = 0; instructionIndex &lt; instructions.size(); instructionIndex++) {</span>
+<span class="fc" id="L47">                points = instructions.get(instructionIndex).getPoints();</span>
+<span class="fc bfc" id="L48" title="All 2 branches covered.">                for (int pointIndex = 0; pointIndex &lt; points.size(); pointIndex++) {</span>
+<span class="fc" id="L49">                    double currLat = points.getLat(pointIndex);</span>
+<span class="fc" id="L50">                    double currLon = points.getLon(pointIndex);</span>
+
+<span class="pc bpc" id="L52" title="1 of 4 branches missed.">                    if (!(instructionIndex == 0 &amp;&amp; pointIndex == 0)) {</span>
+                        // calculate the distance from the point to the edge
+                        double distance;
+<span class="fc" id="L55">                        int index = instructionIndex;</span>
+<span class="fc bfc" id="L56" title="All 2 branches covered.">                        if (distCalc.validEdgeDistance(lat, lon, currLat, currLon, prevLat, prevLon)) {</span>
+<span class="fc" id="L57">                            distance = distCalc.calcNormalizedEdgeDistance(lat, lon, currLat, currLon, prevLat, prevLon);</span>
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">                            if (pointIndex &gt; 0)</span>
+<span class="nc" id="L59">                                index++;</span>
+                        } else {
+<span class="fc" id="L61">                            distance = distCalc.calcNormalizedDist(lat, lon, currLat, currLon);</span>
+<span class="fc bfc" id="L62" title="All 2 branches covered.">                            if (pointIndex &gt; 0)</span>
+<span class="fc" id="L63">                                index++;</span>
+                        }
+
+<span class="fc bfc" id="L66" title="All 2 branches covered.">                        if (distance &lt; foundMinDistance) {</span>
+<span class="fc" id="L67">                            foundMinDistance = distance;</span>
+<span class="fc" id="L68">                            foundInstruction = index;</span>
+                        }
+                    }
+<span class="fc" id="L71">                    prevLat = currLat;</span>
+<span class="fc" id="L72">                    prevLon = currLon;</span>
+                }
+            }
+        }
+
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        if (distCalc.calcDenormalizedDist(foundMinDistance) &gt; maxDistance)</span>
+<span class="fc" id="L78">            return null;</span>
+
+        // special case finish condition
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">        if (foundInstruction == instructions.size())</span>
+<span class="nc" id="L82">            foundInstruction--;</span>
+
+<span class="fc" id="L84">        return instructions.get(foundInstruction);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

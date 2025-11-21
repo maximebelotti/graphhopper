@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NodeBasedNodeContractor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ch</a> &gt; <span class="el_source">NodeBasedNodeContractor.java</span></div><h1>NodeBasedNodeContractor.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ch;
+
+import com.carrotsearch.hppc.IntContainer;
+import com.graphhopper.storage.CHStorageBuilder;
+import com.graphhopper.util.PMap;
+import com.graphhopper.util.StopWatch;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+import static com.graphhopper.routing.ch.CHParameters.*;
+import static com.graphhopper.util.Helper.nf;
+
+class NodeBasedNodeContractor implements NodeContractor {
+    private final CHPreparationGraph prepareGraph;
+<span class="fc" id="L34">    private final Params params = new Params();</span>
+    // todo: maybe use a set to prevent duplicates instead?
+<span class="fc" id="L36">    private List&lt;Shortcut&gt; shortcuts = new ArrayList&lt;&gt;();</span>
+    private CHStorageBuilder chBuilder;
+    private PrepareGraphEdgeExplorer inEdgeExplorer;
+    private PrepareGraphEdgeExplorer outEdgeExplorer;
+    private PrepareGraphEdgeExplorer existingShortcutExplorer;
+    private NodeBasedWitnessPathSearcher witnessPathSearcher;
+    private int addedShortcutsCount;
+    private long dijkstraCount;
+<span class="fc" id="L44">    private final StopWatch dijkstraSW = new StopWatch();</span>
+    // meanDegree is the number of edges / number of nodes ratio of the graph, not really the average degree, because
+    // each edge can exist in both directions
+    private double meanDegree;
+    // temporary counters used for priority calculation
+    private int originalEdgesCount;
+    private int shortcutsCount;
+
+<span class="fc" id="L52">    NodeBasedNodeContractor(CHPreparationGraph prepareGraph, CHStorageBuilder chBuilder, PMap pMap) {</span>
+<span class="fc" id="L53">        this.prepareGraph = prepareGraph;</span>
+<span class="fc" id="L54">        extractParams(pMap);</span>
+<span class="fc" id="L55">        this.chBuilder = chBuilder;</span>
+<span class="fc" id="L56">    }</span>
+
+    private void extractParams(PMap pMap) {
+<span class="fc" id="L59">        params.edgeDifferenceWeight = pMap.getFloat(EDGE_DIFFERENCE_WEIGHT, params.edgeDifferenceWeight);</span>
+<span class="fc" id="L60">        params.originalEdgesCountWeight = pMap.getFloat(ORIGINAL_EDGE_COUNT_WEIGHT, params.originalEdgesCountWeight);</span>
+<span class="fc" id="L61">        params.maxPollFactorHeuristic = pMap.getDouble(MAX_POLL_FACTOR_HEURISTIC_NODE, params.maxPollFactorHeuristic);</span>
+<span class="fc" id="L62">        params.maxPollFactorContraction = pMap.getDouble(MAX_POLL_FACTOR_CONTRACTION_NODE, params.maxPollFactorContraction);</span>
+<span class="fc" id="L63">    }</span>
+
+    @Override
+    public void initFromGraph() {
+<span class="fc" id="L67">        inEdgeExplorer = prepareGraph.createInEdgeExplorer();</span>
+<span class="fc" id="L68">        outEdgeExplorer = prepareGraph.createOutEdgeExplorer();</span>
+<span class="fc" id="L69">        existingShortcutExplorer = prepareGraph.createOutEdgeExplorer();</span>
+<span class="fc" id="L70">        witnessPathSearcher = new NodeBasedWitnessPathSearcher(prepareGraph);</span>
+<span class="fc" id="L71">        meanDegree = prepareGraph.getOriginalEdges() * 1.0 / prepareGraph.getNodes();</span>
+<span class="fc" id="L72">    }</span>
+
+    @Override
+    public void close() {
+<span class="fc" id="L76">        prepareGraph.close();</span>
+<span class="fc" id="L77">        shortcuts = null;</span>
+<span class="fc" id="L78">        chBuilder = null;</span>
+<span class="fc" id="L79">        inEdgeExplorer = null;</span>
+<span class="fc" id="L80">        outEdgeExplorer = null;</span>
+<span class="fc" id="L81">        existingShortcutExplorer = null;</span>
+<span class="fc" id="L82">        witnessPathSearcher = null;</span>
+<span class="fc" id="L83">    }</span>
+
+    /**
+     * Warning: the calculated priority must NOT depend on priority(v) and therefore findAndHandleShortcuts should also not
+     * depend on the priority(v). Otherwise updating the priority before contracting in contractNodes() could lead to
+     * a slowish or even endless loop.
+     */
+    @Override
+    public float calculatePriority(int node) {
+        // # huge influence: the bigger the less shortcuts gets created and the faster is the preparation
+        //
+        // every adjNode has an 'original edge' number associated. initially it is r=1
+        // when a new shortcut is introduced then r of the associated edges is summed up:
+        // r(u,w)=r(u,v)+r(v,w) now we can define
+        // originalEdgesCount = σ(v) := sum_{ (u,w) ∈ shortcuts(v) } of r(u, w)
+<span class="fc" id="L98">        shortcutsCount = 0;</span>
+<span class="fc" id="L99">        originalEdgesCount = 0;</span>
+<span class="fc" id="L100">        findAndHandleShortcuts(node, this::countShortcuts, (int) (meanDegree * params.maxPollFactorHeuristic));</span>
+
+        // from shortcuts we can compute the edgeDifference
+        // # low influence: with it the shortcut creation is slightly faster
+        //
+        // |shortcuts(v)| − |{(u, v) | v uncontracted}| − |{(v, w) | v uncontracted}|
+        // meanDegree is used instead of outDegree+inDegree as if one adjNode is in both directions
+        // only one bucket memory is used. Additionally one shortcut could also stand for two directions.
+<span class="fc" id="L108">        int edgeDifference = shortcutsCount - prepareGraph.getDegree(node);</span>
+
+        // according to the paper do a simple linear combination of the properties to get the priority.
+<span class="fc" id="L111">        return params.edgeDifferenceWeight * edgeDifference +</span>
+                params.originalEdgesCountWeight * originalEdgesCount;
+        // todo: maybe use contracted-neighbors heuristic (contract nodes with lots of contracted neighbors later) as in GH 1.0 again?
+        //       maybe use hierarchy-depths heuristic as in edge-based?
+    }
+
+    @Override
+    public IntContainer contractNode(int node) {
+<span class="fc" id="L119">        long degree = findAndHandleShortcuts(node, this::addOrUpdateShortcut, (int) (meanDegree * params.maxPollFactorContraction));</span>
+<span class="fc" id="L120">        insertShortcuts(node);</span>
+        // put weight factor on meanDegree instead of taking the average =&gt; meanDegree is more stable
+<span class="fc" id="L122">        meanDegree = (meanDegree * 2 + degree) / 3;</span>
+<span class="fc" id="L123">        return prepareGraph.disconnect(node);</span>
+    }
+
+    /**
+     * Calls the shortcut handler for all edges and shortcuts adjacent to the given node. After this method is called
+     * these edges and shortcuts will be removed from the prepare graph, so this method offers the last chance to deal
+     * with them.
+     */
+    private void insertShortcuts(int node) {
+<span class="fc" id="L132">        shortcuts.clear();</span>
+<span class="fc" id="L133">        insertOutShortcuts(node);</span>
+<span class="fc" id="L134">        insertInShortcuts(node);</span>
+<span class="fc" id="L135">        int origEdges = prepareGraph.getOriginalEdges();</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">        for (Shortcut sc : shortcuts) {</span>
+<span class="fc" id="L137">            int shortcut = chBuilder.addShortcutNodeBased(sc.from, sc.to, sc.flags, sc.weight, sc.skippedEdge1, sc.skippedEdge2);</span>
+<span class="fc bfc" id="L138" title="All 2 branches covered.">            if (sc.flags == PrepareEncoder.getScFwdDir()) {</span>
+<span class="fc" id="L139">                prepareGraph.setShortcutForPrepareEdge(sc.prepareEdgeFwd, origEdges + shortcut);</span>
+<span class="fc bfc" id="L140" title="All 2 branches covered.">            } else if (sc.flags == PrepareEncoder.getScBwdDir()) {</span>
+<span class="fc" id="L141">                prepareGraph.setShortcutForPrepareEdge(sc.prepareEdgeBwd, origEdges + shortcut);</span>
+            } else {
+<span class="fc" id="L143">                prepareGraph.setShortcutForPrepareEdge(sc.prepareEdgeFwd, origEdges + shortcut);</span>
+<span class="fc" id="L144">                prepareGraph.setShortcutForPrepareEdge(sc.prepareEdgeBwd, origEdges + shortcut);</span>
+            }
+<span class="fc" id="L146">        }</span>
+<span class="fc" id="L147">        addedShortcutsCount += shortcuts.size();</span>
+<span class="fc" id="L148">    }</span>
+
+    private void insertOutShortcuts(int node) {
+<span class="fc" id="L151">        PrepareGraphEdgeIterator iter = outEdgeExplorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L152" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc bfc" id="L153" title="All 2 branches covered.">            if (!iter.isShortcut())</span>
+<span class="fc" id="L154">                continue;</span>
+<span class="fc" id="L155">            shortcuts.add(new Shortcut(iter.getPrepareEdge(), -1, node, iter.getAdjNode(), iter.getSkipped1(),</span>
+<span class="fc" id="L156">                    iter.getSkipped2(), PrepareEncoder.getScFwdDir(), iter.getWeight()));</span>
+        }
+<span class="fc" id="L158">    }</span>
+
+    private void insertInShortcuts(int node) {
+<span class="fc" id="L161">        PrepareGraphEdgeIterator iter = inEdgeExplorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L162" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc bfc" id="L163" title="All 2 branches covered.">            if (!iter.isShortcut())</span>
+<span class="fc" id="L164">                continue;</span>
+
+<span class="fc" id="L166">            int skippedEdge1 = iter.getSkipped2();</span>
+<span class="fc" id="L167">            int skippedEdge2 = iter.getSkipped1();</span>
+            // we check if this shortcut already exists (with the same weight) for the other direction and if so we can use
+            // it for both ways instead of adding another one
+<span class="fc" id="L170">            boolean bidir = false;</span>
+<span class="fc bfc" id="L171" title="All 2 branches covered.">            for (Shortcut sc : shortcuts) {</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">                if (sc.to == iter.getAdjNode()</span>
+<span class="fc bfc" id="L173" title="All 2 branches covered.">                        &amp;&amp; Double.doubleToLongBits(sc.weight) == Double.doubleToLongBits(iter.getWeight())</span>
+                        // todo: can we not just compare skippedEdges?
+<span class="fc bfc" id="L175" title="All 2 branches covered.">                        &amp;&amp; prepareGraph.getShortcutForPrepareEdge(sc.skippedEdge1) == prepareGraph.getShortcutForPrepareEdge(skippedEdge1)</span>
+<span class="fc bfc" id="L176" title="All 2 branches covered.">                        &amp;&amp; prepareGraph.getShortcutForPrepareEdge(sc.skippedEdge2) == prepareGraph.getShortcutForPrepareEdge(skippedEdge2)</span>
+<span class="pc bpc" id="L177" title="1 of 2 branches missed.">                        &amp;&amp; sc.flags == PrepareEncoder.getScFwdDir()) {</span>
+<span class="fc" id="L178">                    sc.flags = PrepareEncoder.getScDirMask();</span>
+<span class="fc" id="L179">                    sc.prepareEdgeBwd = iter.getPrepareEdge();</span>
+<span class="fc" id="L180">                    bidir = true;</span>
+<span class="fc" id="L181">                    break;</span>
+                }
+<span class="fc" id="L183">            }</span>
+<span class="fc bfc" id="L184" title="All 2 branches covered.">            if (!bidir) {</span>
+<span class="fc" id="L185">                shortcuts.add(new Shortcut(-1, iter.getPrepareEdge(), node, iter.getAdjNode(), skippedEdge1, skippedEdge2, PrepareEncoder.getScBwdDir(), iter.getWeight()));</span>
+            }
+<span class="fc" id="L187">        }</span>
+<span class="fc" id="L188">    }</span>
+
+    @Override
+    public void finishContraction() {
+        // during contraction the skip1/2 edges of shortcuts refer to the prepare edge-ids *not* the final shortcut
+        // ids (because they are not known before the insertion) -&gt; we need to re-map these ids here
+<span class="fc" id="L194">        chBuilder.replaceSkippedEdges(prepareGraph::getShortcutForPrepareEdge);</span>
+<span class="fc" id="L195">    }</span>
+
+    @Override
+    public String getStatisticsString() {
+<span class="fc" id="L199">        return String.format(Locale.ROOT, &quot;meanDegree: %.2f, dijkstras: %10s, mem: %10s&quot;,</span>
+<span class="fc" id="L200">                meanDegree, nf(dijkstraCount), witnessPathSearcher.getMemoryUsageAsString());</span>
+    }
+
+    /**
+     * Searches for shortcuts and calls the given handler on each shortcut that is found. The graph is not directly
+     * changed by this method.
+     * Returns the 'degree' of the given node (disregarding edges from/to already contracted nodes).
+     * Note that here the degree is not the total number of adjacent edges, but only the number of incoming edges
+     */
+    private long findAndHandleShortcuts(int node, PrepareShortcutHandler handler, int maxVisitedNodes) {
+<span class="fc" id="L210">        long degree = 0;</span>
+<span class="fc" id="L211">        PrepareGraphEdgeIterator incomingEdges = inEdgeExplorer.setBaseNode(node);</span>
+        // collect outgoing nodes (goal-nodes) only once
+<span class="fc bfc" id="L213" title="All 2 branches covered.">        while (incomingEdges.next()) {</span>
+<span class="fc" id="L214">            int fromNode = incomingEdges.getAdjNode();</span>
+<span class="pc bpc" id="L215" title="1 of 2 branches missed.">            if (fromNode == node)</span>
+<span class="nc" id="L216">                throw new IllegalStateException(&quot;Unexpected loop-edge at node: &quot; + node);</span>
+
+<span class="fc" id="L218">            final double incomingEdgeWeight = incomingEdges.getWeight();</span>
+            // this check is important to prevent calling calcMillis on inaccessible edges and also allows early exit
+<span class="pc bpc" id="L220" title="1 of 2 branches missed.">            if (Double.isInfinite(incomingEdgeWeight)) {</span>
+<span class="nc" id="L221">                continue;</span>
+            }
+            // collect outgoing nodes (goal-nodes) only once
+<span class="fc" id="L224">            PrepareGraphEdgeIterator outgoingEdges = outEdgeExplorer.setBaseNode(node);</span>
+<span class="fc" id="L225">            witnessPathSearcher.init(fromNode, node);</span>
+<span class="fc" id="L226">            degree++;</span>
+<span class="fc bfc" id="L227" title="All 2 branches covered.">            while (outgoingEdges.next()) {</span>
+<span class="fc" id="L228">                int toNode = outgoingEdges.getAdjNode();</span>
+                // no need to search for witnesses going from a node back to itself
+<span class="fc bfc" id="L230" title="All 2 branches covered.">                if (fromNode == toNode)</span>
+<span class="fc" id="L231">                    continue;</span>
+
+                // Limit weight as ferries or forbidden edges can increase local search too much.
+                // If we decrease the correct weight we only explore less and introduce more shortcuts.
+                // I.e. no change to accuracy is made.
+<span class="fc" id="L236">                double existingDirectWeight = incomingEdgeWeight + outgoingEdges.getWeight();</span>
+<span class="pc bpc" id="L237" title="1 of 2 branches missed.">                if (Double.isInfinite(existingDirectWeight))</span>
+<span class="nc" id="L238">                    continue;</span>
+
+<span class="fc" id="L240">                dijkstraSW.start();</span>
+<span class="fc" id="L241">                dijkstraCount++;</span>
+<span class="fc" id="L242">                double maxWeight = witnessPathSearcher.findUpperBound(toNode, existingDirectWeight, maxVisitedNodes);</span>
+<span class="fc" id="L243">                dijkstraSW.stop();</span>
+
+<span class="fc bfc" id="L245" title="All 2 branches covered.">                if (maxWeight &lt;= existingDirectWeight)</span>
+                    // FOUND witness path, so do not add shortcut
+<span class="fc" id="L247">                    continue;</span>
+
+<span class="fc" id="L249">                handler.handleShortcut(fromNode, toNode, existingDirectWeight,</span>
+<span class="fc" id="L250">                        outgoingEdges.getPrepareEdge(), outgoingEdges.getOrigEdgeCount(),</span>
+<span class="fc" id="L251">                        incomingEdges.getPrepareEdge(), incomingEdges.getOrigEdgeCount());</span>
+<span class="fc" id="L252">            }</span>
+<span class="fc" id="L253">        }</span>
+<span class="fc" id="L254">        return degree;</span>
+    }
+
+    private void countShortcuts(int fromNode, int toNode, double existingDirectWeight,
+                                int outgoingEdge, int outOrigEdgeCount,
+                                int incomingEdge, int inOrigEdgeCount) {
+<span class="fc" id="L260">        shortcutsCount++;</span>
+<span class="fc" id="L261">        originalEdgesCount += inOrigEdgeCount + outOrigEdgeCount;</span>
+<span class="fc" id="L262">    }</span>
+
+    private void addOrUpdateShortcut(int fromNode, int toNode, double weight,
+                                     int outgoingEdge, int outOrigEdgeCount,
+                                     int incomingEdge, int inOrigEdgeCount) {
+<span class="fc" id="L267">        boolean exists = false;</span>
+<span class="fc" id="L268">        PrepareGraphEdgeIterator iter = existingShortcutExplorer.setBaseNode(fromNode);</span>
+<span class="fc bfc" id="L269" title="All 2 branches covered.">        while (iter.next()) {</span>
+            // do not update base edges!
+<span class="fc bfc" id="L271" title="All 4 branches covered.">            if (iter.getAdjNode() != toNode || !iter.isShortcut()) {</span>
+<span class="fc" id="L272">                continue;</span>
+            }
+<span class="fc" id="L274">            exists = true;</span>
+<span class="fc bfc" id="L275" title="All 2 branches covered.">            if (weight &lt; iter.getWeight()) {</span>
+<span class="fc" id="L276">                iter.setWeight(weight);</span>
+<span class="fc" id="L277">                iter.setSkippedEdges(incomingEdge, outgoingEdge);</span>
+<span class="fc" id="L278">                iter.setOrigEdgeCount(inOrigEdgeCount + outOrigEdgeCount);</span>
+            }
+        }
+<span class="fc bfc" id="L281" title="All 2 branches covered.">        if (!exists)</span>
+<span class="fc" id="L282">            prepareGraph.addShortcut(fromNode, toNode, -1, -1, incomingEdge, outgoingEdge, weight, inOrigEdgeCount + outOrigEdgeCount);</span>
+<span class="fc" id="L283">    }</span>
+
+    @Override
+    public long getAddedShortcutsCount() {
+<span class="fc" id="L287">        return addedShortcutsCount;</span>
+    }
+
+    @Override
+    public float getDijkstraSeconds() {
+<span class="fc" id="L292">        return dijkstraSW.getCurrentSeconds();</span>
+    }
+
+    @FunctionalInterface
+    private interface PrepareShortcutHandler {
+        void handleShortcut(int fromNode, int toNode, double existingDirectWeight,
+                            int outgoingEdge, int outOrigEdgeCount,
+                            int incomingEdge, int inOrigEdgeCount);
+    }
+
+<span class="fc" id="L302">    public static class Params {</span>
+        // default values were optimized for Unterfranken
+<span class="fc" id="L304">        private float edgeDifferenceWeight = 10;</span>
+<span class="fc" id="L305">        private float originalEdgesCountWeight = 1;</span>
+        // these values seemed to work best for planet (fast prep without compromising too much for the query time)
+        // higher values can further decrease the number of shortcuts and improve the query time, but normally at the
+        // cost of a longer preparation (see #2514)
+<span class="fc" id="L309">        private double maxPollFactorHeuristic = 5;</span>
+<span class="fc" id="L310">        private double maxPollFactorContraction = 200;</span>
+    }
+
+    private static class Shortcut {
+        int prepareEdgeFwd;
+        int prepareEdgeBwd;
+        int from;
+        int to;
+        int skippedEdge1;
+        int skippedEdge2;
+        double weight;
+        int flags;
+
+<span class="fc" id="L323">        public Shortcut(int prepareEdgeFwd, int prepareEdgeBwd, int from, int to, int skippedEdge1, int skippedEdge2, int flags, double weight) {</span>
+<span class="fc" id="L324">            this.prepareEdgeFwd = prepareEdgeFwd;</span>
+<span class="fc" id="L325">            this.prepareEdgeBwd = prepareEdgeBwd;</span>
+<span class="fc" id="L326">            this.from = from;</span>
+<span class="fc" id="L327">            this.to = to;</span>
+<span class="fc" id="L328">            this.skippedEdge1 = skippedEdge1;</span>
+<span class="fc" id="L329">            this.skippedEdge2 = skippedEdge2;</span>
+<span class="fc" id="L330">            this.flags = flags;</span>
+<span class="fc" id="L331">            this.weight = weight;</span>
+<span class="fc" id="L332">        }</span>
+
+        @Override
+        public String toString() {
+            String str;
+<span class="nc bnc" id="L337" title="All 2 branches missed.">            if (flags == PrepareEncoder.getScDirMask())</span>
+<span class="nc" id="L338">                str = from + &quot;&lt;-&gt;&quot;;</span>
+            else
+<span class="nc" id="L340">                str = from + &quot;-&gt;&quot;;</span>
+
+<span class="nc" id="L342">            return str + to + &quot;, weight:&quot; + weight + &quot; (&quot; + skippedEdge1 + &quot;,&quot; + skippedEdge2 + &quot;)&quot;;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

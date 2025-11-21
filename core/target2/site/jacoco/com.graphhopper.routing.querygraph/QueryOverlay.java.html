@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QueryOverlay.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.querygraph</a> &gt; <span class="el_source">QueryOverlay.java</span></div><h1>QueryOverlay.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.querygraph;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntObjectMap;
+import com.graphhopper.coll.GHIntObjectHashMap;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.PointList;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * This class holds the data that is necessary to add additional nodes and edges to an existing graph, as it is needed
+ * when we want to start/end a route at a location that is in between the actual nodes of the graph (virtual nodes+edges).
+ */
+class QueryOverlay {
+    // stores the coordinates of the additional/virtual nodes
+    private final PointList virtualNodes;
+    // stores the closest edge id for each virtual node
+    private final IntArrayList closestEdges;
+    // stores the virtual edges, for every virtual node there are four such edges: base-snap, snap-base, snap-adj, adj-snap.
+    private final List&lt;VirtualEdgeIteratorState&gt; virtualEdges;
+    // stores the changes that need to be done to the real nodes
+    private final IntObjectMap&lt;EdgeChanges&gt; edgeChangesAtRealNodes;
+
+<span class="fc" id="L44">    QueryOverlay(int numVirtualNodes, boolean is3D) {</span>
+<span class="fc" id="L45">        this.virtualNodes = new PointList(numVirtualNodes, is3D);</span>
+<span class="fc" id="L46">        this.virtualEdges = new ArrayList&lt;&gt;(numVirtualNodes * 2);</span>
+<span class="fc" id="L47">        this.closestEdges = new IntArrayList(numVirtualNodes);</span>
+<span class="fc" id="L48">        edgeChangesAtRealNodes = new GHIntObjectHashMap&lt;&gt;(numVirtualNodes * 3);</span>
+<span class="fc" id="L49">    }</span>
+
+    int getNumVirtualEdges() {
+<span class="fc" id="L52">        return virtualEdges.size();</span>
+    }
+
+    void addVirtualEdge(VirtualEdgeIteratorState virtualEdge) {
+<span class="fc" id="L56">        virtualEdges.add(virtualEdge);</span>
+<span class="fc" id="L57">    }</span>
+
+    VirtualEdgeIteratorState getVirtualEdge(int edgeId) {
+<span class="fc" id="L60">        return virtualEdges.get(edgeId);</span>
+    }
+
+    List&lt;VirtualEdgeIteratorState&gt; getVirtualEdges() {
+<span class="fc" id="L64">        return virtualEdges;</span>
+    }
+
+    IntObjectMap&lt;EdgeChanges&gt; getEdgeChangesAtRealNodes() {
+<span class="fc" id="L68">        return edgeChangesAtRealNodes;</span>
+    }
+
+    PointList getVirtualNodes() {
+<span class="fc" id="L72">        return virtualNodes;</span>
+    }
+
+    IntArrayList getClosestEdges() {
+<span class="fc" id="L76">        return closestEdges;</span>
+    }
+
+    static class EdgeChanges {
+        private final List&lt;EdgeIteratorState&gt; additionalEdges;
+        private final IntArrayList removedEdges;
+
+<span class="fc" id="L83">        EdgeChanges(int expectedNumAdditionalEdges, int expectedNumRemovedEdges) {</span>
+<span class="fc" id="L84">            additionalEdges = new ArrayList&lt;&gt;(expectedNumAdditionalEdges);</span>
+<span class="fc" id="L85">            removedEdges = new IntArrayList(expectedNumRemovedEdges);</span>
+<span class="fc" id="L86">        }</span>
+
+        List&lt;EdgeIteratorState&gt; getAdditionalEdges() {
+<span class="fc" id="L89">            return additionalEdges;</span>
+        }
+
+        IntArrayList getRemovedEdges() {
+<span class="fc" id="L93">            return removedEdges;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

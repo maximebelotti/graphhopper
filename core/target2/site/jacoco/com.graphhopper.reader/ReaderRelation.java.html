@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReaderRelation.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.reader</a> &gt; <span class="el_source">ReaderRelation.java</span></div><h1>ReaderRelation.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.reader;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+
+/**
+ * Represents a relation received from the reader.
+ * &lt;p&gt;
+ *
+ * @author Nop
+ */
+public class ReaderRelation extends ReaderElement {
+    protected List&lt;Member&gt; members;
+
+    public ReaderRelation(long id) {
+<span class="fc" id="L35">        super(id, Type.RELATION, new HashMap&lt;&gt;(2));</span>
+<span class="fc" id="L36">    }</span>
+
+    @Override
+    public String toString() {
+<span class="nc bnc" id="L40" title="All 2 branches missed.">        return &quot;Relation (&quot; + getId() + &quot;, &quot; + ((members == null) ? 0 : members.size()) + &quot; members)&quot;;</span>
+    }
+
+    public List&lt;Member&gt; getMembers() {
+<span class="pc bpc" id="L44" title="1 of 2 branches missed.">        if (members == null)</span>
+<span class="nc" id="L45">            return Collections.emptyList();</span>
+
+<span class="fc" id="L47">        return members;</span>
+    }
+
+    public boolean isMetaRelation() {
+<span class="pc bpc" id="L51" title="1 of 2 branches missed.">        if (members != null)</span>
+<span class="fc bfc" id="L52" title="All 2 branches covered.">            for (Member member : members) {</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">                if (member.getType() == Type.RELATION) {</span>
+<span class="fc" id="L54">                    return true;</span>
+                }
+<span class="fc" id="L56">            }</span>
+<span class="fc" id="L57">        return false;</span>
+    }
+
+    public void add(Member member) {
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        if (members == null)</span>
+<span class="fc" id="L62">            members = new ArrayList&lt;&gt;(3);</span>
+<span class="fc" id="L63">        members.add(member);</span>
+<span class="fc" id="L64">    }</span>
+
+    /**
+     * Container class for relation members
+     */
+    public static class Member {
+        private final Type type;
+        private final long ref;
+        private final String role;
+
+<span class="fc" id="L74">        public Member(Type type, long ref, String role) {</span>
+<span class="fc" id="L75">            this.type = type;</span>
+<span class="fc" id="L76">            this.ref = ref;</span>
+<span class="fc" id="L77">            this.role = role;</span>
+<span class="fc" id="L78">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L82">            return &quot;Member &quot; + type + &quot;:&quot; + ref;</span>
+        }
+
+        public Type getType() {
+<span class="fc" id="L86">            return type;</span>
+        }
+
+        /**
+         * member reference which is an OSM ID
+         */
+        public long getRef() {
+<span class="fc" id="L93">            return ref;</span>
+        }
+
+        public String getRole() {
+<span class="fc" id="L97">            return role;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

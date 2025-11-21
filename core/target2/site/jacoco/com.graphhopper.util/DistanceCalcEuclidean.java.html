@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DistanceCalcEuclidean.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">DistanceCalcEuclidean.java</span></div><h1>DistanceCalcEuclidean.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import static java.lang.Math.sqrt;
+
+import com.graphhopper.util.shapes.BBox;
+import com.graphhopper.util.shapes.GHPoint;
+
+/**
+ * Calculates the distance of two points or one point and an edge in euclidean space.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+<span class="fc" id="L31">public class DistanceCalcEuclidean extends DistanceCalcEarth {</span>
+    @Override
+    public double calcDist(double fromY, double fromX, double toY, double toX) {
+<span class="nc" id="L34">        return sqrt(calcNormalizedDist(fromY, fromX, toY, toX));</span>
+    }
+
+    @Override
+    public double calcDist3D(double fromY, double fromX, double fromHeight, double toY, double toX, double toHeight) {
+<span class="fc" id="L39">        return sqrt(calcNormalizedDist(fromY, fromX, toY, toX) + calcNormalizedDist(toHeight - fromHeight));</span>
+    }
+
+    @Override
+    public double calcDenormalizedDist(double normedDist) {
+<span class="nc" id="L44">        return sqrt(normedDist);</span>
+    }
+
+    /**
+     * Returns the specified length in normalized meter.
+     */
+    @Override
+    public double calcNormalizedDist(double dist) {
+<span class="fc" id="L52">        return dist * dist;</span>
+    }
+
+    double calcShrinkFactor(double a_lat_deg, double b_lat_deg) {
+<span class="fc" id="L56">        return 1.;</span>
+    }
+
+    /**
+     * Calculates in normalized meter
+     */
+    @Override
+    public double calcNormalizedDist(double fromY, double fromX, double toY, double toX) {
+<span class="fc" id="L64">        double dX = fromX - toX;</span>
+<span class="fc" id="L65">        double dY = fromY - toY;</span>
+<span class="fc" id="L66">        return dX * dX + dY * dY;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L71">        return &quot;2D&quot;;</span>
+    }
+
+    @Override
+    public double calcCircumference(double lat) {
+<span class="nc" id="L76">        throw new UnsupportedOperationException(&quot;Not supported for the 2D Euclidean space&quot;);</span>
+    }
+
+    @Override
+    public boolean isDateLineCrossOver(double lon1, double lon2) {
+<span class="nc" id="L81">        throw new UnsupportedOperationException(&quot;Not supported for the 2D Euclidean space&quot;);</span>
+    }
+
+    @Override
+    public BBox createBBox(double lat, double lon, double radiusInMeter) {
+<span class="nc" id="L86">        throw new UnsupportedOperationException(&quot;Not supported for the 2D Euclidean space&quot;);</span>
+    }
+
+    @Override
+    public GHPoint projectCoordinate(double latInDeg, double lonInDeg, double distanceInMeter,
+            double headingClockwiseFromNorth) {
+<span class="nc" id="L92">        throw new UnsupportedOperationException(&quot;Not supported for the 2D Euclidean space&quot;);</span>
+    }
+
+    @Override
+    public GHPoint intermediatePoint(double f, double lat1, double lon1, double lat2, double lon2) {
+<span class="nc" id="L97">        double delatLat = lat2 - lat1;</span>
+<span class="nc" id="L98">        double deltaLon = lon2 - lon1;</span>
+<span class="nc" id="L99">        double midLat = lat1 + delatLat * f;</span>
+<span class="nc" id="L100">        double midLon = lon1 + deltaLon * f;</span>
+<span class="nc" id="L101">        return new GHPoint(midLat, midLon);</span>
+    }
+
+    @Override
+    public boolean isCrossBoundary(double lon1, double lon2) {
+<span class="nc" id="L106">        throw new UnsupportedOperationException(&quot;Not supported for the 2D Euclidean space&quot;);</span>
+    }
+
+    @Override
+    public double calcNormalizedEdgeDistance(double ry, double rx,
+                                             double ay, double ax,
+                                             double by, double bx) {
+<span class="fc" id="L113">        return calcNormalizedEdgeDistance3D(</span>
+            ry, rx, 0,
+            ay, ax, 0,
+            by, bx, 0
+        );
+    }
+
+    @Override
+    public double calcNormalizedEdgeDistance3D(double ry, double rx, double rz,
+                                               double ay, double ax, double az,
+                                               double by, double bx, double bz) {
+<span class="fc" id="L124">        double dx = bx - ax;</span>
+<span class="fc" id="L125">        double dy = by - ay;</span>
+<span class="fc" id="L126">        double dz = bz - az;</span>
+
+<span class="fc" id="L128">        double norm = dx * dx + dy * dy + dz * dz;</span>
+<span class="fc" id="L129">        double factor = ((rx - ax) * dx + (ry - ay) * dy + (rz - az) * dz) / norm;</span>
+<span class="fc bfc" id="L130" title="All 2 branches covered.">        if (Double.isNaN(factor)) factor = 0;</span>
+
+        // x,y,z is projection of r onto segment a-b
+<span class="fc" id="L133">        double cx = ax + factor * dx;</span>
+<span class="fc" id="L134">        double cy = ay + factor * dy;</span>
+<span class="fc" id="L135">        double cz = az + factor * dz;</span>
+
+<span class="fc" id="L137">        double rdx = cx - rx;</span>
+<span class="fc" id="L138">        double rdy = cy - ry;</span>
+<span class="fc" id="L139">        double rdz = cz - rz;</span>
+
+<span class="fc" id="L141">        return rdx * rdx + rdy * rdy + rdz * rdz;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

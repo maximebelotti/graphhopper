@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OSMHgvParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">OSMHgvParser.java</span></div><h1>OSMHgvParser.java</h1><pre class="source lang-java linenums">
+package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.routing.ev.EnumEncodedValue;
+import com.graphhopper.routing.ev.Hgv;
+import com.graphhopper.storage.IntsRef;
+
+import static com.graphhopper.routing.util.parsers.helpers.OSMValueExtractor.conditionalWeightToTons;
+
+public class OSMHgvParser implements TagParser {
+    EnumEncodedValue&lt;Hgv&gt; hgvEnc;
+
+<span class="fc" id="L15">    public OSMHgvParser(EnumEncodedValue&lt;Hgv&gt; hgvEnc) {</span>
+<span class="fc" id="L16">        this.hgvEnc = hgvEnc;</span>
+<span class="fc" id="L17">    }</span>
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
+<span class="fc" id="L21">        String value = way.getTag(&quot;hgv:conditional&quot;, &quot;&quot;);</span>
+<span class="fc" id="L22">        int index = value.indexOf(&quot;@&quot;);</span>
+<span class="fc bfc" id="L23" title="All 4 branches covered.">        Hgv hgvValue = index &gt; 0 &amp;&amp; conditionalWeightToTons(value) == 3.5 ? Hgv.find(value.substring(0, index).trim()) : Hgv.find(way.getTag(&quot;hgv&quot;));</span>
+<span class="fc" id="L24">        hgvEnc.setEnum(false, edgeId, edgeIntAccess, hgvValue);</span>
+<span class="fc" id="L25">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

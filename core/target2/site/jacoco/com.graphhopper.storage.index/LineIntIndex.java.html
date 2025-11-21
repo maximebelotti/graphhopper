@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LineIntIndex.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage.index</a> &gt; <span class="el_source">LineIntIndex.java</span></div><h1>LineIntIndex.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.storage.index;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntHashSet;
+import com.graphhopper.geohash.SpatialKeyAlgo;
+import com.graphhopper.storage.DAType;
+import com.graphhopper.storage.DataAccess;
+import com.graphhopper.storage.Directory;
+import com.graphhopper.util.Constants;
+import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.Helper;
+import com.graphhopper.util.shapes.BBox;
+
+import java.util.function.IntConsumer;
+
+public class LineIntIndex {
+    // do not start with 0 as a positive value means leaf and a negative means &quot;entry with subentries&quot;
+    static final int START_POINTER = 1;
+
+    final DataAccess dataAccess;
+    private final BBox bounds;
+<span class="fc" id="L40">    private int minResolutionInMeter = 300;</span>
+    private int size;
+    private int leafs;
+    private int checksum;
+    private IndexStructureInfo indexStructureInfo;
+    private int[] entries;
+    private byte[] shifts;
+<span class="fc" id="L47">    private boolean initialized = false;</span>
+    private SpatialKeyAlgo keyAlgo;
+
+    public LineIntIndex(BBox bBox, Directory dir, String name) {
+<span class="fc" id="L51">        this(bBox, dir, name, dir.getDefaultType(name, true));</span>
+<span class="fc" id="L52">    }</span>
+
+<span class="fc" id="L54">    public LineIntIndex(BBox bBox, Directory dir, String name, DAType daType) {</span>
+<span class="fc" id="L55">        this.bounds = bBox;</span>
+<span class="fc" id="L56">        this.dataAccess = dir.create(name, daType);</span>
+<span class="fc" id="L57">    }</span>
+
+    public boolean loadExisting() {
+<span class="pc bpc" id="L60" title="1 of 2 branches missed.">        if (initialized)</span>
+<span class="nc" id="L61">            throw new IllegalStateException(&quot;Call loadExisting only once&quot;);</span>
+
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        if (!dataAccess.loadExisting())</span>
+<span class="fc" id="L64">            return false;</span>
+
+<span class="fc" id="L66">        GHUtility.checkDAVersion(&quot;location_index&quot;, Constants.VERSION_LOCATION_IDX, dataAccess.getHeader(0));</span>
+<span class="fc" id="L67">        checksum = dataAccess.getHeader(1 * 4);</span>
+<span class="fc" id="L68">        minResolutionInMeter = dataAccess.getHeader(2 * 4);</span>
+<span class="fc" id="L69">        indexStructureInfo = IndexStructureInfo.create(bounds, minResolutionInMeter);</span>
+<span class="fc" id="L70">        keyAlgo = indexStructureInfo.getKeyAlgo();</span>
+<span class="fc" id="L71">        entries = indexStructureInfo.getEntries();</span>
+<span class="fc" id="L72">        shifts = indexStructureInfo.getShifts();</span>
+<span class="fc" id="L73">        initialized = true;</span>
+<span class="fc" id="L74">        return true;</span>
+    }
+
+    public void store(InMemConstructionIndex inMem) {
+<span class="fc" id="L78">        indexStructureInfo = IndexStructureInfo.create(bounds, minResolutionInMeter);</span>
+<span class="fc" id="L79">        keyAlgo = indexStructureInfo.getKeyAlgo();</span>
+<span class="fc" id="L80">        entries = indexStructureInfo.getEntries();</span>
+<span class="fc" id="L81">        shifts = indexStructureInfo.getShifts();</span>
+<span class="fc" id="L82">        dataAccess.create(64 * 1024);</span>
+        try {
+<span class="fc" id="L84">            store(inMem.root, START_POINTER);</span>
+<span class="nc" id="L85">        } catch (Exception ex) {</span>
+<span class="nc" id="L86">            throw new IllegalStateException(&quot;Problem while storing location index. &quot; + Helper.getMemInfo(), ex);</span>
+<span class="fc" id="L87">        }</span>
+<span class="fc" id="L88">        initialized = true;</span>
+<span class="fc" id="L89">    }</span>
+
+    private int store(InMemConstructionIndex.InMemEntry entry, int intPointer) {
+<span class="fc" id="L92">        long pointer = (long) intPointer * 4;</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">        if (entry.isLeaf()) {</span>
+<span class="fc" id="L94">            InMemConstructionIndex.InMemLeafEntry leaf = ((InMemConstructionIndex.InMemLeafEntry) entry);</span>
+<span class="fc" id="L95">            IntArrayList entries = leaf.getResults();</span>
+<span class="fc" id="L96">            int len = entries.size();</span>
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">            if (len == 0) {</span>
+<span class="nc" id="L98">                return intPointer;</span>
+            }
+<span class="fc" id="L100">            size += len;</span>
+<span class="fc" id="L101">            intPointer++;</span>
+<span class="fc" id="L102">            leafs++;</span>
+<span class="fc" id="L103">            dataAccess.ensureCapacity((long) (intPointer + len + 1) * 4);</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">            if (len == 1) {</span>
+                // less disc space for single entries
+<span class="fc" id="L106">                dataAccess.setInt(pointer, -entries.get(0) - 1);</span>
+            } else {
+<span class="fc bfc" id="L108" title="All 2 branches covered.">                for (int index = 0; index &lt; len; index++, intPointer++) {</span>
+<span class="fc" id="L109">                    dataAccess.setInt((long) intPointer * 4, entries.get(index));</span>
+                }
+<span class="fc" id="L111">                dataAccess.setInt(pointer, intPointer);</span>
+            }
+<span class="fc" id="L113">        } else {</span>
+<span class="fc" id="L114">            InMemConstructionIndex.InMemTreeEntry treeEntry = ((InMemConstructionIndex.InMemTreeEntry) entry);</span>
+<span class="fc" id="L115">            int len = treeEntry.subEntries.length;</span>
+<span class="fc" id="L116">            intPointer += len;</span>
+<span class="fc bfc" id="L117" title="All 2 branches covered.">            for (int subCounter = 0; subCounter &lt; len; subCounter++, pointer += 4) {</span>
+<span class="fc" id="L118">                InMemConstructionIndex.InMemEntry subEntry = treeEntry.subEntries[subCounter];</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">                if (subEntry == null) {</span>
+<span class="fc" id="L120">                    continue;</span>
+                }
+<span class="fc" id="L122">                dataAccess.ensureCapacity((long) (intPointer + 1) * 4);</span>
+<span class="fc" id="L123">                int prevIntPointer = intPointer;</span>
+<span class="fc" id="L124">                intPointer = store(subEntry, prevIntPointer);</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">                if (intPointer == prevIntPointer) {</span>
+<span class="nc" id="L126">                    dataAccess.setInt(pointer, 0);</span>
+                } else {
+<span class="fc" id="L128">                    dataAccess.setInt(pointer, prevIntPointer);</span>
+                }
+            }
+        }
+<span class="fc" id="L132">        return intPointer;</span>
+    }
+
+    private void fillIDs(long keyPart, IntConsumer consumer) {
+<span class="fc" id="L136">        int intPointer = START_POINTER;</span>
+<span class="fc bfc" id="L137" title="All 2 branches covered.">        for (int depth = 0; depth &lt; entries.length; depth++) {</span>
+<span class="fc" id="L138">            int offset = (int) (keyPart &gt;&gt;&gt; (64 - shifts[depth]));</span>
+<span class="fc" id="L139">            int nextIntPointer = dataAccess.getInt((long) (intPointer + offset) * 4);</span>
+<span class="fc bfc" id="L140" title="All 2 branches covered.">            if (nextIntPointer &lt;= 0) {</span>
+                // empty cell
+<span class="fc" id="L142">                return;</span>
+            }
+<span class="fc" id="L144">            keyPart = keyPart &lt;&lt; shifts[depth];</span>
+<span class="fc" id="L145">            intPointer = nextIntPointer;</span>
+        }
+<span class="fc" id="L147">        int data = dataAccess.getInt((long) intPointer * 4);</span>
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        if (data &lt; 0) {</span>
+            // single data entries (less disc space)
+<span class="fc" id="L150">            int edgeId = -(data + 1);</span>
+<span class="fc" id="L151">            consumer.accept(edgeId);</span>
+<span class="fc" id="L152">        } else {</span>
+            // &quot;data&quot; is index of last data item
+<span class="fc bfc" id="L154" title="All 2 branches covered.">            for (int leafIndex = intPointer + 1; leafIndex &lt; data; leafIndex++) {</span>
+<span class="fc" id="L155">                int edgeId = dataAccess.getInt((long) leafIndex * 4);</span>
+<span class="fc" id="L156">                consumer.accept(edgeId);</span>
+            }
+        }
+<span class="fc" id="L159">    }</span>
+
+    public void query(BBox queryShape, final LocationIndex.Visitor function) {
+<span class="nc" id="L162">        query(LocationIndex.createBBoxTileFilter(queryShape), function);</span>
+<span class="nc" id="L163">    }</span>
+
+    public void query(LocationIndex.TileFilter tileFilter, final LocationIndex.Visitor function) {
+<span class="fc" id="L166">        final IntHashSet set = new IntHashSet();</span>
+<span class="fc" id="L167">        query(START_POINTER, tileFilter,</span>
+                bounds.minLat, bounds.minLon, bounds.maxLat - bounds.minLat, bounds.maxLon - bounds.minLon,
+<span class="fc" id="L169">                new LocationIndex.Visitor() {</span>
+                    @Override
+                    public boolean isTileInfo() {
+<span class="fc" id="L172">                        return function.isTileInfo();</span>
+                    }
+
+                    @Override
+                    public void onTile(BBox bbox, int width) {
+<span class="nc" id="L177">                        function.onTile(bbox, width);</span>
+<span class="nc" id="L178">                    }</span>
+
+                    @Override
+                    public void onEdge(int edgeId) {
+<span class="fc bfc" id="L182" title="All 2 branches covered.">                        if (set.add(edgeId))</span>
+<span class="fc" id="L183">                            function.onEdge(edgeId);</span>
+<span class="fc" id="L184">                    }</span>
+                }, 0);
+<span class="fc" id="L186">    }</span>
+
+    private void query(int intPointer, LocationIndex.TileFilter tileFilter,
+                       double minLat, double minLon,
+                       double deltaLatPerDepth, double deltaLonPerDepth,
+                       LocationIndex.Visitor function, int depth) {
+<span class="fc" id="L192">        long pointer = (long) intPointer * 4;</span>
+<span class="fc bfc" id="L193" title="All 2 branches covered.">        if (depth == entries.length) {</span>
+<span class="fc" id="L194">            int nextIntPointer = dataAccess.getInt(pointer);</span>
+<span class="fc bfc" id="L195" title="All 2 branches covered.">            if (nextIntPointer &lt; 0) {</span>
+                // single data entries (less disc space)
+<span class="fc" id="L197">                function.onEdge(-(nextIntPointer + 1));</span>
+            } else {
+<span class="fc" id="L199">                long maxPointer = (long) nextIntPointer * 4;</span>
+                // loop through every leaf entry =&gt; nextIntPointer is maxPointer
+<span class="fc bfc" id="L201" title="All 2 branches covered.">                for (long leafPointer = pointer + 4; leafPointer &lt; maxPointer; leafPointer += 4) {</span>
+                    // we could read the whole info at once via getBytes instead of getInt
+<span class="fc" id="L203">                    function.onEdge(dataAccess.getInt(leafPointer));</span>
+                }
+            }
+<span class="fc" id="L206">            return;</span>
+        }
+<span class="fc" id="L208">        int max = (1 &lt;&lt; shifts[depth]);</span>
+<span class="fc bfc" id="L209" title="All 2 branches covered.">        int factor = max == 4 ? 2 : 4;</span>
+<span class="fc" id="L210">        deltaLonPerDepth /= factor;</span>
+<span class="fc" id="L211">        deltaLatPerDepth /= factor;</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">        for (int cellIndex = 0; cellIndex &lt; max; cellIndex++) {</span>
+<span class="fc" id="L213">            int nextIntPointer = dataAccess.getInt(pointer + cellIndex * 4);</span>
+<span class="fc bfc" id="L214" title="All 2 branches covered.">            if (nextIntPointer &lt;= 0)</span>
+<span class="fc" id="L215">                continue;</span>
+<span class="fc" id="L216">            int[] pixelXY = keyAlgo.decode(cellIndex);</span>
+<span class="fc" id="L217">            double tmpMinLon = minLon + deltaLonPerDepth * pixelXY[0];</span>
+<span class="fc" id="L218">            double tmpMinLat = minLat + deltaLatPerDepth * pixelXY[1];</span>
+
+<span class="pc bpc" id="L220" title="1 of 4 branches missed.">            BBox bbox = (tileFilter != null || function.isTileInfo()) ? new BBox(tmpMinLon, tmpMinLon + deltaLonPerDepth, tmpMinLat, tmpMinLat + deltaLatPerDepth) : null;</span>
+<span class="pc bpc" id="L221" title="1 of 2 branches missed.">            if (function.isTileInfo())</span>
+<span class="nc" id="L222">                function.onTile(bbox, depth);</span>
+<span class="fc bfc" id="L223" title="All 4 branches covered.">            if (tileFilter == null || tileFilter.acceptAll(bbox)) {</span>
+                // fill without a restriction!
+<span class="fc" id="L225">                query(nextIntPointer, null, tmpMinLat, tmpMinLon, deltaLatPerDepth, deltaLonPerDepth, function, depth + 1);</span>
+<span class="fc bfc" id="L226" title="All 2 branches covered.">            } else if (tileFilter.acceptPartially(bbox)) {</span>
+<span class="fc" id="L227">                query(nextIntPointer, tileFilter, tmpMinLat, tmpMinLon, deltaLatPerDepth, deltaLonPerDepth, function, depth + 1);</span>
+            }
+        }
+<span class="fc" id="L230">    }</span>
+
+    /**
+     * This method collects edge ids from the neighborhood of a point and puts them into foundEntries.
+     * &lt;p&gt;
+     * If it is called with iteration = 0, it just looks in the tile the query point is in.
+     * If it is called with iteration = 0,1,2,.., it will look in additional tiles further and further
+     * from the start tile. (In a square that grows by one pixel in all four directions per iteration).
+     * &lt;p&gt;
+     * See discussion at issue #221.
+     * &lt;p&gt;
+     */
+    public void findEdgeIdsInNeighborhood(double queryLat, double queryLon, int iteration, IntConsumer foundEntries) {
+<span class="fc" id="L243">        int x = keyAlgo.x(queryLon);</span>
+<span class="fc" id="L244">        int y = keyAlgo.y(queryLat);</span>
+<span class="fc bfc" id="L245" title="All 2 branches covered.">        for (int yreg = -iteration; yreg &lt;= iteration; yreg++) {</span>
+<span class="fc" id="L246">            int subqueryY = y + yreg;</span>
+<span class="fc" id="L247">            int subqueryXA = x - iteration;</span>
+<span class="fc" id="L248">            int subqueryXB = x + iteration;</span>
+<span class="pc bpc" id="L249" title="1 of 8 branches missed.">            if (subqueryXA &gt;= 0 &amp;&amp; subqueryY &gt;= 0 &amp;&amp; subqueryXA &lt; indexStructureInfo.getParts() &amp;&amp; subqueryY &lt; indexStructureInfo.getParts()) {</span>
+<span class="fc" id="L250">                long keyPart = keyAlgo.encode(subqueryXA, subqueryY) &lt;&lt; (64 - keyAlgo.getBits());</span>
+<span class="fc" id="L251">                fillIDs(keyPart, foundEntries);</span>
+            }
+<span class="pc bpc" id="L253" title="1 of 10 branches missed.">            if (iteration &gt; 0 &amp;&amp; subqueryXB &gt;= 0 &amp;&amp; subqueryY &gt;= 0 &amp;&amp; subqueryXB &lt; indexStructureInfo.getParts() &amp;&amp; subqueryY &lt; indexStructureInfo.getParts()) {</span>
+<span class="fc" id="L254">                long keyPart = keyAlgo.encode(subqueryXB, subqueryY) &lt;&lt; (64 - keyAlgo.getBits());</span>
+<span class="fc" id="L255">                fillIDs(keyPart, foundEntries);</span>
+            }
+        }
+
+<span class="fc bfc" id="L259" title="All 2 branches covered.">        for (int xreg = -iteration + 1; xreg &lt;= iteration - 1; xreg++) {</span>
+<span class="fc" id="L260">            int subqueryX = x + xreg;</span>
+<span class="fc" id="L261">            int subqueryYA = y - iteration;</span>
+<span class="fc" id="L262">            int subqueryYB = y + iteration;</span>
+<span class="pc bpc" id="L263" title="1 of 8 branches missed.">            if (subqueryX &gt;= 0 &amp;&amp; subqueryYA &gt;= 0 &amp;&amp; subqueryX &lt; indexStructureInfo.getParts() &amp;&amp; subqueryYA &lt; indexStructureInfo.getParts()) {</span>
+<span class="fc" id="L264">                long keyPart = keyAlgo.encode(subqueryX, subqueryYA) &lt;&lt; (64 - keyAlgo.getBits());</span>
+<span class="fc" id="L265">                fillIDs(keyPart, foundEntries);</span>
+            }
+<span class="pc bpc" id="L267" title="1 of 8 branches missed.">            if (subqueryX &gt;= 0 &amp;&amp; subqueryYB &gt;= 0 &amp;&amp; subqueryX &lt; indexStructureInfo.getParts() &amp;&amp; subqueryYB &lt; indexStructureInfo.getParts()) {</span>
+<span class="fc" id="L268">                long keyPart = keyAlgo.encode(subqueryX, subqueryYB) &lt;&lt; (64 - keyAlgo.getBits());</span>
+<span class="fc" id="L269">                fillIDs(keyPart, foundEntries);</span>
+            }
+        }
+<span class="fc" id="L272">    }</span>
+
+    public int getChecksum() {
+<span class="fc" id="L275">        return checksum;</span>
+    }
+
+    public int getMinResolutionInMeter() {
+<span class="fc" id="L279">        return minResolutionInMeter;</span>
+    }
+
+    public void setMinResolutionInMeter(int minResolutionInMeter) {
+<span class="fc" id="L283">        this.minResolutionInMeter = minResolutionInMeter;</span>
+<span class="fc" id="L284">    }</span>
+
+    public void flush() {
+<span class="fc" id="L287">        dataAccess.setHeader(0, Constants.VERSION_LOCATION_IDX);</span>
+<span class="fc" id="L288">        dataAccess.setHeader(1 * 4, checksum);</span>
+<span class="fc" id="L289">        dataAccess.setHeader(2 * 4, minResolutionInMeter);</span>
+
+        // saving space not necessary: dataAccess.trimTo((lastPointer + 1) * 4);
+<span class="fc" id="L292">        dataAccess.flush();</span>
+<span class="fc" id="L293">    }</span>
+
+    public void close() {
+<span class="fc" id="L296">        dataAccess.close();</span>
+<span class="fc" id="L297">    }</span>
+
+    public boolean isClosed() {
+<span class="fc" id="L300">        return dataAccess.isClosed();</span>
+    }
+
+    public long getCapacity() {
+<span class="nc" id="L304">        return dataAccess.getCapacity();</span>
+    }
+
+    public void setChecksum(int checksum) {
+<span class="fc" id="L308">        this.checksum = checksum;</span>
+<span class="fc" id="L309">    }</span>
+
+    public int getSize() {
+<span class="fc" id="L312">        return size;</span>
+    }
+
+    public int getLeafs() {
+<span class="fc" id="L316">        return leafs;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

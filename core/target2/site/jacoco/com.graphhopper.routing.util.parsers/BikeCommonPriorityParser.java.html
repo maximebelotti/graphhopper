@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BikeCommonPriorityParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">BikeCommonPriorityParser.java</span></div><h1>BikeCommonPriorityParser.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.util.FerrySpeedCalculator;
+import com.graphhopper.routing.util.PriorityCode;
+import com.graphhopper.storage.IntsRef;
+
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static com.graphhopper.routing.ev.RouteNetwork.*;
+import static com.graphhopper.routing.util.PriorityCode.*;
+import static com.graphhopper.routing.util.parsers.AbstractAccessParser.INTENDED;
+
+public abstract class BikeCommonPriorityParser implements TagParser {
+
+    // Bicycle tracks subject to compulsory use in Germany and Poland (https://wiki.openstreetmap.org/wiki/DE:Key:cycleway)
+<span class="fc" id="L20">    private static final List&lt;String&gt; CYCLEWAY_BICYCLE_KEYS = List.of(&quot;cycleway:bicycle&quot;, &quot;cycleway:both:bicycle&quot;, &quot;cycleway:left:bicycle&quot;, &quot;cycleway:right:bicycle&quot;);</span>
+
+    // Pushing section highways are parts where you need to get off your bike and push it (German: Schiebestrecke)
+<span class="fc" id="L23">    protected final HashSet&lt;String&gt; pushingSectionsHighways = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L24">    protected final Set&lt;String&gt; preferHighwayTags = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L25">    protected final Map&lt;String, PriorityCode&gt; avoidHighwayTags = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L26">    protected final Set&lt;String&gt; unpavedSurfaceTags = new HashSet&lt;&gt;();</span>
+
+    protected final DecimalEncodedValue avgSpeedEnc;
+    protected final DecimalEncodedValue priorityEnc;
+    // Car speed limit which switches the preference from UNCHANGED to AVOID_IF_POSSIBLE
+    int avoidSpeedLimit;
+    EnumEncodedValue&lt;RouteNetwork&gt; bikeRouteEnc;
+<span class="fc" id="L33">    Map&lt;RouteNetwork, Integer&gt; routeMap = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L34">    protected final Set&lt;String&gt; goodSurface = Set.of(&quot;paved&quot;, &quot;asphalt&quot;, &quot;concrete&quot;);</span>
+
+    // This is the specific bicycle class
+    private String classBicycleKey;
+
+    protected BikeCommonPriorityParser(DecimalEncodedValue priorityEnc, DecimalEncodedValue avgSpeedEnc,
+<span class="fc" id="L40">                                       EnumEncodedValue&lt;RouteNetwork&gt; bikeRouteEnc) {</span>
+<span class="fc" id="L41">        this.bikeRouteEnc = bikeRouteEnc;</span>
+<span class="fc" id="L42">        this.priorityEnc = priorityEnc;</span>
+<span class="fc" id="L43">        this.avgSpeedEnc = avgSpeedEnc;</span>
+
+        // duplicate code as also in BikeCommonAverageSpeedParser
+<span class="fc" id="L46">        addPushingSection(&quot;footway&quot;);</span>
+<span class="fc" id="L47">        addPushingSection(&quot;pedestrian&quot;);</span>
+<span class="fc" id="L48">        addPushingSection(&quot;steps&quot;);</span>
+<span class="fc" id="L49">        addPushingSection(&quot;platform&quot;);</span>
+
+<span class="fc" id="L51">        unpavedSurfaceTags.add(&quot;unpaved&quot;);</span>
+<span class="fc" id="L52">        unpavedSurfaceTags.add(&quot;gravel&quot;);</span>
+<span class="fc" id="L53">        unpavedSurfaceTags.add(&quot;ground&quot;);</span>
+<span class="fc" id="L54">        unpavedSurfaceTags.add(&quot;dirt&quot;);</span>
+<span class="fc" id="L55">        unpavedSurfaceTags.add(&quot;grass&quot;);</span>
+<span class="fc" id="L56">        unpavedSurfaceTags.add(&quot;compacted&quot;);</span>
+<span class="fc" id="L57">        unpavedSurfaceTags.add(&quot;earth&quot;);</span>
+<span class="fc" id="L58">        unpavedSurfaceTags.add(&quot;fine_gravel&quot;);</span>
+<span class="fc" id="L59">        unpavedSurfaceTags.add(&quot;grass_paver&quot;);</span>
+<span class="fc" id="L60">        unpavedSurfaceTags.add(&quot;ice&quot;);</span>
+<span class="fc" id="L61">        unpavedSurfaceTags.add(&quot;mud&quot;);</span>
+<span class="fc" id="L62">        unpavedSurfaceTags.add(&quot;salt&quot;);</span>
+<span class="fc" id="L63">        unpavedSurfaceTags.add(&quot;sand&quot;);</span>
+<span class="fc" id="L64">        unpavedSurfaceTags.add(&quot;wood&quot;);</span>
+
+<span class="fc" id="L66">        avoidHighwayTags.put(&quot;motorway&quot;, REACH_DESTINATION);</span>
+<span class="fc" id="L67">        avoidHighwayTags.put(&quot;motorway_link&quot;, REACH_DESTINATION);</span>
+<span class="fc" id="L68">        avoidHighwayTags.put(&quot;trunk&quot;, REACH_DESTINATION);</span>
+<span class="fc" id="L69">        avoidHighwayTags.put(&quot;trunk_link&quot;, REACH_DESTINATION);</span>
+<span class="fc" id="L70">        avoidHighwayTags.put(&quot;primary&quot;, BAD);</span>
+<span class="fc" id="L71">        avoidHighwayTags.put(&quot;primary_link&quot;, BAD);</span>
+<span class="fc" id="L72">        avoidHighwayTags.put(&quot;secondary&quot;, AVOID);</span>
+<span class="fc" id="L73">        avoidHighwayTags.put(&quot;secondary_link&quot;, AVOID);</span>
+<span class="fc" id="L74">        avoidHighwayTags.put(&quot;bridleway&quot;, AVOID);</span>
+
+<span class="fc" id="L76">        routeMap.put(INTERNATIONAL, BEST.getValue());</span>
+<span class="fc" id="L77">        routeMap.put(NATIONAL, BEST.getValue());</span>
+<span class="fc" id="L78">        routeMap.put(REGIONAL, VERY_NICE.getValue());</span>
+<span class="fc" id="L79">        routeMap.put(LOCAL, VERY_NICE.getValue());</span>
+
+<span class="fc" id="L81">        avoidSpeedLimit = 71;</span>
+<span class="fc" id="L82">    }</span>
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
+<span class="fc" id="L86">        String highwayValue = way.getTag(&quot;highway&quot;);</span>
+<span class="fc" id="L87">        Integer priorityFromRelation = routeMap.get(bikeRouteEnc.getEnum(false, edgeId, edgeIntAccess));</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        if (highwayValue == null) {</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">            if (FerrySpeedCalculator.isFerry(way)) {</span>
+<span class="fc" id="L90">                priorityFromRelation = SLIGHT_AVOID.getValue();</span>
+            } else {
+<span class="fc" id="L92">                return;</span>
+            }
+        }
+
+<span class="fc" id="L96">        double maxSpeed = Math.max(avgSpeedEnc.getDecimal(false, edgeId, edgeIntAccess), avgSpeedEnc.getDecimal(true, edgeId, edgeIntAccess));</span>
+<span class="fc" id="L97">        priorityEnc.setDecimal(false, edgeId, edgeIntAccess, PriorityCode.getValue(handlePriority(way, maxSpeed, priorityFromRelation)));</span>
+<span class="fc" id="L98">    }</span>
+
+    /**
+     * In this method we prefer cycleways or roads with designated bike access and avoid big roads
+     * or roads with trams or pedestrian.
+     *
+     * @return new priority based on priorityFromRelation and on the tags in ReaderWay.
+     */
+    int handlePriority(ReaderWay way, double wayTypeSpeed, Integer priorityFromRelation) {
+<span class="fc" id="L107">        TreeMap&lt;Double, PriorityCode&gt; weightToPrioMap = new TreeMap&lt;&gt;();</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        if (priorityFromRelation == null)</span>
+<span class="fc" id="L109">            weightToPrioMap.put(0d, UNCHANGED);</span>
+        else
+<span class="fc" id="L111">            weightToPrioMap.put(110d, PriorityCode.valueOf(priorityFromRelation));</span>
+
+<span class="fc" id="L113">        collect(way, wayTypeSpeed, weightToPrioMap);</span>
+
+        // pick priority with biggest order value
+<span class="fc" id="L116">        return weightToPrioMap.lastEntry().getValue().getValue();</span>
+    }
+
+    // Conversion of class value to priority. See http://wiki.openstreetmap.org/wiki/Class:bicycle
+    private PriorityCode convertClassValueToPriority(String tagvalue) {
+        int classvalue;
+        try {
+<span class="fc" id="L123">            classvalue = Integer.parseInt(tagvalue);</span>
+<span class="fc" id="L124">        } catch (NumberFormatException e) {</span>
+<span class="fc" id="L125">            return UNCHANGED;</span>
+<span class="fc" id="L126">        }</span>
+
+<span class="fc bfc" id="L128" title="All 7 branches covered.">        switch (classvalue) {</span>
+            case 3:
+<span class="fc" id="L130">                return BEST;</span>
+            case 2:
+<span class="fc" id="L132">                return VERY_NICE;</span>
+            case 1:
+<span class="fc" id="L134">                return PREFER;</span>
+            case -1:
+<span class="fc" id="L136">                return SLIGHT_AVOID;</span>
+            case -2:
+<span class="fc" id="L138">                return AVOID;</span>
+            case -3:
+<span class="fc" id="L140">                return AVOID_MORE;</span>
+            default:
+<span class="fc" id="L142">                return UNCHANGED;</span>
+        }
+    }
+
+    /**
+     * @param weightToPrioMap associate a weight with every priority. This sorted map allows
+     *                        subclasses to 'insert' more important priorities as well as overwrite determined priorities.
+     */
+    void collect(ReaderWay way, double wayTypeSpeed, TreeMap&lt;Double, PriorityCode&gt; weightToPrioMap) {
+<span class="fc" id="L151">        String highway = way.getTag(&quot;highway&quot;);</span>
+<span class="fc bfc" id="L152" title="All 2 branches covered.">        if (isDesignated(way)) {</span>
+<span class="fc bfc" id="L153" title="All 4 branches covered.">            boolean isGoodSurface = way.getTag(&quot;tracktype&quot;, &quot;&quot;).equals(&quot;grade1&quot;) || goodSurface.contains(way.getTag(&quot;surface&quot;,&quot;&quot;));</span>
+<span class="fc bfc" id="L154" title="All 6 branches covered.">            if (&quot;path&quot;.equals(highway) || &quot;track&quot;.equals(highway) &amp;&amp; isGoodSurface)</span>
+<span class="fc" id="L155">                weightToPrioMap.put(100d, VERY_NICE);</span>
+            else
+<span class="fc" id="L157">                weightToPrioMap.put(100d, PREFER);</span>
+        }
+
+<span class="fc bfc" id="L160" title="All 2 branches covered.">        if (&quot;cycleway&quot;.equals(highway)) {</span>
+<span class="fc bfc" id="L161" title="All 4 branches covered.">            if (way.hasTag(&quot;foot&quot;, INTENDED) &amp;&amp; !way.hasTag(&quot;segregated&quot;, &quot;yes&quot;))</span>
+<span class="fc" id="L162">                weightToPrioMap.put(100d, PREFER);</span>
+            else
+<span class="fc" id="L164">                weightToPrioMap.put(100d, VERY_NICE);</span>
+        }
+
+<span class="fc" id="L167">        double maxSpeed = Math.max(OSMMaxSpeedParser.parseMaxSpeed(way, false), OSMMaxSpeedParser.parseMaxSpeed(way, true));</span>
+<span class="fc bfc" id="L168" title="All 6 branches covered.">        if (preferHighwayTags.contains(highway) || (maxSpeed != MaxSpeed.MAXSPEED_MISSING &amp;&amp; maxSpeed &lt;= 30)) {</span>
+<span class="fc bfc" id="L169" title="All 4 branches covered.">            if (maxSpeed == MaxSpeed.MAXSPEED_MISSING || maxSpeed &lt; avoidSpeedLimit) {</span>
+<span class="fc" id="L170">                weightToPrioMap.put(40d, PREFER);</span>
+<span class="fc bfc" id="L171" title="All 2 branches covered.">                if (way.hasTag(&quot;tunnel&quot;, INTENDED))</span>
+<span class="fc" id="L172">                    weightToPrioMap.put(40d, UNCHANGED);</span>
+            }
+<span class="fc bfc" id="L174" title="All 6 branches covered.">        } else if (avoidHighwayTags.containsKey(highway)</span>
+<span class="fc bfc" id="L175" title="All 2 branches covered.">                || (maxSpeed != MaxSpeed.MAXSPEED_MISSING &amp;&amp; maxSpeed &gt;= avoidSpeedLimit &amp;&amp; !&quot;track&quot;.equals(highway))) {</span>
+<span class="fc" id="L176">            PriorityCode priorityCode = avoidHighwayTags.get(highway);</span>
+<span class="fc bfc" id="L177" title="All 2 branches covered.">            weightToPrioMap.put(50d, priorityCode == null ? AVOID : priorityCode);</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">            if (way.hasTag(&quot;tunnel&quot;, INTENDED)) {</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">                PriorityCode worse = priorityCode == null ? BAD : priorityCode.worse().worse();</span>
+<span class="fc bfc" id="L180" title="All 2 branches covered.">                weightToPrioMap.put(50d, worse == EXCLUDE ? REACH_DESTINATION : worse);</span>
+            }
+        }
+
+<span class="fc bfc" id="L184" title="All 2 branches covered.">        if (way.hasTag(&quot;bicycle&quot;, &quot;use_sidepath&quot;)) {</span>
+<span class="fc" id="L185">            weightToPrioMap.put(100d, REACH_DESTINATION);</span>
+        }
+
+<span class="fc" id="L188">        Set&lt;String&gt; cyclewayValues = Stream.of(&quot;cycleway&quot;, &quot;cycleway:left&quot;, &quot;cycleway:both&quot;, &quot;cycleway:right&quot;).map(key -&gt; way.getTag(key, &quot;&quot;)).collect(Collectors.toSet());</span>
+<span class="fc bfc" id="L189" title="All 2 branches covered.">        if (cyclewayValues.contains(&quot;track&quot;)) {</span>
+<span class="fc" id="L190">            weightToPrioMap.put(100d, PREFER);</span>
+<span class="fc bfc" id="L191" title="All 2 branches covered.">        } else if (Stream.of(&quot;lane&quot;, &quot;opposite_track&quot;, &quot;shared_lane&quot;, &quot;share_busway&quot;, &quot;shoulder&quot;).anyMatch(cyclewayValues::contains)) {</span>
+<span class="fc" id="L192">            weightToPrioMap.put(100d, SLIGHT_PREFER);</span>
+<span class="fc bfc" id="L193" title="All 4 branches covered.">        } else if (pushingSectionsHighways.contains(highway) || &quot;parking_aisle&quot;.equals(way.getTag(&quot;service&quot;))) {</span>
+<span class="fc" id="L194">            PriorityCode pushingSectionPrio = SLIGHT_AVOID;</span>
+<span class="fc bfc" id="L195" title="All 2 branches covered.">            if (way.hasTag(&quot;highway&quot;, &quot;steps&quot;))</span>
+<span class="fc" id="L196">                pushingSectionPrio = BAD;</span>
+<span class="fc bfc" id="L197" title="All 4 branches covered.">            else if (way.hasTag(&quot;bicycle&quot;, &quot;yes&quot;) || way.hasTag(&quot;bicycle&quot;, &quot;permissive&quot;))</span>
+<span class="fc" id="L198">                pushingSectionPrio = PREFER;</span>
+<span class="fc bfc" id="L199" title="All 2 branches covered.">            else if (isDesignated(way))</span>
+<span class="fc" id="L200">                pushingSectionPrio = VERY_NICE;</span>
+
+<span class="fc bfc" id="L202" title="All 4 branches covered.">            if (way.hasTag(&quot;foot&quot;, &quot;yes&quot;) &amp;&amp; !way.hasTag(&quot;segregated&quot;, &quot;yes&quot;))</span>
+<span class="fc" id="L203">                pushingSectionPrio = pushingSectionPrio.worse();</span>
+
+<span class="fc" id="L205">            weightToPrioMap.put(100d, pushingSectionPrio);</span>
+        }
+
+<span class="fc bfc" id="L208" title="All 2 branches covered.">        if (way.hasTag(&quot;railway&quot;, &quot;tram&quot;))</span>
+<span class="fc" id="L209">            weightToPrioMap.put(50d, AVOID_MORE);</span>
+
+<span class="fc bfc" id="L211" title="All 2 branches covered.">        if (way.hasTag(&quot;lcn&quot;, &quot;yes&quot;))</span>
+<span class="fc" id="L212">            weightToPrioMap.put(100d, VERY_NICE);</span>
+
+<span class="fc" id="L214">        String classBicycleValue = way.getTag(classBicycleKey);</span>
+<span class="fc bfc" id="L215" title="All 2 branches covered.">        if (classBicycleValue != null) {</span>
+            // We assume that humans are better in classifying preferences compared to our algorithm above -&gt; weight = 100
+<span class="fc" id="L217">            weightToPrioMap.put(100d, convertClassValueToPriority(classBicycleValue));</span>
+        } else {
+<span class="fc" id="L219">            String classBicycle = way.getTag(&quot;class:bicycle&quot;);</span>
+<span class="fc bfc" id="L220" title="All 2 branches covered.">            if (classBicycle != null)</span>
+<span class="fc" id="L221">                weightToPrioMap.put(100d, convertClassValueToPriority(classBicycle));</span>
+        }
+
+        // Increase the priority for scenic routes or in case that maxspeed limits our average speed as compensation. See #630
+<span class="pc bpc" id="L225" title="1 of 6 branches missed.">        if (way.hasTag(&quot;scenic&quot;, &quot;yes&quot;) || maxSpeed &gt; 0 &amp;&amp; maxSpeed &lt;= wayTypeSpeed) {</span>
+<span class="fc" id="L226">            PriorityCode lastEntryValue = weightToPrioMap.lastEntry().getValue();</span>
+<span class="fc bfc" id="L227" title="All 2 branches covered.">            if (lastEntryValue.getValue() &lt; BEST.getValue())</span>
+<span class="fc" id="L228">                weightToPrioMap.put(110d, lastEntryValue.better());</span>
+        }
+<span class="fc" id="L230">    }</span>
+
+    boolean isDesignated(ReaderWay way) {
+<span class="fc bfc" id="L233" title="All 4 branches covered.">        return way.hasTag(&quot;bicycle&quot;, &quot;designated&quot;) || way.hasTag(CYCLEWAY_BICYCLE_KEYS, &quot;designated&quot;)</span>
+<span class="fc bfc" id="L234" title="All 6 branches covered.">                || way.hasTag(&quot;bicycle_road&quot;, &quot;yes&quot;) || way.hasTag(&quot;cyclestreet&quot;, &quot;yes&quot;) || way.hasTag(&quot;bicycle&quot;, &quot;official&quot;);</span>
+    }
+
+    // TODO duplicated in average speed
+    void addPushingSection(String highway) {
+<span class="fc" id="L239">        pushingSectionsHighways.add(highway);</span>
+<span class="fc" id="L240">    }</span>
+
+    void setSpecificClassBicycle(String subkey) {
+<span class="fc" id="L243">        classBicycleKey = &quot;class:bicycle:&quot; + subkey;</span>
+<span class="fc" id="L244">    }</span>
+
+    public final DecimalEncodedValue getPriorityEnc() {
+<span class="fc" id="L247">        return priorityEnc;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

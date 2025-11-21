@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" name="com.graphhopper.GraphHopperTest" time="75.258" tests="87" errors="0" skipped="1" failures="0">
+  <properties>
+    <property name="git.tags" value=""/>
+    <property name="java.specification.version" value="23"/>
+    <property name="sun.cpu.isalist" value="amd64"/>
+    <property name="sun.jnu.encoding" value="Cp1252"/>
+    <property name="git.build.version" value="11.0-SNAPSHOT"/>
+    <property name="java.class.path" value="C:\Users\emman\Desktop\IFT3913\graphhopper\core\target\test-classes;C:\Users\emman\Desktop\IFT3913\graphhopper\core\target\classes;C:\Users\emman\.m2\repository\org\mockito\mockito-core\4.11.0\mockito-core-4.11.0.jar;C:\Users\emman\.m2\repository\net\bytebuddy\byte-buddy\1.17.7\byte-buddy-1.17.7.jar;C:\Users\emman\.m2\repository\net\bytebuddy\byte-buddy-agent\1.12.19\byte-buddy-agent-1.12.19.jar;C:\Users\emman\.m2\repository\org\objenesis\objenesis\3.3\objenesis-3.3.jar;C:\Users\emman\.m2\repository\org\mockito\mockito-junit-jupiter\4.11.0\mockito-junit-jupiter-4.11.0.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-api\5.13.4\junit-jupiter-api-5.13.4.jar;C:\Users\emman\.m2\repository\org\opentest4j\opentest4j\1.3.0\opentest4j-1.3.0.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-commons\1.13.4\junit-platform-commons-1.13.4.jar;C:\Users\emman\Desktop\IFT3913\graphhopper\web-api\target\graphhopper-web-api-11.0-SNAPSHOT.jar;C:\Users\emman\.m2\repository\com\carrotsearch\hppc\0.8.1\hppc-0.8.1.jar;C:\Users\emman\.m2\repository\org\codehaus\janino\janino\3.1.9\janino-3.1.9.jar;C:\Users\emman\.m2\repository\org\codehaus\janino\commons-compiler\3.1.9\commons-compiler-3.1.9.jar;C:\Users\emman\.m2\repository\org\locationtech\jts\jts-core\1.20.0\jts-core-1.20.0.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-core\2.19.2\jackson-core-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-databind\2.19.2\jackson-databind-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-annotations\2.19.2\jackson-annotations-2.19.2.jar;C:\Users\emman\.m2\repository\com\graphhopper\external\jackson-datatype-jts\2.19.2\jackson-datatype-jts-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\dataformat\jackson-dataformat-xml\2.19.2\jackson-dataformat-xml-2.19.2.jar;C:\Users\emman\.m2\repository\org\codehaus\woodstox\stax2-api\4.2.2\stax2-api-4.2.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\woodstox\woodstox-core\7.1.1\woodstox-core-7.1.1.jar;C:\Users\emman\.m2\repository\org\apache\xmlgraphics\xmlgraphics-commons\2.7\xmlgraphics-commons-2.7.jar;C:\Users\emman\.m2\repository\commons-io\commons-io\2.14.0\commons-io-2.14.0.jar;C:\Users\emman\.m2\repository\de\westnordost\osm-legal-default-speeds-jvm\1.4\osm-legal-default-speeds-jvm-1.4.jar;C:\Users\emman\.m2\repository\org\jetbrains\kotlin\kotlin-stdlib\1.6.20\kotlin-stdlib-1.6.20.jar;C:\Users\emman\.m2\repository\org\jetbrains\kotlin\kotlin-stdlib-common\1.6.20\kotlin-stdlib-common-1.6.20.jar;C:\Users\emman\.m2\repository\org\jetbrains\annotations\13.0\annotations-13.0.jar;C:\Users\emman\.m2\repository\org\openstreetmap\osmosis\osmosis-osm-binary\0.48.3\osmosis-osm-binary-0.48.3.jar;C:\Users\emman\.m2\repository\com\google\protobuf\protobuf-java\3.12.2\protobuf-java-3.12.2.jar;C:\Users\emman\.m2\repository\org\slf4j\slf4j-api\2.0.17\slf4j-api-2.0.17.jar;C:\Users\emman\.m2\repository\ch\qos\logback\logback-classic\1.5.18\logback-classic-1.5.18.jar;C:\Users\emman\.m2\repository\ch\qos\logback\logback-core\1.5.18\logback-core-1.5.18.jar;C:\Users\emman\.m2\repository\com\github\javafaker\javafaker\1.0.2\javafaker-1.0.2.jar;C:\Users\emman\.m2\repository\org\apache\commons\commons-lang3\3.18.0\commons-lang3-3.18.0.jar;C:\Users\emman\.m2\repository\org\yaml\snakeyaml\1.23\snakeyaml-1.23-android.jar;C:\Users\emman\.m2\repository\com\github\mifmif\generex\1.0.2\generex-1.0.2.jar;C:\Users\emman\.m2\repository\dk\brics\automaton\automaton\1.11-8\automaton-1.11-8.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-launcher\1.13.4\junit-platform-launcher-1.13.4.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-engine\1.13.4\junit-platform-engine-1.13.4.jar;C:\Users\emman\.m2\repository\org\apiguardian\apiguardian-api\1.1.2\apiguardian-api-1.1.2.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-engine\5.13.4\junit-jupiter-engine-5.13.4.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-params\5.13.4\junit-jupiter-params-5.13.4.jar;"/>
+    <property name="git.branch" value="manu"/>
+    <property name="git.build.host" value="LAPTOP-4K2SB7BB"/>
+    <property name="java.vm.vendor" value="Oracle Corporation"/>
+    <property name="sun.arch.data.model" value="64"/>
+    <property name="user.variant" value=""/>
+    <property name="git.commit.id" value="b5150d03c8a5b02ade32fab13fc133e0d2c396be"/>
+    <property name="java.vendor.url" value="https://java.oracle.com/"/>
+    <property name="user.timezone" value="America/Toronto"/>
+    <property name="java.vm.specification.version" value="23"/>
+    <property name="os.name" value="Windows 11"/>
+    <property name="sun.java.launcher" value="SUN_STANDARD"/>
+    <property name="user.country" value="CO"/>
+    <property name="git.build.user.name" value="EmmanuelChicoine"/>
+    <property name="sun.boot.library.path" value="C:\Program Files\Java\jdk-23.0.1\bin"/>
+    <property name="sun.java.command" value="C:\Users\emman\AppData\Local\Temp\surefire16816641703254977940\surefirebooter12143986754705995640.jar C:\Users\emman\AppData\Local\Temp\surefire16816641703254977940 2025-11-19T11-57-24_776-jvmRun1 surefire4189624678434402194tmp surefire_15447932516519289921tmp"/>
+    <property name="jdk.debug" value="release"/>
+    <property name="surefire.test.class.path" value="C:\Users\emman\Desktop\IFT3913\graphhopper\core\target\test-classes;C:\Users\emman\Desktop\IFT3913\graphhopper\core\target\classes;C:\Users\emman\.m2\repository\org\mockito\mockito-core\4.11.0\mockito-core-4.11.0.jar;C:\Users\emman\.m2\repository\net\bytebuddy\byte-buddy\1.17.7\byte-buddy-1.17.7.jar;C:\Users\emman\.m2\repository\net\bytebuddy\byte-buddy-agent\1.12.19\byte-buddy-agent-1.12.19.jar;C:\Users\emman\.m2\repository\org\objenesis\objenesis\3.3\objenesis-3.3.jar;C:\Users\emman\.m2\repository\org\mockito\mockito-junit-jupiter\4.11.0\mockito-junit-jupiter-4.11.0.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-api\5.13.4\junit-jupiter-api-5.13.4.jar;C:\Users\emman\.m2\repository\org\opentest4j\opentest4j\1.3.0\opentest4j-1.3.0.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-commons\1.13.4\junit-platform-commons-1.13.4.jar;C:\Users\emman\Desktop\IFT3913\graphhopper\web-api\target\graphhopper-web-api-11.0-SNAPSHOT.jar;C:\Users\emman\.m2\repository\com\carrotsearch\hppc\0.8.1\hppc-0.8.1.jar;C:\Users\emman\.m2\repository\org\codehaus\janino\janino\3.1.9\janino-3.1.9.jar;C:\Users\emman\.m2\repository\org\codehaus\janino\commons-compiler\3.1.9\commons-compiler-3.1.9.jar;C:\Users\emman\.m2\repository\org\locationtech\jts\jts-core\1.20.0\jts-core-1.20.0.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-core\2.19.2\jackson-core-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-databind\2.19.2\jackson-databind-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-annotations\2.19.2\jackson-annotations-2.19.2.jar;C:\Users\emman\.m2\repository\com\graphhopper\external\jackson-datatype-jts\2.19.2\jackson-datatype-jts-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\dataformat\jackson-dataformat-xml\2.19.2\jackson-dataformat-xml-2.19.2.jar;C:\Users\emman\.m2\repository\org\codehaus\woodstox\stax2-api\4.2.2\stax2-api-4.2.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\woodstox\woodstox-core\7.1.1\woodstox-core-7.1.1.jar;C:\Users\emman\.m2\repository\org\apache\xmlgraphics\xmlgraphics-commons\2.7\xmlgraphics-commons-2.7.jar;C:\Users\emman\.m2\repository\commons-io\commons-io\2.14.0\commons-io-2.14.0.jar;C:\Users\emman\.m2\repository\de\westnordost\osm-legal-default-speeds-jvm\1.4\osm-legal-default-speeds-jvm-1.4.jar;C:\Users\emman\.m2\repository\org\jetbrains\kotlin\kotlin-stdlib\1.6.20\kotlin-stdlib-1.6.20.jar;C:\Users\emman\.m2\repository\org\jetbrains\kotlin\kotlin-stdlib-common\1.6.20\kotlin-stdlib-common-1.6.20.jar;C:\Users\emman\.m2\repository\org\jetbrains\annotations\13.0\annotations-13.0.jar;C:\Users\emman\.m2\repository\org\openstreetmap\osmosis\osmosis-osm-binary\0.48.3\osmosis-osm-binary-0.48.3.jar;C:\Users\emman\.m2\repository\com\google\protobuf\protobuf-java\3.12.2\protobuf-java-3.12.2.jar;C:\Users\emman\.m2\repository\org\slf4j\slf4j-api\2.0.17\slf4j-api-2.0.17.jar;C:\Users\emman\.m2\repository\ch\qos\logback\logback-classic\1.5.18\logback-classic-1.5.18.jar;C:\Users\emman\.m2\repository\ch\qos\logback\logback-core\1.5.18\logback-core-1.5.18.jar;C:\Users\emman\.m2\repository\com\github\javafaker\javafaker\1.0.2\javafaker-1.0.2.jar;C:\Users\emman\.m2\repository\org\apache\commons\commons-lang3\3.18.0\commons-lang3-3.18.0.jar;C:\Users\emman\.m2\repository\org\yaml\snakeyaml\1.23\snakeyaml-1.23-android.jar;C:\Users\emman\.m2\repository\com\github\mifmif\generex\1.0.2\generex-1.0.2.jar;C:\Users\emman\.m2\repository\dk\brics\automaton\automaton\1.11-8\automaton-1.11-8.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-launcher\1.13.4\junit-platform-launcher-1.13.4.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-engine\1.13.4\junit-platform-engine-1.13.4.jar;C:\Users\emman\.m2\repository\org\apiguardian\apiguardian-api\1.1.2\apiguardian-api-1.1.2.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-engine\5.13.4\junit-jupiter-engine-5.13.4.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-params\5.13.4\junit-jupiter-params-5.13.4.jar;"/>
+    <property name="sun.cpu.endian" value="little"/>
+    <property name="user.home" value="C:\Users\emman"/>
+    <property name="user.language" value="es"/>
+    <property name="git.closest.tag.commit.count" value=""/>
+    <property name="java.specification.vendor" value="Oracle Corporation"/>
+    <property name="java.version.date" value="2024-10-15"/>
+    <property name="java.home" value="C:\Program Files\Java\jdk-23.0.1"/>
+    <property name="git.total.commit.count" value="6794"/>
+    <property name="file.separator" value="\"/>
+    <property name="basedir" value="C:\Users\emman\Desktop\IFT3913\graphhopper\core"/>
+    <property name="java.vm.compressedOopsMode" value="32-bit"/>
+    <property name="line.separator" value="&#10;"/>
+    <property name="git.build.user.email" value=""/>
+    <property name="java.vm.specification.vendor" value="Oracle Corporation"/>
+    <property name="java.specification.name" value="Java Platform API Specification"/>
+    <property name="git.closest.tag.name" value=""/>
+    <property name="git.local.branch.ahead" value="2"/>
+    <property name="git.build.time" value="2025-11-19T11:57:53-0500"/>
+    <property name="surefire.real.class.path" value="C:\Users\emman\AppData\Local\Temp\surefire16816641703254977940\surefirebooter12143986754705995640.jar"/>
+    <property name="git.commit.message.full" value="erreur de BBox&#10;Merge branch &apos;manu&apos; of https://github.com/maximebelotti/graphhopper into manu"/>
+    <property name="user.script" value=""/>
+    <property name="sun.management.compiler" value="HotSpot 64-Bit Tiered Compilers"/>
+    <property name="java.runtime.version" value="23.0.1+11-39"/>
+    <property name="user.name" value="emman"/>
+    <property name="stdout.encoding" value="Cp1252"/>
+    <property name="path.separator" value=";"/>
+    <property name="os.version" value="10.0"/>
+    <property name="java.runtime.name" value="OpenJDK Runtime Environment"/>
+    <property name="file.encoding" value="UTF-8"/>
+    <property name="git.commit.user.email" value=""/>
+    <property name="java.vm.name" value="OpenJDK 64-Bit Server VM"/>
+    <property name="git.local.branch.behind" value="0"/>
+    <property name="git.dirty" value="true"/>
+    <property name="localRepository" value="C:\Users\emman\.m2\repository"/>
+    <property name="java.vendor.url.bug" value="https://bugreport.java.com/bugreport/"/>
+    <property name="java.io.tmpdir" value="C:\Users\emman\AppData\Local\Temp\"/>
+    <property name="java.version" value="23.0.1"/>
+    <property name="user.dir" value="C:\Users\emman\Desktop\IFT3913\graphhopper\core"/>
+    <property name="os.arch" value="amd64"/>
+    <property name="git.commit.user.name" value="EmmanuelChicoine"/>
+    <property name="git.commit.id.abbrev" value="b5150d0"/>
+    <property name="java.vm.specification.name" value="Java Virtual Machine Specification"/>
+    <property name="git.commit.id.describe-short" value="b5150d0-dirty"/>
+    <property name="sun.os.patch.level" value=""/>
+    <property name="git.commit.id.describe" value="b5150d0-dirty"/>
+    <property name="native.encoding" value="Cp1252"/>
+    <property name="java.library.path" value="C:\Program Files\Java\jdk-23.0.1\bin;C:\WINDOWS\Sun\Java\bin;C:\WINDOWS\system32;C:\WINDOWS;c:\Users\emman\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\debugCommand;c:\Users\emman\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\copilotCli;C:\Program Files\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Intel\iCLS Client\;C:\Program Files\Intel\iCLS Client\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files (x86)\Intel\Intel(R) Management Engine Components\DAL;C:\Program Files\Intel\Intel(R) Management Engine Components\DAL;C:\Program Files (x86)\Intel\Intel(R) Management Engine Components\IPT;C:\Program Files\Intel\Intel(R) Management Engine Components\IPT;C:\Program Files\Intel\WiFi\bin\;C:\Program Files\Common Files\Intel\WirelessCommon\;C:\Program Files\Microsoft SQL Server\130\Tools\Binn\;C:\Program Files\dotnet\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Wolfram Research\WolframScript\;C:\Program Files\Git\cmd;C:\ProgramData\chocolatey\bin;C:\Program Files (x86)\dotnet\;C:\Program Files\nodejs\;C:\Program Files\Java\jdk-23.0.1\bin;C:\Users\emman\AppData\Local\Microsoft\WindowsApps;C:\Users\emman\AppData\Local\GitHubDesktop\bin;C:\Users\emman\miniconda3\condabin;C:\Users\emman\miniconda3\Lib\site-packages;C:\Users\emman\AppData\Local\Programs\Microsoft VS Code\bin;C:\ghcup\bin;C:\Users\emman\AppData\Local\Programs\MiKTeX\miktex\bin\x64\;C:\Users\emman\questa_fse\win64;C:\Program Files\Java\scripts;C:\msys64\ucrt64\bin;C:\Users\emman\AppData\Roaming\npm;C:\Users\emman\apache-maven-3.9.11-bin\apache-maven-3.9.11\bin;c:\Users\emman\.vscode\extensions\vscjava.vscode-java-debug-0.58.3\bundled\scripts\noConfigScripts;."/>
+    <property name="git.commit.message.short" value="erreur de BBox Merge branch &apos;manu&apos; of https://github.com/maximebelotti/graphhopper into manu"/>
+    <property name="java.vm.info" value="mixed mode, sharing"/>
+    <property name="stderr.encoding" value="Cp1252"/>
+    <property name="java.vendor" value="Oracle Corporation"/>
+    <property name="java.vm.version" value="23.0.1+11-39"/>
+    <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
+    <property name="java.class.version" value="67.0"/>
+    <property name="git.commit.time" value="2025-11-17T14:57:03-0500"/>
+    <property name="git.remote.origin.url" value="https://github.com/maximebelotti/graphhopper.git"/>
+  </properties>
+  <testcase name="testPointHint" classname="com.graphhopper.GraphHopperTest" time="2.305"/>
+  <testcase name="curbsideWithSubnetwork_issue2502" classname="com.graphhopper.GraphHopperTest" time="0.949"/>
+  <testcase name="testMonacoPathDetails" classname="com.graphhopper.GraphHopperTest" time="1.362"/>
+  <testcase name="turnRestrictionWithSnapToViaEdge_issue2996" classname="com.graphhopper.GraphHopperTest" time="7.268"/>
+  <testcase name="testProfileWithTurnCostSupport_stillAllows_nodeBasedRouting" classname="com.graphhopper.GraphHopperTest" time="0.514"/>
+  <testcase name="testCircularJunctionInstructionsWithCH" classname="com.graphhopper.GraphHopperTest" time="0.77"/>
+  <testcase name="germanyCountryRuleAvoidsTracks" classname="com.graphhopper.GraphHopperTest" time="2.319"/>
+  <testcase name="testCHWithFiniteUTurnCosts" classname="com.graphhopper.GraphHopperTest" time="1.52"/>
+  <testcase name="testIfCHIsUsed" classname="com.graphhopper.GraphHopperTest" time="0.981"/>
+  <testcase name="testUTurnInstructions" classname="com.graphhopper.GraphHopperTest" time="0.785"/>
+  <testcase name="legDistanceWithDuplicateEndpoint_onlyTwoPoints{boolean}[1]" classname="com.graphhopper.GraphHopperTest" time="0.496"/>
+  <testcase name="legDistanceWithDuplicateEndpoint_onlyTwoPoints{boolean}[2]" classname="com.graphhopper.GraphHopperTest" time="0.428"/>
+  <testcase name="legDistanceWithDuplicateEndpoint{boolean}[1]" classname="com.graphhopper.GraphHopperTest" time="0.519"/>
+  <testcase name="legDistanceWithDuplicateEndpoint{boolean}[2]" classname="com.graphhopper.GraphHopperTest" time="0.362"/>
+  <testcase name="testMonacoVia" classname="com.graphhopper.GraphHopperTest" time="0.513"/>
+  <testcase name="testNorthBayreuthAccessDestination" classname="com.graphhopper.GraphHopperTest" time="1.098"/>
+  <testcase name="testLoadingWithAnotherSpeedFactorWorks" classname="com.graphhopper.GraphHopperTest" time="0.857"/>
+  <testcase name="testBarriers" classname="com.graphhopper.GraphHopperTest" time="4.584"/>
+  <testcase name="testMonacoDifferentAlgorithms{String, boolean, int}[1]" classname="com.graphhopper.GraphHopperTest" time="0.427"/>
+  <testcase name="testMonacoDifferentAlgorithms{String, boolean, int}[2]" classname="com.graphhopper.GraphHopperTest" time="0.451"/>
+  <testcase name="testMonacoDifferentAlgorithms{String, boolean, int}[3]" classname="com.graphhopper.GraphHopperTest" time="0.481"/>
+  <testcase name="testMonacoDifferentAlgorithms{String, boolean, int}[4]" classname="com.graphhopper.GraphHopperTest" time="0.397"/>
+  <testcase name="testMonacoDifferentAlgorithms{String, boolean, int}[5]" classname="com.graphhopper.GraphHopperTest" time="0.359"/>
+  <testcase name="testMonacoDifferentAlgorithms{String, boolean, int}[6]" classname="com.graphhopper.GraphHopperTest" time="0.408"/>
+  <testcase name="testNorthBayreuthBlockedEdges" classname="com.graphhopper.GraphHopperTest" time="1.238"/>
+  <testcase name="testAlternativeRoutes" classname="com.graphhopper.GraphHopperTest" time="0.58"/>
+  <testcase name="testNodeBasedCHOnlyButTurnCostForNonCH" classname="com.graphhopper.GraphHopperTest" time="0.533"/>
+  <testcase name="testPreparedProfileNotAvailable" classname="com.graphhopper.GraphHopperTest" time="0.672"/>
+  <testcase name="testMonacoEnforcedDirection" classname="com.graphhopper.GraphHopperTest" time="0.384"/>
+  <testcase name="testImportThenLoadCHLMAndSort" classname="com.graphhopper.GraphHopperTest" time="0.806"/>
+  <testcase name="testFlexMode_631" classname="com.graphhopper.GraphHopperTest" time="0.511"/>
+  <testcase name="withoutInstructions" classname="com.graphhopper.GraphHopperTest" time="0.405"/>
+  <testcase name="testKremsCyclewayInstructionsWithWayTypeInfo" classname="com.graphhopper.GraphHopperTest" time="0.618"/>
+  <testcase name="testCrossQuery" classname="com.graphhopper.GraphHopperTest" time="0.692"/>
+  <testcase name="testMonacoMaxVisitedNodes" classname="com.graphhopper.GraphHopperTest" time="0.491"/>
+  <testcase name="testSRTMWithTunnelInterpolation{boolean}[1]" classname="com.graphhopper.GraphHopperTest" time="0.786"/>
+  <testcase name="testSRTMWithTunnelInterpolation{boolean}[2]" classname="com.graphhopper.GraphHopperTest" time="0.791"/>
+  <testcase name="simplifyWithInstructionsAndPathDetails" classname="com.graphhopper.GraphHopperTest" time="1.263"/>
+  <testcase name="testForwardBackwardDestination" classname="com.graphhopper.GraphHopperTest" time="0.172"/>
+  <testcase name="testPathDetails1216" classname="com.graphhopper.GraphHopperTest" time="0.878"/>
+  <testcase name="testImportThenLoadFlexible" classname="com.graphhopper.GraphHopperTest" time="0.377"/>
+  <testcase name="testLoadGraph_implicitEncodedValues_issue1862" classname="com.graphhopper.GraphHopperTest" time="0.932"/>
+  <testcase name="timeDetailBug" classname="com.graphhopper.GraphHopperTest" time="1.059"/>
+  <testcase name="testMultipleVehiclesWithCH" classname="com.graphhopper.GraphHopperTest" time="0.438"/>
+  <testcase name="testForceCurbsides" classname="com.graphhopper.GraphHopperTest" time="0.502"/>
+  <testcase name="testMonacoNonChMaxWaypointDistanceMultiplePoints" classname="com.graphhopper.GraphHopperTest" time="0.549"/>
+  <testcase name="testDoNotInterpolateTwice1645" classname="com.graphhopper.GraphHopperTest" time="1.096"/>
+  <testcase name="testHeading" classname="com.graphhopper.GraphHopperTest" time="1.036"/>
+  <testcase name="testMonacoNonChMaxWaypointDistance" classname="com.graphhopper.GraphHopperTest" time="0.392"/>
+  <testcase name="issue2306_1" classname="com.graphhopper.GraphHopperTest" time="2.697"/>
+  <testcase name="issue2306_2" classname="com.graphhopper.GraphHopperTest" time="2.603"/>
+  <testcase name="testTurnCostsOnOff" classname="com.graphhopper.GraphHopperTest" time="0.314"/>
+  <testcase name="testCHOnOffWithTurnCosts" classname="com.graphhopper.GraphHopperTest" time="0.563"/>
+  <testcase name="testMonacoStraightVia" classname="com.graphhopper.GraphHopperTest" time="0.39"/>
+  <testcase name="testRoundTour" classname="com.graphhopper.GraphHopperTest" time="0.424"/>
+  <testcase name="testMonacoWithInstructions" classname="com.graphhopper.GraphHopperTest" time="0.377"/>
+  <testcase name="testDisablingLM" classname="com.graphhopper.GraphHopperTest" time="0.455"/>
+  <testcase name="testOneWaySubnetwork_issue1807" classname="com.graphhopper.GraphHopperTest" time="0.444"/>
+  <testcase name="testCreateWeightingHintsMerging" classname="com.graphhopper.GraphHopperTest" time="0.482"/>
+  <testcase name="testPathDetailsSamePoint" classname="com.graphhopper.GraphHopperTest" time="0.919"/>
+  <testcase name="testIssue1960" classname="com.graphhopper.GraphHopperTest" time="0.551"/>
+  <testcase name="testEdgeCount" classname="com.graphhopper.GraphHopperTest" time="0.881"/>
+  <testcase name="testCurbsides" classname="com.graphhopper.GraphHopperTest" time="1.364"/>
+  <testcase name="testSRTMWithLongEdgeSampling" classname="com.graphhopper.GraphHopperTest" time="0.375"/>
+  <testcase name="testSkadiElevationProvider" classname="com.graphhopper.GraphHopperTest" time="0">
+    <skipped message="public void com.graphhopper.GraphHopperTest.testSkadiElevationProvider() is @Disabled"/>
+  </testcase>
+  <testcase name="testCompareAlgos{boolean}[1]" classname="com.graphhopper.GraphHopperTest" time="1.142"/>
+  <testcase name="testCompareAlgos{boolean}[2]" classname="com.graphhopper.GraphHopperTest" time="1.476"/>
+  <testcase name="simplifyKeepsWaypoints{boolean, boolean}[1]" classname="com.graphhopper.GraphHopperTest" time="0.667"/>
+  <testcase name="simplifyKeepsWaypoints{boolean, boolean}[2]" classname="com.graphhopper.GraphHopperTest" time="0.523"/>
+  <testcase name="simplifyKeepsWaypoints{boolean, boolean}[3]" classname="com.graphhopper.GraphHopperTest" time="0.516"/>
+  <testcase name="simplifyKeepsWaypoints{boolean, boolean}[4]" classname="com.graphhopper.GraphHopperTest" time="0.36"/>
+  <testcase name="testImportThenLoadCH" classname="com.graphhopper.GraphHopperTest" time="0.486"/>
+  <testcase name="testImportThenLoadLM" classname="com.graphhopper.GraphHopperTest" time="0.518"/>
+  <testcase name="testAlternativeRoutesBike" classname="com.graphhopper.GraphHopperTest" time="0.957"/>
+  <testcase name="testSRTMWithInstructions" classname="com.graphhopper.GraphHopperTest" time="0.407"/>
+  <testcase name="testTurnCostsOnOffCH" classname="com.graphhopper.GraphHopperTest" time="0.648"/>
+  <testcase name="testAStarCHBug{boolean}[1]" classname="com.graphhopper.GraphHopperTest" time="0.507"/>
+  <testcase name="testAStarCHBug{boolean}[2]" classname="com.graphhopper.GraphHopperTest" time="0.394"/>
+  <testcase name="testNoLoad" classname="com.graphhopper.GraphHopperTest" time="0.063"/>
+  <testcase name="testLMConstraints" classname="com.graphhopper.GraphHopperTest" time="0.421"/>
+  <testcase name="averageSpeedPathDetailBug" classname="com.graphhopper.GraphHopperTest" time="0.836"/>
+  <testcase name="testImportThenLoadCHLM" classname="com.graphhopper.GraphHopperTest" time="0.742"/>
+  <testcase name="testCustomModel" classname="com.graphhopper.GraphHopperTest" time="1.182"/>
+  <testcase name="testTagParserProcessingOrder" classname="com.graphhopper.GraphHopperTest" time="0.831"/>
+  <testcase name="connectionNotFound" classname="com.graphhopper.GraphHopperTest" time="0.754"/>
+  <testcase name="testRoundaboutInstructionsWithCH" classname="com.graphhopper.GraphHopperTest" time="0.359"/>
+  <testcase name="testAlternativeRoutesCar" classname="com.graphhopper.GraphHopperTest" time="0.91"/>
+</testsuite>

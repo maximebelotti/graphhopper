@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RouterConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">RouterConfig.java</span></div><h1>RouterConfig.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing;
+
+/**
+ * This class contains various parameters that control the behavior of {@link Router}.
+ */
+<span class="fc" id="L24">public class RouterConfig {</span>
+<span class="fc" id="L25">    private int maxVisitedNodes = Integer.MAX_VALUE;</span>
+<span class="fc" id="L26">    private long timeoutMillis = Long.MAX_VALUE;</span>
+<span class="fc" id="L27">    private int maxRoundTripRetries = 3;</span>
+<span class="fc" id="L28">    private int nonChMaxWaypointDistance = Integer.MAX_VALUE;</span>
+<span class="fc" id="L29">    private boolean calcPoints = true;</span>
+<span class="fc" id="L30">    private boolean instructionsEnabled = true;</span>
+<span class="fc" id="L31">    private boolean simplifyResponse = true;</span>
+<span class="fc" id="L32">    private double elevationWayPointMaxDistance = Double.MAX_VALUE;</span>
+<span class="fc" id="L33">    private int activeLandmarkCount = 8;</span>
+
+    public int getMaxVisitedNodes() {
+<span class="fc" id="L36">        return maxVisitedNodes;</span>
+    }
+
+    /**
+     * This methods stops the algorithm from searching further if the resulting path would go over
+     * the specified node count, important if none-CH routing is used.
+     */
+    public void setMaxVisitedNodes(int maxVisitedNodes) {
+<span class="fc" id="L44">        this.maxVisitedNodes = maxVisitedNodes;</span>
+<span class="fc" id="L45">    }</span>
+
+    public long getTimeoutMillis() {
+<span class="fc" id="L48">        return timeoutMillis;</span>
+    }
+
+    /**
+     * Limits the runtime of routing requests to the given amount of milliseconds. This only works up to a certain
+     * precision, but should be sufficient to cancel long-running requests in most cases. The exact implementation of
+     * the timeout depends on the routing algorithm.
+     */
+    public void setTimeoutMillis(long timeoutMillis) {
+<span class="fc" id="L57">        this.timeoutMillis = timeoutMillis;</span>
+<span class="fc" id="L58">    }</span>
+
+    public int getMaxRoundTripRetries() {
+<span class="fc" id="L61">        return maxRoundTripRetries;</span>
+    }
+
+    public void setMaxRoundTripRetries(int maxRoundTripRetries) {
+<span class="fc" id="L65">        this.maxRoundTripRetries = maxRoundTripRetries;</span>
+<span class="fc" id="L66">    }</span>
+
+    public int getNonChMaxWaypointDistance() {
+<span class="fc" id="L69">        return nonChMaxWaypointDistance;</span>
+    }
+
+    public void setNonChMaxWaypointDistance(int nonChMaxWaypointDistance) {
+<span class="fc" id="L73">        this.nonChMaxWaypointDistance = nonChMaxWaypointDistance;</span>
+<span class="fc" id="L74">    }</span>
+
+    public boolean isCalcPoints() {
+<span class="fc" id="L77">        return calcPoints;</span>
+    }
+
+    /**
+     * This methods enables gps point calculation. If disabled only distance will be calculated.
+     */
+    public void setCalcPoints(boolean calcPoints) {
+<span class="nc" id="L84">        this.calcPoints = calcPoints;</span>
+<span class="nc" id="L85">    }</span>
+
+    public boolean isInstructionsEnabled() {
+<span class="fc" id="L88">        return instructionsEnabled;</span>
+    }
+
+    public void setInstructionsEnabled(boolean instructionsEnabled) {
+<span class="fc" id="L92">        this.instructionsEnabled = instructionsEnabled;</span>
+<span class="fc" id="L93">    }</span>
+
+    public boolean isSimplifyResponse() {
+<span class="fc" id="L96">        return simplifyResponse;</span>
+    }
+
+    /**
+     * This method specifies if the returned path should be simplified or not, via Ramer-Douglas-Peucker
+     * or similar algorithm.
+     */
+    public void setSimplifyResponse(boolean simplifyResponse) {
+<span class="fc" id="L104">        this.simplifyResponse = simplifyResponse;</span>
+<span class="fc" id="L105">    }</span>
+
+    public int getActiveLandmarkCount() {
+<span class="fc" id="L108">        return activeLandmarkCount;</span>
+    }
+
+    public void setActiveLandmarkCount(int activeLandmarkCount) {
+<span class="fc" id="L112">        this.activeLandmarkCount = activeLandmarkCount;</span>
+<span class="fc" id="L113">    }</span>
+
+    public double getElevationWayPointMaxDistance() {
+<span class="fc" id="L116">        return elevationWayPointMaxDistance;</span>
+    }
+
+    public void setElevationWayPointMaxDistance(double elevationWayPointMaxDistance) {
+<span class="fc" id="L120">        this.elevationWayPointMaxDistance = elevationWayPointMaxDistance;</span>
+<span class="fc" id="L121">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

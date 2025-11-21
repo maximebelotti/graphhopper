@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractAverageSpeedParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">AbstractAverageSpeedParser.java</span></div><h1>AbstractAverageSpeedParser.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.storage.IntsRef;
+
+
+public abstract class AbstractAverageSpeedParser implements TagParser {
+    // http://wiki.openstreetmap.org/wiki/Mapfeatures#Barrier
+    protected final DecimalEncodedValue avgSpeedEnc;
+    protected final DecimalEncodedValue ferrySpeedEnc;
+
+<span class="fc" id="L14">    protected AbstractAverageSpeedParser(DecimalEncodedValue speedEnc, DecimalEncodedValue ferrySpeedEnc) {</span>
+<span class="fc" id="L15">        this.avgSpeedEnc = speedEnc;</span>
+<span class="fc" id="L16">        this.ferrySpeedEnc = ferrySpeedEnc;</span>
+<span class="fc" id="L17">    }</span>
+
+    public final DecimalEncodedValue getAverageSpeedEnc() {
+<span class="fc" id="L20">        return avgSpeedEnc;</span>
+    }
+
+    protected void setSpeed(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess, double speed) {
+<span class="fc bfc" id="L24" title="All 2 branches covered.">        if (speed &lt; avgSpeedEnc.getSmallestNonZeroValue() / 2) {</span>
+<span class="fc" id="L25">            throw new IllegalArgumentException(&quot;Speed was &quot; + speed + &quot; but cannot be lower than &quot; + avgSpeedEnc.getSmallestNonZeroValue() / 2);</span>
+        } else {
+<span class="fc" id="L27">            avgSpeedEnc.setDecimal(reverse, edgeId, edgeIntAccess, speed);</span>
+        }
+<span class="fc" id="L29">    }</span>
+
+    public final String getName() {
+<span class="nc" id="L32">        return avgSpeedEnc.getName();</span>
+    }
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
+<span class="fc" id="L37">        handleWayTags(edgeId, edgeIntAccess, way);</span>
+<span class="fc" id="L38">    }</span>
+
+    public abstract void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way);
+
+    @Override
+    public String toString() {
+<span class="nc" id="L44">        return getName();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

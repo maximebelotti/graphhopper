@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MountainBikePriorityParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">MountainBikePriorityParser.java</span></div><h1>MountainBikePriorityParser.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.util.PriorityCode;
+
+import java.util.TreeMap;
+
+import static com.graphhopper.routing.ev.RouteNetwork.*;
+import static com.graphhopper.routing.util.PriorityCode.*;
+
+public class MountainBikePriorityParser extends BikeCommonPriorityParser {
+
+    public MountainBikePriorityParser(EncodedValueLookup lookup) {
+<span class="fc" id="L15">        this(lookup.getDecimalEncodedValue(VehicleSpeed.key(&quot;mtb&quot;)),</span>
+<span class="fc" id="L16">                lookup.getDecimalEncodedValue(VehiclePriority.key(&quot;mtb&quot;)),</span>
+<span class="fc" id="L17">                lookup.getEnumEncodedValue(BikeNetwork.KEY, RouteNetwork.class));</span>
+<span class="fc" id="L18">    }</span>
+
+    protected MountainBikePriorityParser(DecimalEncodedValue speedEnc, DecimalEncodedValue priorityEnc,
+                                         EnumEncodedValue&lt;RouteNetwork&gt; bikeRouteEnc) {
+<span class="fc" id="L22">        super(priorityEnc, speedEnc, bikeRouteEnc);</span>
+
+<span class="fc" id="L24">        routeMap.put(INTERNATIONAL, PREFER.getValue());</span>
+<span class="fc" id="L25">        routeMap.put(NATIONAL, PREFER.getValue());</span>
+<span class="fc" id="L26">        routeMap.put(REGIONAL, PREFER.getValue());</span>
+<span class="fc" id="L27">        routeMap.put(LOCAL, BEST.getValue());</span>
+
+<span class="fc" id="L29">        preferHighwayTags.add(&quot;road&quot;);</span>
+<span class="fc" id="L30">        preferHighwayTags.add(&quot;track&quot;);</span>
+<span class="fc" id="L31">        preferHighwayTags.add(&quot;path&quot;);</span>
+<span class="fc" id="L32">        preferHighwayTags.add(&quot;service&quot;);</span>
+<span class="fc" id="L33">        preferHighwayTags.add(&quot;tertiary&quot;);</span>
+<span class="fc" id="L34">        preferHighwayTags.add(&quot;tertiary_link&quot;);</span>
+<span class="fc" id="L35">        preferHighwayTags.add(&quot;residential&quot;);</span>
+<span class="fc" id="L36">        preferHighwayTags.add(&quot;unclassified&quot;);</span>
+
+<span class="fc" id="L38">        setSpecificClassBicycle(&quot;mtb&quot;);</span>
+<span class="fc" id="L39">    }</span>
+
+    @Override
+    void collect(ReaderWay way, double wayTypeSpeed, TreeMap&lt;Double, PriorityCode&gt; weightToPrioMap) {
+<span class="fc" id="L43">        super.collect(way, wayTypeSpeed, weightToPrioMap);</span>
+
+<span class="fc" id="L45">        String highway = way.getTag(&quot;highway&quot;);</span>
+<span class="fc bfc" id="L46" title="All 2 branches covered.">        if (&quot;track&quot;.equals(highway)) {</span>
+<span class="fc" id="L47">            String trackType = way.getTag(&quot;tracktype&quot;);</span>
+<span class="fc bfc" id="L48" title="All 4 branches covered.">            if (&quot;grade1&quot;.equals(trackType) || goodSurface.contains(way.getTag(&quot;surface&quot;,&quot;&quot;)))</span>
+<span class="fc" id="L49">                weightToPrioMap.put(50d, SLIGHT_PREFER);</span>
+<span class="fc bfc" id="L50" title="All 2 branches covered.">            else if (trackType == null)</span>
+<span class="fc" id="L51">                weightToPrioMap.put(90d, PREFER);</span>
+<span class="pc bpc" id="L52" title="1 of 2 branches missed.">            else if (trackType.startsWith(&quot;grade&quot;))</span>
+<span class="fc" id="L53">                weightToPrioMap.put(100d, VERY_NICE);</span>
+        }
+<span class="fc" id="L55">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

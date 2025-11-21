@@ -1,0 +1,898 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LandmarkStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.lm</a> &gt; <span class="el_source">LandmarkStorage.java</span></div><h1>LandmarkStorage.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.lm;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntHashSet;
+import com.carrotsearch.hppc.IntObjectMap;
+import com.carrotsearch.hppc.predicates.IntObjectPredicate;
+import com.carrotsearch.hppc.procedures.IntObjectProcedure;
+import com.graphhopper.coll.MapEntry;
+import com.graphhopper.routing.DijkstraBidirectionRef;
+import com.graphhopper.routing.SPTEntry;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.EncodedValueLookup;
+import com.graphhopper.routing.ev.Subnetwork;
+import com.graphhopper.routing.subnetwork.SubnetworkStorage;
+import com.graphhopper.routing.subnetwork.TarjanSCC;
+import com.graphhopper.routing.subnetwork.TarjanSCC.ConnectedComponents;
+import com.graphhopper.routing.util.AllEdgesIterator;
+import com.graphhopper.routing.util.AreaIndex;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.AbstractAdjustedWeighting;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.*;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.Helper;
+import com.graphhopper.util.StopWatch;
+import com.graphhopper.util.exceptions.ConnectionNotFoundException;
+import com.graphhopper.util.shapes.GHPoint;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * This class stores the landmark nodes and the weights from and to all other nodes in every
+ * subnetwork. This data is created to apply a speed-up for path calculation but at the same times
+ * stays flexible to per-request changes. The class is safe for usage from multiple reading threads
+ * across algorithms.
+ *
+ * @author Peter Karich
+ */
+public class LandmarkStorage {
+
+    // Short.MAX_VALUE = 2^15-1 but we have unsigned short so we need 2^16-1
+    private static final int SHORT_INFINITY = Short.MAX_VALUE * 2 + 1;
+    // We have large values that do not fit into a short, use a specific maximum value
+    static final int SHORT_MAX = SHORT_INFINITY - 1;
+
+<span class="fc" id="L69">    private static final Logger LOGGER = LoggerFactory.getLogger(LandmarkStorage.class);</span>
+    // This value is used to identify nodes where no subnetwork is associated
+    private static final int UNSET_SUBNETWORK = -1;
+    // This value should only be used if subnetwork is too small to be explicitly stored
+    private static final int UNCLEAR_SUBNETWORK = 0;
+    // one node has an associated landmark information ('one landmark row'): the forward and backward weight
+    private long LM_ROW_LENGTH;
+    private int landmarks;
+    private final int FROM_OFFSET;
+    private final int TO_OFFSET;
+    private final DataAccess landmarkWeightDA;
+    // every subnetwork has its own landmark mapping but the count of landmarks is always the same
+    private final List&lt;int[]&gt; landmarkIDs;
+<span class="fc" id="L82">    private double factor = -1;</span>
+    private final static double DOUBLE_MLTPL = 1e6;
+    private final BaseGraph graph;
+    private final NodeAccess na;
+    private final EncodedValueLookup encodedValueLookup;
+    private final Weighting weighting;
+    private final LMConfig lmConfig;
+    private Weighting lmSelectionWeighting;
+    private final TraversalMode traversalMode;
+    private boolean initialized;
+    private int minimumNodes;
+    private final SubnetworkStorage subnetworkStorage;
+<span class="fc" id="L94">    private List&lt;LandmarkSuggestion&gt; landmarkSuggestions = Collections.emptyList();</span>
+    private AreaIndex&lt;SplitArea&gt; areaIndex;
+<span class="fc" id="L96">    private boolean logDetails = false;</span>
+    /**
+     * 'to' and 'from' fit into 32 bit =&gt; 16 bit for each of them =&gt; 65536
+     */
+    static final long PRECISION = 1 &lt;&lt; 16;
+
+<span class="fc" id="L102">    public LandmarkStorage(BaseGraph graph, EncodedValueLookup encodedValueLookup, Directory dir, final LMConfig lmConfig, int landmarks) {</span>
+<span class="fc" id="L103">        this.graph = graph;</span>
+<span class="fc" id="L104">        this.encodedValueLookup = encodedValueLookup;</span>
+<span class="fc" id="L105">        this.na = graph.getNodeAccess();</span>
+<span class="fc" id="L106">        this.minimumNodes = Math.min(graph.getNodes() / 2, 500_000);</span>
+<span class="fc" id="L107">        this.lmConfig = lmConfig;</span>
+<span class="fc" id="L108">        this.weighting = lmConfig.getWeighting();</span>
+<span class="pc bpc" id="L109" title="1 of 2 branches missed.">        if (weighting.hasTurnCosts()) {</span>
+<span class="nc" id="L110">            throw new IllegalArgumentException(&quot;Landmark preparation cannot be used with weightings returning turn costs, because this can lead to wrong results during the (node-based) landmark calculation, see #1960&quot;);</span>
+        }
+        // allowing arbitrary weighting is too dangerous
+<span class="fc" id="L113">        this.lmSelectionWeighting = new AbstractAdjustedWeighting(weighting) {</span>
+            @Override
+            public double calcEdgeWeight(EdgeIteratorState edge, boolean reverse) {
+                // make accessibility of shortest identical to the provided weighting to avoid problems like shown in testWeightingConsistence
+<span class="fc" id="L117">                double res = weighting.calcEdgeWeight(edge, reverse);</span>
+<span class="fc bfc" id="L118" title="All 2 branches covered.">                if (res &gt;= Double.MAX_VALUE)</span>
+<span class="fc" id="L119">                    return Double.POSITIVE_INFINITY;</span>
+
+                // returning the time or distance leads to strange landmark positions (ferries -&gt; slow&amp;very long) and BFS is more what we want
+<span class="fc" id="L122">                return 1;</span>
+            }
+
+            @Override
+            public String getName() {
+<span class="fc" id="L127">                return &quot;LM_BFS|&quot; + weighting.getName();</span>
+            }
+        };
+
+        // Edge based is not really necessary because when adding turn costs while routing we can still
+        // use the node based traversal as this is a smaller weight approximation and will still produce correct results
+        // In this sense its even 'better' to use node-based.
+<span class="fc" id="L134">        this.traversalMode = TraversalMode.NODE_BASED;</span>
+<span class="fc" id="L135">        this.landmarkWeightDA = dir.create(&quot;landmarks_&quot; + lmConfig.getName());</span>
+
+<span class="fc" id="L137">        this.landmarks = landmarks;</span>
+        // one short per landmark and two directions =&gt; 2*2 byte
+<span class="fc" id="L139">        this.LM_ROW_LENGTH = landmarks * 4;</span>
+<span class="fc" id="L140">        this.FROM_OFFSET = 0;</span>
+<span class="fc" id="L141">        this.TO_OFFSET = 2;</span>
+<span class="fc" id="L142">        this.landmarkIDs = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L143">        this.subnetworkStorage = new SubnetworkStorage(dir.create(&quot;landmarks_subnetwork_&quot; + lmConfig.getName()));</span>
+<span class="fc" id="L144">    }</span>
+
+    /**
+     * Specify the maximum possible value for your used area. With this maximum weight value you can influence the storage
+     * precision for your weights that help A* finding its way to the goal. The same value is used for all subnetworks.
+     * Note, if you pick this value too big then too similar weights are stored
+     * (some bits of the storage capability will be left unused).
+     * If too low then far away values will have the same maximum value associated (&quot;maxed out&quot;).
+     * Both will lead to bad performance.
+     *
+     * @param maxWeight use a negative value to automatically determine this value.
+     */
+    public LandmarkStorage setMaximumWeight(double maxWeight) {
+<span class="fc bfc" id="L157" title="All 2 branches covered.">        if (maxWeight &gt; 0) {</span>
+<span class="fc" id="L158">            this.factor = maxWeight / PRECISION;</span>
+<span class="pc bpc" id="L159" title="2 of 4 branches missed.">            if (Double.isInfinite(factor) || Double.isNaN(factor))</span>
+<span class="nc" id="L160">                throw new IllegalStateException(&quot;Illegal factor &quot; + factor + &quot; calculated from maximum weight &quot; + maxWeight);</span>
+        }
+<span class="fc" id="L162">        return this;</span>
+    }
+
+    /**
+     * By default do not log many details.
+     */
+    public void setLogDetails(boolean logDetails) {
+<span class="fc" id="L169">        this.logDetails = logDetails;</span>
+<span class="fc" id="L170">    }</span>
+
+    /**
+     * This method forces the landmark preparation to skip the landmark search and uses the specified landmark list instead.
+     * Useful for manual tuning of larger areas to safe import time or improve quality.
+     */
+    public LandmarkStorage setLandmarkSuggestions(List&lt;LandmarkSuggestion&gt; landmarkSuggestions) {
+<span class="pc bpc" id="L177" title="1 of 2 branches missed.">        if (landmarkSuggestions == null)</span>
+<span class="nc" id="L178">            throw new IllegalArgumentException(&quot;landmark suggestions cannot be null&quot;);</span>
+
+<span class="fc" id="L180">        this.landmarkSuggestions = landmarkSuggestions;</span>
+<span class="fc" id="L181">        return this;</span>
+    }
+
+    /**
+     * This method sets the required number of nodes of a subnetwork for which landmarks should be calculated. Every
+     * subnetwork below this count will be ignored.
+     */
+    public void setMinimumNodes(int minimumNodes) {
+<span class="fc" id="L189">        this.minimumNodes = minimumNodes;</span>
+<span class="fc" id="L190">    }</span>
+
+    /**
+     * @see #setMinimumNodes(int)
+     */
+    public int getMinimumNodes() {
+<span class="nc" id="L196">        return minimumNodes;</span>
+    }
+
+    /**
+     * This weighting is used for the selection heuristic and is per default not the weighting specified in the constructor.
+     * The special weighting leads to a much better distribution of the landmarks and results in better response times.
+     */
+    public void setLMSelectionWeighting(Weighting lmSelectionWeighting) {
+<span class="nc" id="L204">        this.lmSelectionWeighting = lmSelectionWeighting;</span>
+<span class="nc" id="L205">    }</span>
+
+    public Weighting getLmSelectionWeighting() {
+<span class="fc" id="L208">        return lmSelectionWeighting;</span>
+    }
+
+    /**
+     * This method returns the weighting for which the landmarks are originally created
+     */
+    public Weighting getWeighting() {
+<span class="fc" id="L215">        return weighting;</span>
+    }
+
+    public LMConfig getLMConfig() {
+<span class="fc" id="L219">        return lmConfig;</span>
+    }
+
+    boolean isInitialized() {
+<span class="fc" id="L223">        return initialized;</span>
+    }
+
+    /**
+     * This method calculates the landmarks and initial weightings to &amp;amp; from them.
+     */
+    public void createLandmarks() {
+<span class="pc bpc" id="L230" title="1 of 2 branches missed.">        if (isInitialized())</span>
+<span class="nc" id="L231">            throw new IllegalStateException(&quot;Initialize the landmark storage only once!&quot;);</span>
+
+        // fill 'from' and 'to' weights with maximum value
+<span class="fc" id="L234">        long maxBytes = (long) graph.getNodes() * LM_ROW_LENGTH;</span>
+<span class="fc" id="L235">        this.landmarkWeightDA.create(2000);</span>
+<span class="fc" id="L236">        this.landmarkWeightDA.ensureCapacity(maxBytes);</span>
+
+<span class="fc bfc" id="L238" title="All 2 branches covered.">        for (long pointer = 0; pointer &lt; maxBytes; pointer += 2) {</span>
+<span class="fc" id="L239">            landmarkWeightDA.setShort(pointer, (short) SHORT_INFINITY);</span>
+        }
+
+<span class="fc" id="L242">        int[] empty = new int[landmarks];</span>
+<span class="fc" id="L243">        Arrays.fill(empty, UNSET_SUBNETWORK);</span>
+<span class="fc" id="L244">        landmarkIDs.add(empty);</span>
+
+<span class="fc" id="L246">        byte[] subnetworks = new byte[graph.getNodes()];</span>
+<span class="fc" id="L247">        Arrays.fill(subnetworks, (byte) UNSET_SUBNETWORK);</span>
+
+<span class="fc" id="L249">        String snKey = Subnetwork.key(lmConfig.getName());</span>
+        // TODO We could use EdgeBasedTarjanSCC instead of node-based TarjanSCC here to get the small networks directly,
+        //  instead of using the subnetworkEnc from PrepareRoutingSubnetworks.
+<span class="pc bpc" id="L252" title="1 of 2 branches missed.">        if (!encodedValueLookup.hasEncodedValue(snKey))</span>
+<span class="nc" id="L253">            throw new IllegalArgumentException(&quot;EncodedValue '&quot; + snKey + &quot;' does not exist. For Landmarks this is &quot; +</span>
+                    &quot;currently required (also used in PrepareRoutingSubnetworks). See #2256&quot;);
+
+        // Exclude edges that we previously marked in PrepareRoutingSubnetworks to avoid problems like &quot;connection not found&quot;.
+<span class="fc" id="L257">        final BooleanEncodedValue edgeInSubnetworkEnc = encodedValueLookup.getBooleanEncodedValue(snKey);</span>
+        final IntHashSet blockedEdges;
+        // We use the areaIndex to split certain areas from each other but do not permanently change the base graph
+        // so that other algorithms still can route through these regions. This is done to increase the density of
+        // landmarks for an area like Europe+Asia, which improves the query speed.
+<span class="fc bfc" id="L262" title="All 2 branches covered.">        if (areaIndex != null) {</span>
+<span class="fc" id="L263">            StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L264">            blockedEdges = findBorderEdgeIds(areaIndex);</span>
+<span class="pc bpc" id="L265" title="1 of 2 branches missed.">            if (logDetails)</span>
+<span class="nc" id="L266">                LOGGER.info(&quot;Made &quot; + blockedEdges.size() + &quot; edges inaccessible. Calculated country cut in &quot; + sw.stop().getSeconds() + &quot;s, &quot; + Helper.getMemInfo());</span>
+<span class="fc" id="L267">        } else {</span>
+<span class="fc" id="L268">            blockedEdges = new IntHashSet();</span>
+        }
+
+<span class="fc bfc" id="L271" title="All 4 branches covered.">        EdgeFilter accessFilter = edge -&gt; !edge.get(edgeInSubnetworkEnc) &amp;&amp; !blockedEdges.contains(edge.getEdge());</span>
+<span class="fc bfc" id="L272" title="All 4 branches covered.">        EdgeFilter tarjanFilter = edge -&gt; accessFilter.accept(edge) &amp;&amp; Double.isFinite(weighting.calcEdgeWeight(edge, false));</span>
+
+<span class="fc" id="L274">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L275">        ConnectedComponents graphComponents = TarjanSCC.findComponents(graph, tarjanFilter, true);</span>
+<span class="pc bpc" id="L276" title="1 of 2 branches missed.">        if (logDetails)</span>
+<span class="nc" id="L277">            LOGGER.info(&quot;Calculated &quot; + graphComponents.getComponents().size() + &quot; subnetworks via tarjan in &quot; + sw.stop().getSeconds() + &quot;s, &quot; + Helper.getMemInfo());</span>
+
+<span class="fc" id="L279">        String additionalInfo = &quot;&quot;;</span>
+        // guess the factor
+<span class="fc bfc" id="L281" title="All 2 branches covered.">        if (factor &lt;= 0) {</span>
+            // A 'factor' is necessary to store the weight in just a short value but without losing too much precision.
+            // This factor is rather delicate to pick, we estimate it from an exploration with some &quot;test landmarks&quot;,
+            // see estimateMaxWeight. If we pick the distance too big for small areas this could lead to (slightly)
+            // suboptimal routes as there will be too big rounding errors. But picking it too small is bad for performance
+            // e.g. for Germany at least 1500km is very important otherwise speed is at least twice as slow e.g. for 1000km
+<span class="fc" id="L287">            double maxWeight = estimateMaxWeight(graphComponents.getComponents(), accessFilter);</span>
+<span class="fc" id="L288">            setMaximumWeight(maxWeight);</span>
+<span class="fc" id="L289">            additionalInfo = &quot;, maxWeight:&quot; + maxWeight + &quot; from quick estimation&quot;;</span>
+        }
+
+<span class="pc bpc" id="L292" title="1 of 2 branches missed.">        if (logDetails)</span>
+<span class="nc" id="L293">            LOGGER.info(&quot;init landmarks for subnetworks with node count greater than &quot; + minimumNodes + &quot; with factor:&quot; + factor + additionalInfo);</span>
+
+<span class="fc" id="L295">        int nodes = 0;</span>
+<span class="fc bfc" id="L296" title="All 2 branches covered.">        for (IntArrayList subnetworkIds : graphComponents.getComponents()) {</span>
+<span class="fc" id="L297">            nodes += subnetworkIds.size();</span>
+<span class="fc bfc" id="L298" title="All 2 branches covered.">            if (subnetworkIds.size() &lt; minimumNodes)</span>
+<span class="fc" id="L299">                continue;</span>
+<span class="pc bpc" id="L300" title="1 of 2 branches missed.">            if (factor &lt;= 0)</span>
+<span class="nc" id="L301">                throw new IllegalStateException(&quot;factor wasn't initialized &quot; + factor + &quot;, subnetworks:&quot;</span>
+<span class="nc" id="L302">                        + graphComponents.getComponents().size() + &quot;, minimumNodes:&quot; + minimumNodes + &quot;, current size:&quot; + subnetworkIds.size());</span>
+
+<span class="fc" id="L304">            int index = subnetworkIds.size() - 1;</span>
+            // ensure start node is reachable from both sides and no subnetwork is associated
+<span class="pc bpc" id="L306" title="1 of 2 branches missed.">            for (; index &gt;= 0; index--) {</span>
+<span class="fc" id="L307">                int nextStartNode = subnetworkIds.get(index);</span>
+<span class="pc bpc" id="L308" title="1 of 2 branches missed.">                if (subnetworks[nextStartNode] == UNSET_SUBNETWORK) {</span>
+<span class="pc bpc" id="L309" title="1 of 2 branches missed.">                    if (logDetails) {</span>
+<span class="nc" id="L310">                        GHPoint p = createPoint(graph, nextStartNode);</span>
+<span class="nc" id="L311">                        LOGGER.info(&quot;start node: &quot; + nextStartNode + &quot; (&quot; + p + &quot;) subnetwork &quot; + index + &quot;, subnetwork size: &quot; + subnetworkIds.size()</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">                                + &quot;, &quot; + Helper.getMemInfo() + ((areaIndex == null) ? &quot;&quot; : &quot; area:&quot; + areaIndex.query(p.lat, p.lon)));</span>
+                    }
+
+<span class="fc bfc" id="L315" title="All 2 branches covered.">                    if (createLandmarksForSubnetwork(nextStartNode, subnetworks, accessFilter))</span>
+<span class="fc" id="L316">                        break;</span>
+                }
+            }
+<span class="pc bpc" id="L319" title="1 of 2 branches missed.">            if (index &lt; 0)</span>
+<span class="nc" id="L320">                LOGGER.warn(&quot;next start node not found in big enough network of size &quot; + subnetworkIds.size() + &quot;, first element is &quot; + subnetworkIds.get(0) + &quot;, &quot; + createPoint(graph, subnetworkIds.get(0)));</span>
+<span class="fc" id="L321">        }</span>
+
+<span class="fc" id="L323">        int subnetworkCount = landmarkIDs.size();</span>
+        // store all landmark node IDs and one int for the factor itself.
+<span class="fc" id="L325">        this.landmarkWeightDA.ensureCapacity(maxBytes /* landmark weights */ + (long) subnetworkCount * landmarks /* landmark mapping per subnetwork */ + 4);</span>
+
+        // calculate offset to point into landmark mapping
+<span class="fc" id="L328">        long bytePos = maxBytes;</span>
+<span class="fc bfc" id="L329" title="All 2 branches covered.">        for (int[] landmarks : landmarkIDs) {</span>
+<span class="fc bfc" id="L330" title="All 2 branches covered.">            for (int lmNodeId : landmarks) {</span>
+<span class="fc" id="L331">                landmarkWeightDA.setInt(bytePos, lmNodeId);</span>
+<span class="fc" id="L332">                bytePos += 4L;</span>
+            }
+<span class="fc" id="L334">        }</span>
+
+<span class="fc" id="L336">        landmarkWeightDA.setHeader(0 * 4, graph.getNodes());</span>
+<span class="fc" id="L337">        landmarkWeightDA.setHeader(1 * 4, landmarks);</span>
+<span class="fc" id="L338">        landmarkWeightDA.setHeader(2 * 4, subnetworkCount);</span>
+<span class="pc bpc" id="L339" title="1 of 2 branches missed.">        if (factor * DOUBLE_MLTPL &gt; Integer.MAX_VALUE)</span>
+<span class="nc" id="L340">            throw new UnsupportedOperationException(&quot;landmark weight factor cannot be bigger than Integer.MAX_VALUE &quot; + factor * DOUBLE_MLTPL);</span>
+<span class="fc" id="L341">        landmarkWeightDA.setHeader(3 * 4, (int) Math.round(factor * DOUBLE_MLTPL));</span>
+
+        // serialize fast byte[] into DataAccess
+<span class="fc" id="L344">        subnetworkStorage.create(graph.getNodes());</span>
+<span class="fc bfc" id="L345" title="All 2 branches covered.">        for (int nodeId = 0; nodeId &lt; subnetworks.length; nodeId++) {</span>
+<span class="fc" id="L346">            subnetworkStorage.setSubnetwork(nodeId, subnetworks[nodeId]);</span>
+        }
+
+<span class="pc bpc" id="L349" title="1 of 2 branches missed.">        if (logDetails)</span>
+<span class="nc" id="L350">            LOGGER.info(&quot;Finished landmark creation. Subnetwork node count sum &quot; + nodes + &quot; vs. nodes &quot; + graph.getNodes());</span>
+<span class="fc" id="L351">        initialized = true;</span>
+<span class="fc" id="L352">    }</span>
+
+    /**
+     * This method returns the maximum weight for the graph starting from the landmarks
+     */
+    private double estimateMaxWeight(List&lt;IntArrayList&gt; graphComponents, EdgeFilter accessFilter) {
+<span class="fc" id="L358">        double maxWeight = 0;</span>
+<span class="fc" id="L359">        int searchedSubnetworks = 0;</span>
+<span class="fc" id="L360">        Random random = new Random(0);</span>
+        // the maximum weight can only be an approximation so there is only a tiny improvement when we would do this for
+        // all landmarks. See #2027 (1st commit) where only 1 landmark was sufficient when multiplied with 1.01 at the end
+        // TODO instead of calculating the landmarks again here we could store them in landmarkIDs and do this for all here
+<span class="fc" id="L364">        int[] tmpLandmarkNodeIds = new int[3];</span>
+<span class="fc bfc" id="L365" title="All 2 branches covered.">        for (IntArrayList subnetworkIds : graphComponents) {</span>
+<span class="fc bfc" id="L366" title="All 2 branches covered.">            if (subnetworkIds.size() &lt; minimumNodes)</span>
+<span class="fc" id="L367">                continue;</span>
+
+<span class="fc" id="L369">            searchedSubnetworks++;</span>
+<span class="fc" id="L370">            int maxRetries = Math.max(subnetworkIds.size(), 100);</span>
+<span class="pc bpc" id="L371" title="1 of 2 branches missed.">            for (int retry = 0; retry &lt; maxRetries; retry++) {</span>
+<span class="fc" id="L372">                int index = random.nextInt(subnetworkIds.size());</span>
+<span class="fc" id="L373">                int nextStartNode = subnetworkIds.get(index);</span>
+<span class="fc" id="L374">                LandmarkExplorer explorer = findLandmarks(tmpLandmarkNodeIds, nextStartNode, accessFilter, &quot;estimate &quot; + index);</span>
+<span class="fc bfc" id="L375" title="All 2 branches covered.">                if (explorer.getFromCount() &lt; minimumNodes) {</span>
+<span class="fc" id="L376">                    LOGGER.error(&quot;method findLandmarks for &quot; + createPoint(graph, nextStartNode) + &quot; (&quot; + nextStartNode + &quot;)&quot;</span>
+<span class="fc" id="L377">                            + &quot; resulted in too few visited nodes: &quot; + explorer.getFromCount() + &quot; vs expected minimum &quot; + minimumNodes + &quot;, see #2256&quot;);</span>
+<span class="fc" id="L378">                    continue;</span>
+                }
+
+                // starting
+<span class="fc bfc" id="L382" title="All 2 branches covered.">                for (int lmIdx = 0; lmIdx &lt; tmpLandmarkNodeIds.length; lmIdx++) {</span>
+<span class="fc" id="L383">                    int lmNodeId = tmpLandmarkNodeIds[lmIdx];</span>
+<span class="fc" id="L384">                    explorer = new LandmarkExplorer(graph, this, weighting, traversalMode, accessFilter, false);</span>
+<span class="fc" id="L385">                    explorer.setStartNode(lmNodeId);</span>
+<span class="fc" id="L386">                    explorer.runAlgo();</span>
+<span class="fc" id="L387">                    maxWeight = Math.max(maxWeight, explorer.getLastEntry().weight);</span>
+                }
+<span class="fc" id="L389">                break;</span>
+            }
+<span class="fc" id="L391">        }</span>
+
+<span class="pc bpc" id="L393" title="1 of 4 branches missed.">        if (maxWeight &lt;= 0 &amp;&amp; searchedSubnetworks &gt; 0)</span>
+<span class="nc" id="L394">            throw new IllegalStateException(&quot;max weight wasn't set although &quot; + searchedSubnetworks + &quot; subnetworks were searched (total &quot; + graphComponents.size() + &quot;), minimumNodes:&quot; + minimumNodes);</span>
+
+        // we have to increase maxWeight slightly as it is only an approximation towards the maximum weight,
+        // especially when external landmarks are provided, but also because we do not traverse all landmarks
+<span class="fc" id="L398">        return maxWeight * 1.008;</span>
+    }
+
+    /**
+     * This method creates landmarks for the specified subnetwork (integer list)
+     *
+     * @return landmark mapping
+     */
+    private boolean createLandmarksForSubnetwork(final int startNode, final byte[] subnetworks, EdgeFilter accessFilter) {
+<span class="fc" id="L407">        final int subnetworkId = landmarkIDs.size();</span>
+<span class="fc" id="L408">        int[] tmpLandmarkNodeIds = new int[landmarks];</span>
+<span class="fc" id="L409">        int logOffset = Math.max(1, landmarks / 2);</span>
+<span class="fc" id="L410">        boolean pickedPrecalculatedLandmarks = false;</span>
+
+<span class="pc bpc" id="L412" title="1 of 2 branches missed.">        if (!landmarkSuggestions.isEmpty()) {</span>
+<span class="nc" id="L413">            double lat = na.getLat(startNode), lon = na.getLon(startNode);</span>
+<span class="nc" id="L414">            LandmarkSuggestion selectedSuggestion = null;</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">            for (LandmarkSuggestion lmsugg : landmarkSuggestions) {</span>
+<span class="nc bnc" id="L416" title="All 2 branches missed.">                if (lmsugg.getBox().contains(lat, lon)) {</span>
+<span class="nc" id="L417">                    selectedSuggestion = lmsugg;</span>
+<span class="nc" id="L418">                    break;</span>
+                }
+<span class="nc" id="L420">            }</span>
+
+<span class="nc bnc" id="L422" title="All 2 branches missed.">            if (selectedSuggestion != null) {</span>
+<span class="nc bnc" id="L423" title="All 2 branches missed.">                if (selectedSuggestion.getNodeIds().size() &lt; tmpLandmarkNodeIds.length)</span>
+<span class="nc" id="L424">                    throw new IllegalArgumentException(&quot;landmark suggestions are too few &quot; + selectedSuggestion.getNodeIds().size() + &quot; for requested landmarks &quot; + landmarks);</span>
+
+<span class="nc" id="L426">                pickedPrecalculatedLandmarks = true;</span>
+<span class="nc bnc" id="L427" title="All 2 branches missed.">                for (int i = 0; i &lt; tmpLandmarkNodeIds.length; i++) {</span>
+<span class="nc" id="L428">                    int lmNodeId = selectedSuggestion.getNodeIds().get(i);</span>
+<span class="nc" id="L429">                    tmpLandmarkNodeIds[i] = lmNodeId;</span>
+                }
+            }
+        }
+
+<span class="pc bpc" id="L434" title="1 of 2 branches missed.">        if (pickedPrecalculatedLandmarks) {</span>
+<span class="nc" id="L435">            LOGGER.info(&quot;Picked &quot; + tmpLandmarkNodeIds.length + &quot; landmark suggestions, skip finding landmarks&quot;);</span>
+        } else {
+<span class="fc" id="L437">            LandmarkExplorer explorer = findLandmarks(tmpLandmarkNodeIds, startNode, accessFilter, &quot;create&quot;);</span>
+<span class="fc bfc" id="L438" title="All 2 branches covered.">            if (explorer.getFromCount() &lt; minimumNodes) {</span>
+                // too small subnetworks are initialized with special id==0
+<span class="fc" id="L440">                explorer.setSubnetworks(subnetworks, UNCLEAR_SUBNETWORK);</span>
+<span class="fc" id="L441">                return false;</span>
+            }
+<span class="pc bpc" id="L443" title="1 of 2 branches missed.">            if (logDetails)</span>
+<span class="nc" id="L444">                LOGGER.info(&quot;Finished searching landmarks for subnetwork &quot; + subnetworkId + &quot; of size &quot; + explorer.getVisitedNodes());</span>
+        }
+
+        // 2) calculate weights for all landmarks -&gt; 'from' and 'to' weight
+<span class="fc bfc" id="L448" title="All 2 branches covered.">        for (int lmIdx = 0; lmIdx &lt; tmpLandmarkNodeIds.length; lmIdx++) {</span>
+<span class="pc bpc" id="L449" title="1 of 2 branches missed.">            if (Thread.currentThread().isInterrupted()) {</span>
+<span class="nc" id="L450">                throw new RuntimeException(&quot;Thread was interrupted for landmark &quot; + lmIdx);</span>
+            }
+<span class="fc" id="L452">            int lmNodeId = tmpLandmarkNodeIds[lmIdx];</span>
+<span class="fc" id="L453">            LandmarkExplorer explorer = new LandmarkExplorer(graph, this, weighting, traversalMode, accessFilter, false);</span>
+<span class="fc" id="L454">            explorer.setStartNode(lmNodeId);</span>
+<span class="fc" id="L455">            explorer.runAlgo();</span>
+<span class="fc" id="L456">            explorer.initLandmarkWeights(lmIdx, lmNodeId, LM_ROW_LENGTH, FROM_OFFSET);</span>
+
+            // set subnetwork id to all explored nodes, but do this only for the first landmark
+<span class="fc bfc" id="L459" title="All 2 branches covered.">            if (lmIdx == 0) {</span>
+<span class="pc bpc" id="L460" title="1 of 2 branches missed.">                if (explorer.setSubnetworks(subnetworks, subnetworkId))</span>
+<span class="nc" id="L461">                    return false;</span>
+            }
+
+<span class="fc" id="L464">            explorer = new LandmarkExplorer(graph, this, weighting, traversalMode, accessFilter, true);</span>
+<span class="fc" id="L465">            explorer.setStartNode(lmNodeId);</span>
+<span class="fc" id="L466">            explorer.runAlgo();</span>
+<span class="fc" id="L467">            explorer.initLandmarkWeights(lmIdx, lmNodeId, LM_ROW_LENGTH, TO_OFFSET);</span>
+
+<span class="fc bfc" id="L469" title="All 2 branches covered.">            if (lmIdx == 0) {</span>
+<span class="pc bpc" id="L470" title="1 of 2 branches missed.">                if (explorer.setSubnetworks(subnetworks, subnetworkId))</span>
+<span class="nc" id="L471">                    return false;</span>
+            }
+
+<span class="pc bpc" id="L474" title="3 of 4 branches missed.">            if (logDetails &amp;&amp; lmIdx % logOffset == 0)</span>
+<span class="nc" id="L475">                LOGGER.info(&quot;Set landmarks weights [&quot; + weighting + &quot;]. &quot;</span>
+                        + &quot;Progress &quot; + (int) (100.0 * lmIdx / tmpLandmarkNodeIds.length) + &quot;%&quot;);
+        }
+
+        // TODO set weight to SHORT_MAX if entry has either no 'from' or no 'to' entry
+<span class="fc" id="L480">        landmarkIDs.add(tmpLandmarkNodeIds);</span>
+<span class="fc" id="L481">        return true;</span>
+    }
+
+    /**
+     * This method specifies the polygons which should be used to split the world wide area to improve performance and
+     * quality in this scenario.
+     */
+    public void setAreaIndex(AreaIndex&lt;SplitArea&gt; areaIndex) {
+<span class="fc" id="L489">        this.areaIndex = areaIndex;</span>
+<span class="fc" id="L490">    }</span>
+
+    /**
+     * This method makes edges crossing the specified border inaccessible to split a bigger area into smaller subnetworks.
+     * This is important for the world wide use case to limit the maximum distance and also to detect unreasonable routes faster.
+     */
+    protected IntHashSet findBorderEdgeIds(AreaIndex&lt;SplitArea&gt; areaIndex) {
+<span class="fc" id="L497">        AllEdgesIterator allEdgesIterator = graph.getAllEdges();</span>
+<span class="fc" id="L498">        IntHashSet inaccessible = new IntHashSet();</span>
+<span class="fc bfc" id="L499" title="All 2 branches covered.">        while (allEdgesIterator.next()) {</span>
+<span class="fc" id="L500">            int adjNode = allEdgesIterator.getAdjNode();</span>
+<span class="fc" id="L501">            List&lt;SplitArea&gt; areas = areaIndex.query(na.getLat(adjNode), na.getLon(adjNode));</span>
+<span class="pc bpc" id="L502" title="1 of 2 branches missed.">            SplitArea areaAdj = areas.isEmpty() ? null : areas.get(0);</span>
+
+<span class="fc" id="L504">            int baseNode = allEdgesIterator.getBaseNode();</span>
+<span class="fc" id="L505">            areas = areaIndex.query(na.getLat(baseNode), na.getLon(baseNode));</span>
+<span class="pc bpc" id="L506" title="1 of 2 branches missed.">            SplitArea areaBase = areas.isEmpty() ? null : areas.get(0);</span>
+<span class="fc bfc" id="L507" title="All 2 branches covered.">            if (areaAdj != areaBase) {</span>
+<span class="fc" id="L508">                inaccessible.add(allEdgesIterator.getEdge());</span>
+            }
+<span class="fc" id="L510">        }</span>
+<span class="fc" id="L511">        return inaccessible;</span>
+    }
+
+    /**
+     * The factor is used to convert double values into more compact int values.
+     */
+    double getFactor() {
+<span class="fc" id="L518">        return factor;</span>
+    }
+
+    /**
+     * @return the weight from the landmark to the specified node. Where the landmark integer is not
+     * a node ID but the internal index of the landmark array.
+     */
+    int getFromWeight(int landmarkIndex, int node) {
+<span class="fc" id="L526">        int res = (int) landmarkWeightDA.getShort((long) node * LM_ROW_LENGTH + landmarkIndex * 4L + FROM_OFFSET)</span>
+                &amp; 0x0000FFFF;
+<span class="fc bfc" id="L528" title="All 2 branches covered.">        if (res == SHORT_INFINITY)</span>
+            // TODO can happen if endstanding oneway
+            // we should set a 'from' value to SHORT_MAX if the 'to' value was already set to find real bugs
+            // and what to return? Integer.MAX_VALUE i.e. convert to Double.pos_infinity upstream?
+<span class="fc" id="L532">            return SHORT_MAX;</span>
+        // throw new IllegalStateException(&quot;Do not call getFromWeight for wrong landmark[&quot; + landmarkIndex + &quot;]=&quot; + landmarkIDs[landmarkIndex] + &quot; and node &quot; + node);
+        // TODO if(res == MAX) fallback to beeline approximation!?
+
+<span class="fc" id="L536">        return res;</span>
+    }
+
+    /**
+     * @return the weight from the specified node to the landmark (specified *as index*)
+     */
+    int getToWeight(int landmarkIndex, int node) {
+<span class="fc" id="L543">        int res = (int) landmarkWeightDA.getShort((long) node * LM_ROW_LENGTH + landmarkIndex * 4 + TO_OFFSET)</span>
+                &amp; 0x0000FFFF;
+<span class="fc bfc" id="L545" title="All 2 branches covered.">        if (res == SHORT_INFINITY)</span>
+<span class="fc" id="L546">            return SHORT_MAX;</span>
+
+<span class="fc" id="L548">        return res;</span>
+    }
+
+    /**
+     * @return false if the value capacity was reached and instead of the real value the SHORT_MAX was stored.
+     */
+    final boolean setWeight(long pointer, double value) {
+<span class="fc" id="L555">        double tmpVal = value / factor;</span>
+<span class="fc bfc" id="L556" title="All 2 branches covered.">        if (tmpVal &gt; Integer.MAX_VALUE)</span>
+<span class="fc" id="L557">            throw new UnsupportedOperationException(&quot;Cannot store infinity explicitly, pointer=&quot; + pointer + &quot;, value=&quot; + value + &quot;, factor=&quot; + factor);</span>
+
+<span class="fc bfc" id="L559" title="All 2 branches covered.">        if (tmpVal &gt;= SHORT_MAX) {</span>
+<span class="fc" id="L560">            landmarkWeightDA.setShort(pointer, (short) SHORT_MAX);</span>
+<span class="fc" id="L561">            return false;</span>
+        } else {
+<span class="fc" id="L563">            landmarkWeightDA.setShort(pointer, (short) tmpVal);</span>
+<span class="fc" id="L564">            return true;</span>
+        }
+    }
+
+    boolean isInfinity(long pointer) {
+<span class="fc bfc" id="L569" title="All 2 branches covered.">        return ((int) landmarkWeightDA.getShort(pointer) &amp; 0x0000FFFF) == SHORT_INFINITY;</span>
+    }
+
+    // From all available landmarks pick just a few active ones
+    boolean chooseActiveLandmarks(int fromNode, int toNode, int[] activeLandmarkIndices, boolean reverse) {
+<span class="pc bpc" id="L574" title="2 of 4 branches missed.">        if (fromNode &lt; 0 || toNode &lt; 0)</span>
+<span class="nc" id="L575">            throw new IllegalStateException(&quot;from &quot; + fromNode + &quot; and to &quot;</span>
+                    + toNode + &quot; nodes have to be 0 or positive to init landmarks&quot;);
+
+<span class="fc" id="L578">        int subnetworkFrom = subnetworkStorage.getSubnetwork(fromNode);</span>
+<span class="fc" id="L579">        int subnetworkTo = subnetworkStorage.getSubnetwork(toNode);</span>
+<span class="fc bfc" id="L580" title="All 4 branches covered.">        if (subnetworkFrom &lt;= UNCLEAR_SUBNETWORK || subnetworkTo &lt;= UNCLEAR_SUBNETWORK)</span>
+<span class="fc" id="L581">            return false;</span>
+<span class="pc bpc" id="L582" title="1 of 2 branches missed.">        if (subnetworkFrom != subnetworkTo) {</span>
+<span class="nc" id="L583">            throw new ConnectionNotFoundException(&quot;Connection between locations not found. Different subnetworks &quot; + subnetworkFrom</span>
+                    + &quot; vs. &quot; + subnetworkTo, new HashMap&lt;&gt;());
+        }
+
+        // See the similar formula in LMApproximator.approximateForLandmark
+<span class="fc" id="L588">        List&lt;Map.Entry&lt;Integer, Integer&gt;&gt; list = new ArrayList&lt;&gt;(landmarks);</span>
+<span class="fc bfc" id="L589" title="All 2 branches covered.">        for (int lmIndex = 0; lmIndex &lt; landmarks; lmIndex++) {</span>
+<span class="fc" id="L590">            int fromWeight = getFromWeight(lmIndex, toNode) - getFromWeight(lmIndex, fromNode);</span>
+<span class="fc" id="L591">            int toWeight = getToWeight(lmIndex, fromNode) - getToWeight(lmIndex, toNode);</span>
+
+<span class="fc bfc" id="L593" title="All 2 branches covered.">            list.add(new MapEntry&lt;&gt;(reverse</span>
+<span class="fc" id="L594">                    ? Math.max(-fromWeight, -toWeight)</span>
+<span class="fc" id="L595">                    : Math.max(fromWeight, toWeight), lmIndex));</span>
+        }
+
+<span class="fc" id="L598">        Collections.sort(list, SORT_BY_WEIGHT);</span>
+
+<span class="pc bpc" id="L600" title="1 of 2 branches missed.">        if (activeLandmarkIndices[0] &gt;= 0) {</span>
+<span class="nc" id="L601">            IntHashSet set = new IntHashSet(activeLandmarkIndices.length);</span>
+<span class="nc" id="L602">            set.addAll(activeLandmarkIndices);</span>
+<span class="nc" id="L603">            int existingLandmarkCounter = 0;</span>
+<span class="nc" id="L604">            final int COUNT = Math.min(activeLandmarkIndices.length - 2, 2);</span>
+<span class="nc bnc" id="L605" title="All 2 branches missed.">            for (int i = 0; i &lt; activeLandmarkIndices.length; i++) {</span>
+<span class="nc bnc" id="L606" title="All 2 branches missed.">                if (i &gt;= activeLandmarkIndices.length - COUNT + existingLandmarkCounter) {</span>
+                    // keep at least two of the previous landmarks (pick the best)
+<span class="nc" id="L608">                    break;</span>
+                } else {
+<span class="nc" id="L610">                    activeLandmarkIndices[i] = list.get(i).getValue();</span>
+<span class="nc bnc" id="L611" title="All 2 branches missed.">                    if (set.contains(activeLandmarkIndices[i]))</span>
+<span class="nc" id="L612">                        existingLandmarkCounter++;</span>
+                }
+            }
+
+<span class="nc" id="L616">        } else {</span>
+<span class="fc bfc" id="L617" title="All 2 branches covered.">            for (int i = 0; i &lt; activeLandmarkIndices.length; i++) {</span>
+<span class="fc" id="L618">                activeLandmarkIndices[i] = list.get(i).getValue();</span>
+            }
+        }
+
+<span class="fc" id="L622">        return true;</span>
+    }
+
+    public int getLandmarkCount() {
+<span class="fc" id="L626">        return landmarks;</span>
+    }
+
+    public int[] getLandmarks(int subnetwork) {
+<span class="fc" id="L630">        return landmarkIDs.get(subnetwork);</span>
+    }
+
+    /**
+     * @return the number of subnetworks that have landmarks
+     */
+    public int getSubnetworksWithLandmarks() {
+<span class="fc" id="L637">        return landmarkIDs.size();</span>
+    }
+
+    public boolean isEmpty() {
+<span class="fc bfc" id="L641" title="All 2 branches covered.">        return landmarkIDs.size() &lt; 2;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L646">        String str = &quot;&quot;;</span>
+<span class="nc bnc" id="L647" title="All 2 branches missed.">        for (int[] ints : landmarkIDs) {</span>
+<span class="nc bnc" id="L648" title="All 2 branches missed.">            if (!str.isEmpty())</span>
+<span class="nc" id="L649">                str += &quot;, &quot;;</span>
+<span class="nc" id="L650">            str += Arrays.toString(ints);</span>
+<span class="nc" id="L651">        }</span>
+<span class="nc" id="L652">        return str;</span>
+    }
+
+    /**
+     * @return the calculated landmarks as GeoJSON string.
+     */
+    String getLandmarksAsGeoJSON() {
+<span class="fc" id="L659">        String str = &quot;&quot;;</span>
+<span class="fc bfc" id="L660" title="All 2 branches covered.">        for (int subnetwork = 1; subnetwork &lt; landmarkIDs.size(); subnetwork++) {</span>
+<span class="fc" id="L661">            int[] lmArray = landmarkIDs.get(subnetwork);</span>
+<span class="fc bfc" id="L662" title="All 2 branches covered.">            for (int lmIdx = 0; lmIdx &lt; lmArray.length; lmIdx++) {</span>
+<span class="fc" id="L663">                int index = lmArray[lmIdx];</span>
+<span class="fc bfc" id="L664" title="All 2 branches covered.">                if (!str.isEmpty())</span>
+<span class="fc" id="L665">                    str += &quot;,&quot;;</span>
+
+<span class="fc" id="L667">                str += &quot;{ \&quot;type\&quot;: \&quot;Feature\&quot;, \&quot;geometry\&quot;: {\&quot;type\&quot;: \&quot;Point\&quot;, \&quot;coordinates\&quot;: [&quot;</span>
+<span class="fc" id="L668">                        + na.getLon(index) + &quot;, &quot; + na.getLat(index) + &quot;]},&quot;;</span>
+<span class="fc" id="L669">                str += &quot;  \&quot;properties\&quot;:{\&quot;node_index\&quot;:&quot; + index + &quot;,&quot;</span>
+                        + &quot;\&quot;subnetwork\&quot;:&quot; + subnetwork + &quot;,&quot;
+                        + &quot;\&quot;lm_index\&quot;:&quot; + lmIdx + &quot;}&quot;
+                        + &quot;}&quot;;
+            }
+        }
+
+<span class="fc" id="L676">        return &quot;{ \&quot;type\&quot;: \&quot;FeatureCollection\&quot;, \&quot;features\&quot;: [&quot; + str + &quot;]}&quot;;</span>
+    }
+
+    public boolean loadExisting() {
+<span class="pc bpc" id="L680" title="1 of 2 branches missed.">        if (isInitialized())</span>
+<span class="nc" id="L681">            throw new IllegalStateException(&quot;Cannot call PrepareLandmarks.loadExisting if already initialized&quot;);</span>
+<span class="fc bfc" id="L682" title="All 2 branches covered.">        if (landmarkWeightDA.loadExisting()) {</span>
+<span class="pc bpc" id="L683" title="1 of 2 branches missed.">            if (!subnetworkStorage.loadExisting())</span>
+<span class="nc" id="L684">                throw new IllegalStateException(&quot;landmark weights loaded but not the subnetworks!?&quot;);</span>
+
+<span class="fc" id="L686">            int nodes = landmarkWeightDA.getHeader(0 * 4);</span>
+<span class="pc bpc" id="L687" title="1 of 2 branches missed.">            if (nodes != graph.getNodes())</span>
+<span class="nc" id="L688">                throw new IllegalArgumentException(&quot;Cannot load landmark data as written for different graph storage with &quot; + nodes + &quot; nodes, not &quot; + graph.getNodes());</span>
+<span class="fc" id="L689">            landmarks = landmarkWeightDA.getHeader(1 * 4);</span>
+<span class="fc" id="L690">            int subnetworks = landmarkWeightDA.getHeader(2 * 4);</span>
+<span class="fc" id="L691">            factor = landmarkWeightDA.getHeader(3 * 4) / DOUBLE_MLTPL;</span>
+<span class="fc" id="L692">            LM_ROW_LENGTH = landmarks * 4;</span>
+<span class="fc" id="L693">            long maxBytes = LM_ROW_LENGTH * nodes;</span>
+<span class="fc" id="L694">            long bytePos = maxBytes;</span>
+
+            // in the first subnetwork 0 there are no landmark IDs stored
+<span class="fc bfc" id="L697" title="All 2 branches covered.">            for (int j = 0; j &lt; subnetworks; j++) {</span>
+<span class="fc" id="L698">                int[] tmpLandmarks = new int[landmarks];</span>
+<span class="fc bfc" id="L699" title="All 2 branches covered.">                for (int i = 0; i &lt; tmpLandmarks.length; i++) {</span>
+<span class="fc" id="L700">                    tmpLandmarks[i] = landmarkWeightDA.getInt(bytePos);</span>
+<span class="fc" id="L701">                    bytePos += 4;</span>
+                }
+<span class="fc" id="L703">                landmarkIDs.add(tmpLandmarks);</span>
+            }
+
+<span class="fc" id="L706">            initialized = true;</span>
+<span class="fc" id="L707">            return true;</span>
+        }
+<span class="fc" id="L709">        return false;</span>
+    }
+
+    public void flush() {
+<span class="fc" id="L713">        landmarkWeightDA.flush();</span>
+<span class="fc" id="L714">        subnetworkStorage.flush();</span>
+<span class="fc" id="L715">    }</span>
+
+    public void close() {
+<span class="fc" id="L718">        landmarkWeightDA.close();</span>
+<span class="fc" id="L719">        subnetworkStorage.close();</span>
+<span class="fc" id="L720">    }</span>
+
+    public boolean isClosed() {
+<span class="nc" id="L723">        return landmarkWeightDA.isClosed();</span>
+    }
+
+    public long getCapacity() {
+<span class="nc" id="L727">        return landmarkWeightDA.getCapacity() + subnetworkStorage.getCapacity();</span>
+    }
+
+    int getBaseNodes() {
+<span class="fc" id="L731">        return graph.getNodes();</span>
+    }
+
+    private LandmarkExplorer findLandmarks(int[] landmarkNodeIdsToReturn, int startNode, EdgeFilter accessFilter, String info) {
+<span class="fc" id="L735">        int logOffset = Math.max(1, landmarkNodeIdsToReturn.length / 2);</span>
+        // 1a) pick landmarks via special weighting for a better geographical spreading
+<span class="fc" id="L737">        Weighting initWeighting = lmSelectionWeighting;</span>
+<span class="fc" id="L738">        LandmarkExplorer explorer = new LandmarkExplorer(graph, this, initWeighting, traversalMode, accessFilter, false);</span>
+<span class="fc" id="L739">        explorer.setStartNode(startNode);</span>
+<span class="fc" id="L740">        explorer.runAlgo();</span>
+
+<span class="pc bpc" id="L742" title="1 of 2 branches missed.">        if (explorer.getFromCount() &gt;= minimumNodes) {</span>
+            // 1b) we have one landmark, now determine the other landmarks
+<span class="fc" id="L744">            landmarkNodeIdsToReturn[0] = explorer.getLastEntry().adjNode;</span>
+<span class="fc bfc" id="L745" title="All 2 branches covered.">            for (int lmIdx = 0; lmIdx &lt; landmarkNodeIdsToReturn.length - 1; lmIdx++) {</span>
+<span class="fc" id="L746">                explorer = new LandmarkExplorer(graph, this, initWeighting, traversalMode, accessFilter, false);</span>
+                // set all current landmarks as start so that the next getLastNode is hopefully a &quot;far away&quot; node
+<span class="fc bfc" id="L748" title="All 2 branches covered.">                for (int j = 0; j &lt; lmIdx + 1; j++) {</span>
+<span class="fc" id="L749">                    explorer.setStartNode(landmarkNodeIdsToReturn[j]);</span>
+                }
+<span class="fc" id="L751">                explorer.runAlgo();</span>
+<span class="fc" id="L752">                landmarkNodeIdsToReturn[lmIdx + 1] = explorer.getLastEntry().adjNode;</span>
+<span class="pc bpc" id="L753" title="3 of 4 branches missed.">                if (logDetails &amp;&amp; lmIdx % logOffset == 0)</span>
+<span class="nc" id="L754">                    LOGGER.info(&quot;Finding landmarks [&quot; + lmConfig + &quot;] in network [&quot; + explorer.getVisitedNodes() + &quot;] for &quot; + info + &quot;. &quot;</span>
+<span class="nc" id="L755">                            + &quot;Start node:&quot; + startNode + &quot; (&quot; + createPoint(graph, startNode) + &quot;)&quot;</span>
+<span class="nc" id="L756">                            + &quot;Progress &quot; + (int) (100.0 * lmIdx / landmarkNodeIdsToReturn.length) + &quot;%, &quot; + Helper.getMemInfo());</span>
+            }
+        }
+<span class="fc" id="L759">        return explorer;</span>
+    }
+
+    /**
+     * For testing only
+     */
+    DataAccess _getInternalDA() {
+<span class="fc" id="L766">        return landmarkWeightDA;</span>
+    }
+
+    /**
+     * This class is used to calculate landmark location (equally distributed).
+     * It derives from DijkstraBidirectionRef, but is only used as forward or backward search.
+     */
+    private static class LandmarkExplorer extends DijkstraBidirectionRef {
+        private EdgeFilter accessFilter;
+        private final boolean reverse;
+        private final LandmarkStorage lms;
+        private SPTEntry lastEntry;
+
+        public LandmarkExplorer(Graph g, LandmarkStorage lms, Weighting weighting, TraversalMode tMode, EdgeFilter accessFilter, boolean reverse) {
+<span class="fc" id="L780">            super(g, weighting, tMode);</span>
+<span class="fc" id="L781">            this.accessFilter = accessFilter;</span>
+<span class="fc" id="L782">            this.lms = lms;</span>
+<span class="fc" id="L783">            this.reverse = reverse;</span>
+            // set one of the bi directions as already finished
+<span class="fc bfc" id="L785" title="All 2 branches covered.">            if (reverse)</span>
+<span class="fc" id="L786">                finishedFrom = true;</span>
+            else
+<span class="fc" id="L788">                finishedTo = true;</span>
+
+            // no path should be calculated
+<span class="fc" id="L791">            setUpdateBestPath(false);</span>
+<span class="fc" id="L792">        }</span>
+
+        public void setStartNode(int startNode) {
+<span class="fc bfc" id="L795" title="All 2 branches covered.">            if (reverse)</span>
+<span class="fc" id="L796">                initTo(startNode, 0);</span>
+            else
+<span class="fc" id="L798">                initFrom(startNode, 0);</span>
+<span class="fc" id="L799">        }</span>
+
+        @Override
+        protected double calcWeight(EdgeIteratorState iter, SPTEntry currEdge, boolean reverse) {
+<span class="fc bfc" id="L803" title="All 2 branches covered.">            if (!accessFilter.accept(iter))</span>
+<span class="fc" id="L804">                return Double.POSITIVE_INFINITY;</span>
+<span class="fc" id="L805">            return GHUtility.calcWeightWithTurnWeight(weighting, iter, reverse, currEdge.edge) + currEdge.getWeightOfVisitedPath();</span>
+        }
+
+        int getFromCount() {
+<span class="fc" id="L809">            return bestWeightMapFrom.size();</span>
+        }
+
+        public void runAlgo() {
+<span class="fc" id="L813">            super.runAlgo();</span>
+<span class="fc" id="L814">        }</span>
+
+        SPTEntry getLastEntry() {
+<span class="pc bpc" id="L817" title="1 of 2 branches missed.">            if (!finished())</span>
+<span class="nc" id="L818">                throw new IllegalStateException(&quot;Cannot get max weight if not yet finished&quot;);</span>
+<span class="fc" id="L819">            return lastEntry;</span>
+        }
+
+        @Override
+        public boolean finished() {
+<span class="fc bfc" id="L824" title="All 2 branches covered.">            if (reverse) {</span>
+<span class="fc" id="L825">                lastEntry = currTo;</span>
+<span class="fc" id="L826">                return finishedTo;</span>
+            } else {
+<span class="fc" id="L828">                lastEntry = currFrom;</span>
+<span class="fc" id="L829">                return finishedFrom;</span>
+            }
+        }
+
+        public boolean setSubnetworks(final byte[] subnetworks, final int subnetworkId) {
+<span class="pc bpc" id="L834" title="1 of 2 branches missed.">            if (subnetworkId &gt; 127)</span>
+<span class="nc" id="L835">                throw new IllegalStateException(&quot;Too many subnetworks &quot; + subnetworkId);</span>
+
+<span class="fc" id="L837">            final AtomicBoolean failed = new AtomicBoolean(false);</span>
+<span class="fc bfc" id="L838" title="All 2 branches covered.">            IntObjectMap&lt;SPTEntry&gt; map = reverse ? bestWeightMapTo : bestWeightMapFrom;</span>
+<span class="fc" id="L839">            map.forEach(new IntObjectPredicate&lt;SPTEntry&gt;() {</span>
+                @Override
+                public boolean apply(int nodeId, SPTEntry value) {
+<span class="fc" id="L842">                    int sn = subnetworks[nodeId];</span>
+<span class="fc bfc" id="L843" title="All 2 branches covered.">                    if (sn != subnetworkId) {</span>
+<span class="pc bpc" id="L844" title="1 of 4 branches missed.">                        if (sn != UNSET_SUBNETWORK &amp;&amp; sn != UNCLEAR_SUBNETWORK) {</span>
+                            // this is ugly but can happen in real world, see testWithOnewaySubnetworks
+<span class="nc" id="L846">                            LOGGER.error(&quot;subnetworkId for node &quot; + nodeId</span>
+<span class="nc" id="L847">                                    + &quot; (&quot; + createPoint(graph, nodeId) + &quot;) already set (&quot; + sn + &quot;). &quot; + &quot;Cannot change to &quot; + subnetworkId);</span>
+
+<span class="nc" id="L849">                            failed.set(true);</span>
+<span class="nc" id="L850">                            return false;</span>
+                        }
+
+<span class="fc" id="L853">                        subnetworks[nodeId] = (byte) subnetworkId;</span>
+                    }
+<span class="fc" id="L855">                    return true;</span>
+                }
+            });
+<span class="fc" id="L858">            return failed.get();</span>
+        }
+
+        public void initLandmarkWeights(final int lmIdx, int lmNodeId, final long rowSize, final int offset) {
+<span class="fc bfc" id="L862" title="All 2 branches covered.">            IntObjectMap&lt;SPTEntry&gt; map = reverse ? bestWeightMapTo : bestWeightMapFrom;</span>
+<span class="fc" id="L863">            final AtomicInteger maxedout = new AtomicInteger(0);</span>
+<span class="fc" id="L864">            final Map.Entry&lt;Double, Double&gt; finalMaxWeight = new MapEntry&lt;&gt;(0d, 0d);</span>
+
+<span class="fc" id="L866">            map.forEach(new IntObjectProcedure&lt;SPTEntry&gt;() {</span>
+                @Override
+                public void apply(int nodeId, SPTEntry b) {
+<span class="fc bfc" id="L869" title="All 2 branches covered.">                    if (!lms.setWeight(nodeId * rowSize + lmIdx * 4 + offset, b.weight)) {</span>
+<span class="fc" id="L870">                        maxedout.incrementAndGet();</span>
+<span class="fc" id="L871">                        finalMaxWeight.setValue(Math.max(b.weight, finalMaxWeight.getValue()));</span>
+                    }
+<span class="fc" id="L873">                }</span>
+            });
+
+<span class="fc bfc" id="L876" title="All 2 branches covered.">            if ((double) maxedout.get() / map.size() &gt; 0.1) {</span>
+<span class="fc" id="L877">                LOGGER.warn(&quot;landmark &quot; + lmIdx + &quot; (&quot; + nodeAccess.getLat(lmNodeId) + &quot;,&quot; + nodeAccess.getLon(lmNodeId) + &quot;): &quot; +</span>
+<span class="fc" id="L878">                        &quot;too many weights were maxed out (&quot; + maxedout.get() + &quot;/&quot; + map.size() + &quot;). Use a bigger factor than &quot; + lms.factor</span>
+<span class="fc" id="L879">                        + &quot;. For example use maximum_lm_weight: &quot; + finalMaxWeight.getValue() * 1.2 + &quot; in your LM profile definition&quot;);</span>
+            }
+<span class="fc" id="L881">        }</span>
+    }
+
+    /**
+     * Sort landmark by weight and let maximum weight come first, to pick best active landmarks.
+     */
+<span class="fc" id="L887">    final static Comparator&lt;Map.Entry&lt;Integer, Integer&gt;&gt; SORT_BY_WEIGHT = new Comparator&lt;Map.Entry&lt;Integer, Integer&gt;&gt;() {</span>
+        @Override
+        public int compare(Map.Entry&lt;Integer, Integer&gt; o1, Map.Entry&lt;Integer, Integer&gt; o2) {
+<span class="fc" id="L890">            return Integer.compare(o2.getKey(), o1.getKey());</span>
+        }
+    };
+
+    static GHPoint createPoint(Graph graph, int nodeId) {
+<span class="fc" id="L895">        return new GHPoint(graph.getNodeAccess().getLat(nodeId), graph.getNodeAccess().getLon(nodeId));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

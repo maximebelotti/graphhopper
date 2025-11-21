@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>VLongStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">VLongStorage.java</span></div><h1>VLongStorage.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ * 
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import java.util.Arrays;
+
+/**
+ * Taken from Lucene DataOutput. VLong's are longs which have variable length depending on the size.
+ * When used together with 'delta compression' it is likely that you'll use only 1 byte per value.
+ */
+<span class="fc" id="L22">public class VLongStorage {</span>
+    private byte[] bytes;
+<span class="fc" id="L24">    private int pointer = 0;</span>
+
+    public VLongStorage() {
+<span class="fc" id="L27">        this(10);</span>
+<span class="fc" id="L28">    }</span>
+
+    public VLongStorage(int cap) {
+<span class="fc" id="L31">        this(new byte[cap]);</span>
+<span class="fc" id="L32">    }</span>
+
+<span class="fc" id="L34">    public VLongStorage(byte[] bytes) {</span>
+<span class="fc" id="L35">        this.bytes = bytes;</span>
+<span class="fc" id="L36">    }</span>
+
+    public void seek(long pos) {
+        // TODO long vs. int
+<span class="fc" id="L40">        pointer = (int) pos;</span>
+<span class="fc" id="L41">    }</span>
+
+    public long getPosition() {
+<span class="fc" id="L44">        return pointer;</span>
+    }
+
+    public long getLength() {
+<span class="nc" id="L48">        return bytes.length;</span>
+    }
+
+    byte readByte() {
+<span class="fc" id="L52">        byte b = bytes[pointer];</span>
+<span class="fc" id="L53">        pointer++;</span>
+<span class="fc" id="L54">        return b;</span>
+    }
+
+    void writeByte(byte b) {
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        if (pointer &gt;= bytes.length) {</span>
+<span class="fc" id="L59">            int cap = Math.max(10, (int) (pointer * 1.5f));</span>
+<span class="fc" id="L60">            bytes = Arrays.copyOf(bytes, cap);</span>
+        }
+<span class="fc" id="L62">        bytes[pointer] = b;</span>
+<span class="fc" id="L63">        pointer++;</span>
+<span class="fc" id="L64">    }</span>
+
+    /**
+     * Writes an long in a variable-length format. Writes between one and nine bytes. Smaller values
+     * take fewer bytes. Negative numbers are not supported.
+     * &lt;p&gt;
+     * The format is described further in Lucene its DataOutput#writeVInt(int)
+     * &lt;p&gt;
+     * See DataInput readVLong of Lucene
+     */
+    public final void writeVLong(long i) {
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        assert i &gt;= 0L;</span>
+<span class="fc bfc" id="L76" title="All 2 branches covered.">        while ((i &amp; ~0x7FL) != 0L) {</span>
+<span class="fc" id="L77">            writeByte((byte) ((i &amp; 0x7FL) | 0x80L));</span>
+<span class="fc" id="L78">            i &gt;&gt;&gt;= 7;</span>
+        }
+<span class="fc" id="L80">        writeByte((byte) i);</span>
+<span class="fc" id="L81">    }</span>
+
+    /**
+     * Reads a long stored in variable-length format. Reads between one and nine bytes. Smaller
+     * values take fewer bytes. Negative numbers are not supported.
+     * &lt;p&gt;
+     * The format is described further in DataOutput writeVInt(int) from Lucene.
+     */
+    public long readVLong() {
+        /* This is the original code of this method,
+         * but a Hotspot bug (see LUCENE-2975) corrupts the for-loop if
+         * readByte() is inlined. So the loop was unwinded!
+         byte b = readByte();
+         long i = b &amp; 0x7F;
+         for (int shift = 7; (b &amp; 0x80) != 0; shift += 7) {
+         b = readByte();
+         i |= (b &amp; 0x7FL) &lt;&lt; shift;
+         }
+         return i;
+         */
+<span class="fc" id="L101">        byte b = readByte();</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        if (b &gt;= 0) {</span>
+<span class="fc" id="L103">            return b;</span>
+        }
+<span class="fc" id="L105">        long i = b &amp; 0x7FL;</span>
+<span class="fc" id="L106">        b = readByte();</span>
+<span class="fc" id="L107">        i |= (b &amp; 0x7FL) &lt;&lt; 7;</span>
+<span class="pc bpc" id="L108" title="1 of 2 branches missed.">        if (b &gt;= 0) {</span>
+<span class="nc" id="L109">            return i;</span>
+        }
+<span class="fc" id="L111">        b = readByte();</span>
+<span class="fc" id="L112">        i |= (b &amp; 0x7FL) &lt;&lt; 14;</span>
+<span class="pc bpc" id="L113" title="1 of 2 branches missed.">        if (b &gt;= 0) {</span>
+<span class="nc" id="L114">            return i;</span>
+        }
+<span class="fc" id="L116">        b = readByte();</span>
+<span class="fc" id="L117">        i |= (b &amp; 0x7FL) &lt;&lt; 21;</span>
+<span class="pc bpc" id="L118" title="1 of 2 branches missed.">        if (b &gt;= 0) {</span>
+<span class="nc" id="L119">            return i;</span>
+        }
+<span class="fc" id="L121">        b = readByte();</span>
+<span class="fc" id="L122">        i |= (b &amp; 0x7FL) &lt;&lt; 28;</span>
+<span class="pc bpc" id="L123" title="1 of 2 branches missed.">        if (b &gt;= 0) {</span>
+<span class="fc" id="L124">            return i;</span>
+        }
+<span class="nc" id="L126">        b = readByte();</span>
+<span class="nc" id="L127">        i |= (b &amp; 0x7FL) &lt;&lt; 35;</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">        if (b &gt;= 0) {</span>
+<span class="nc" id="L129">            return i;</span>
+        }
+<span class="nc" id="L131">        b = readByte();</span>
+<span class="nc" id="L132">        i |= (b &amp; 0x7FL) &lt;&lt; 42;</span>
+<span class="nc bnc" id="L133" title="All 2 branches missed.">        if (b &gt;= 0) {</span>
+<span class="nc" id="L134">            return i;</span>
+        }
+<span class="nc" id="L136">        b = readByte();</span>
+<span class="nc" id="L137">        i |= (b &amp; 0x7FL) &lt;&lt; 49;</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">        if (b &gt;= 0) {</span>
+<span class="nc" id="L139">            return i;</span>
+        }
+<span class="nc" id="L141">        b = readByte();</span>
+<span class="nc" id="L142">        i |= (b &amp; 0x7FL) &lt;&lt; 56;</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">        if (b &gt;= 0) {</span>
+<span class="nc" id="L144">            return i;</span>
+        }
+<span class="nc" id="L146">        throw new RuntimeException(&quot;Invalid vLong detected (negative values disallowed)&quot;);</span>
+    }
+
+    public void trimToSize() {
+<span class="pc bpc" id="L150" title="1 of 2 branches missed.">        if (bytes.length &gt; pointer) {</span>
+<span class="fc" id="L151">            byte[] tmp = new byte[pointer];</span>
+<span class="fc" id="L152">            System.arraycopy(bytes, 0, tmp, 0, pointer);</span>
+<span class="fc" id="L153">            bytes = tmp;</span>
+        }
+<span class="fc" id="L155">    }</span>
+
+    public byte[] getBytes() {
+<span class="nc" id="L158">        return bytes;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

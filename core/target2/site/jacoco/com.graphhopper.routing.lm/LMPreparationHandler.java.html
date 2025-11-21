@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LMPreparationHandler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.lm</a> &gt; <span class="el_source">LMPreparationHandler.java</span></div><h1>LMPreparationHandler.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.lm;
+
+import com.bedatadriven.jackson.datatype.jts.JtsModule;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.graphhopper.GraphHopperConfig;
+import com.graphhopper.config.LMProfile;
+import com.graphhopper.routing.ev.EncodedValueLookup;
+import com.graphhopper.routing.util.AreaIndex;
+import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.storage.BaseGraph;
+import com.graphhopper.storage.StorableProperties;
+import com.graphhopper.storage.index.LocationIndex;
+import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.JsonFeatureCollection;
+import com.graphhopper.util.Parameters;
+import com.graphhopper.util.Parameters.Landmark;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.net.URL;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static com.graphhopper.util.Helper.*;
+
+/**
+ * This class deals with the A*, landmark and triangulation (ALT) preparations.
+ *
+ * @author Peter Karich
+ */
+public class LMPreparationHandler {
+<span class="fc" id="L54">    private static final Logger LOGGER = LoggerFactory.getLogger(LMPreparationHandler.class);</span>
+<span class="fc" id="L55">    private int landmarkCount = 16;</span>
+<span class="fc" id="L56">    private final List&lt;LMProfile&gt; lmProfiles = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L57">    private final Map&lt;String, Double&gt; maximumWeights = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L58">    private int minNodes = -1;</span>
+<span class="fc" id="L59">    private final List&lt;String&gt; lmSuggestionsLocations = new ArrayList&lt;&gt;(5);</span>
+    private int preparationThreads;
+<span class="fc" id="L61">    private boolean logDetails = false;</span>
+    private AreaIndex&lt;SplitArea&gt; areaIndex;
+
+<span class="fc" id="L64">    public LMPreparationHandler() {</span>
+<span class="fc" id="L65">        setPreparationThreads(1);</span>
+<span class="fc" id="L66">    }</span>
+
+    public void init(GraphHopperConfig ghConfig) {
+        // throw explicit error for deprecated configs
+<span class="pc bpc" id="L70" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;prepare.lm.weightings&quot;)) {</span>
+<span class="nc" id="L71">            throw new IllegalStateException(&quot;Use profiles_lm instead of prepare.lm.weightings, see #1922 and docs/core/profiles.md&quot;);</span>
+        }
+
+<span class="fc" id="L74">        setPreparationThreads(ghConfig.getInt(Parameters.Landmark.PREPARE + &quot;threads&quot;, getPreparationThreads()));</span>
+<span class="fc" id="L75">        setLMProfiles(ghConfig.getLMProfiles());</span>
+
+<span class="fc" id="L77">        landmarkCount = ghConfig.getInt(Parameters.Landmark.COUNT, landmarkCount);</span>
+<span class="fc" id="L78">        logDetails = ghConfig.getBool(Landmark.PREPARE + &quot;log_details&quot;, false);</span>
+<span class="fc" id="L79">        minNodes = ghConfig.getInt(Landmark.PREPARE + &quot;min_network_size&quot;, -1);</span>
+
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        for (String loc : ghConfig.getString(Landmark.PREPARE + &quot;suggestions_location&quot;, &quot;&quot;).split(&quot;,&quot;)) {</span>
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">            if (!loc.trim().isEmpty())</span>
+<span class="nc" id="L83">                lmSuggestionsLocations.add(loc.trim());</span>
+        }
+
+<span class="fc bfc" id="L86" title="All 2 branches covered.">        if (!isEnabled())</span>
+<span class="fc" id="L87">            return;</span>
+
+<span class="fc" id="L89">        String splitAreaLocation = ghConfig.getString(Landmark.PREPARE + &quot;split_area_location&quot;, &quot;&quot;);</span>
+<span class="fc" id="L90">        JsonFeatureCollection landmarkSplittingFeatureCollection = loadLandmarkSplittingFeatureCollection(splitAreaLocation);</span>
+<span class="pc bpc" id="L91" title="2 of 4 branches missed.">        if (landmarkSplittingFeatureCollection != null &amp;&amp; !landmarkSplittingFeatureCollection.getFeatures().isEmpty()) {</span>
+<span class="fc" id="L92">            List&lt;SplitArea&gt; splitAreas = landmarkSplittingFeatureCollection.getFeatures().stream()</span>
+<span class="fc" id="L93">                    .map(SplitArea::fromJsonFeature)</span>
+<span class="fc" id="L94">                    .collect(Collectors.toList());</span>
+<span class="fc" id="L95">            areaIndex = new AreaIndex&lt;&gt;(splitAreas);</span>
+        }
+<span class="fc" id="L97">    }</span>
+
+    public int getLandmarks() {
+<span class="fc" id="L100">        return landmarkCount;</span>
+    }
+
+    public final boolean isEnabled() {
+<span class="fc bfc" id="L104" title="All 2 branches covered.">        return !lmProfiles.isEmpty();</span>
+    }
+
+    public int getPreparationThreads() {
+<span class="fc" id="L108">        return preparationThreads;</span>
+    }
+
+    /**
+     * This method changes the number of threads used for preparation on import. Default is 1. Make
+     * sure that you have enough memory when increasing this number!
+     */
+    public void setPreparationThreads(int preparationThreads) {
+<span class="fc" id="L116">        this.preparationThreads = preparationThreads;</span>
+<span class="fc" id="L117">    }</span>
+
+    public LMPreparationHandler setLMProfiles(LMProfile... lmProfiles) {
+<span class="fc" id="L120">        return setLMProfiles(Arrays.asList(lmProfiles));</span>
+    }
+
+    /**
+     * Enables the use of landmarks to reduce query times.
+     */
+    public LMPreparationHandler setLMProfiles(Collection&lt;LMProfile&gt; lmProfiles) {
+<span class="fc" id="L127">        this.lmProfiles.clear();</span>
+<span class="fc" id="L128">        this.maximumWeights.clear();</span>
+<span class="fc bfc" id="L129" title="All 2 branches covered.">        for (LMProfile profile : lmProfiles) {</span>
+<span class="fc bfc" id="L130" title="All 2 branches covered.">            if (profile.usesOtherPreparation())</span>
+<span class="fc" id="L131">                continue;</span>
+<span class="fc" id="L132">            maximumWeights.put(profile.getProfile(), profile.getMaximumLMWeight());</span>
+<span class="fc" id="L133">        }</span>
+<span class="fc" id="L134">        this.lmProfiles.addAll(lmProfiles);</span>
+<span class="fc" id="L135">        return this;</span>
+    }
+
+    public List&lt;LMProfile&gt; getLMProfiles() {
+<span class="fc" id="L139">        return lmProfiles;</span>
+    }
+
+    /**
+     * Loads the landmark data for all given configs if available.
+     *
+     * @return the loaded landmark storages
+     */
+    public List&lt;LandmarkStorage&gt; load(List&lt;LMConfig&gt; lmConfigs, BaseGraph baseGraph, EncodedValueLookup encodedValueLookup) {
+<span class="fc" id="L148">        List&lt;LandmarkStorage&gt; loaded = Collections.synchronizedList(new ArrayList&lt;&gt;());</span>
+<span class="fc" id="L149">        Stream&lt;Runnable&gt; loadingRunnables = lmConfigs.stream()</span>
+<span class="fc" id="L150">                .map(lmConfig -&gt; () -&gt; {</span>
+                    // todo: specifying ghStorage and landmarkCount should not be necessary, because all we want to do
+                    //       is load the landmark data and these parameters are only needed to calculate the landmarks.
+                    //       we should also work towards a separation of the storage and preparation related code in
+                    //       landmark storage
+<span class="fc" id="L155">                    LandmarkStorage lms = new LandmarkStorage(baseGraph, encodedValueLookup, baseGraph.getDirectory(), lmConfig, landmarkCount);</span>
+<span class="fc bfc" id="L156" title="All 2 branches covered.">                    if (lms.loadExisting())</span>
+<span class="fc" id="L157">                        loaded.add(lms);</span>
+                    else {
+                        // todo: this is very ugly. all we wanted to do was see if the landmarks exist already, but now
+                        //       we need to remove the DAs from the directory. This is because otherwise we cannot
+                        //       create these DataAccess again when we actually prepare the landmarks that don't exist
+                        //       yet.
+<span class="fc" id="L163">                        baseGraph.getDirectory().remove(&quot;landmarks_&quot; + lmConfig.getName());</span>
+<span class="fc" id="L164">                        baseGraph.getDirectory().remove(&quot;landmarks_subnetwork_&quot; + lmConfig.getName());</span>
+                    }
+<span class="fc" id="L166">                });</span>
+<span class="fc" id="L167">        GHUtility.runConcurrently(loadingRunnables, preparationThreads);</span>
+<span class="fc" id="L168">        return loaded;</span>
+    }
+
+    /**
+     * Prepares the landmark data for all given configs
+     */
+    public List&lt;PrepareLandmarks&gt; prepare(List&lt;LMConfig&gt; lmConfigs, BaseGraph baseGraph, EncodingManager encodingManager, StorableProperties properties, LocationIndex locationIndex, final boolean closeEarly) {
+<span class="fc bfc" id="L175" title="All 2 branches covered.">        if (lmConfigs.isEmpty()) {</span>
+<span class="fc" id="L176">            LOGGER.info(&quot;There are no LMs to prepare&quot;);</span>
+<span class="fc" id="L177">            return Collections.emptyList();</span>
+        }
+<span class="fc" id="L179">        List&lt;PrepareLandmarks&gt; preparations = createPreparations(lmConfigs, baseGraph, encodingManager, locationIndex);</span>
+<span class="fc" id="L180">        List&lt;Runnable&gt; prepareRunnables = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L181" title="All 2 branches covered.">        for (int i = 0; i &lt; preparations.size(); i++) {</span>
+<span class="fc" id="L182">            PrepareLandmarks prepare = preparations.get(i);</span>
+<span class="fc" id="L183">            final int count = i + 1;</span>
+<span class="fc" id="L184">            final String name = prepare.getLMConfig().getName();</span>
+<span class="fc" id="L185">            prepareRunnables.add(() -&gt; {</span>
+<span class="fc" id="L186">                LOGGER.info(count + &quot;/&quot; + lmConfigs.size() + &quot; calling LM prepare.doWork for &quot; + prepare.getLMConfig().getName() + &quot; ... (&quot; + getMemInfo() + &quot;)&quot;);</span>
+<span class="fc" id="L187">                Thread.currentThread().setName(name);</span>
+<span class="fc" id="L188">                prepare.doWork();</span>
+<span class="fc bfc" id="L189" title="All 2 branches covered.">                if (closeEarly)</span>
+<span class="fc" id="L190">                    prepare.close();</span>
+<span class="fc" id="L191">                LOGGER.info(&quot;LM {} finished {}&quot;, name, getMemInfo());</span>
+<span class="fc" id="L192">                properties.put(Landmark.PREPARE + &quot;date.&quot; + name, createFormatter().format(new Date()));</span>
+<span class="fc" id="L193">            });</span>
+        }
+<span class="fc" id="L195">        GHUtility.runConcurrently(prepareRunnables.stream(), preparationThreads);</span>
+<span class="fc" id="L196">        LOGGER.info(&quot;Finished LM preparation, {}&quot;, getMemInfo());</span>
+<span class="fc" id="L197">        return preparations;</span>
+    }
+
+    /**
+     * This method creates the landmark storages ready for landmark creation.
+     */
+    List&lt;PrepareLandmarks&gt; createPreparations(List&lt;LMConfig&gt; lmConfigs, BaseGraph graph, EncodedValueLookup encodedValueLookup, LocationIndex locationIndex) {
+<span class="fc" id="L204">        LOGGER.info(&quot;Creating LM preparations, {}&quot;, getMemInfo());</span>
+<span class="fc" id="L205">        List&lt;LandmarkSuggestion&gt; lmSuggestions = new ArrayList&lt;&gt;(lmSuggestionsLocations.size());</span>
+<span class="pc bpc" id="L206" title="1 of 2 branches missed.">        if (!lmSuggestionsLocations.isEmpty()) {</span>
+            try {
+<span class="nc bnc" id="L208" title="All 2 branches missed.">                for (String loc : lmSuggestionsLocations) {</span>
+<span class="nc" id="L209">                    lmSuggestions.add(LandmarkSuggestion.readLandmarks(loc, locationIndex));</span>
+<span class="nc" id="L210">                }</span>
+<span class="nc" id="L211">            } catch (IOException ex) {</span>
+<span class="nc" id="L212">                throw new RuntimeException(ex);</span>
+<span class="nc" id="L213">            }</span>
+        }
+
+<span class="fc" id="L216">        List&lt;PrepareLandmarks&gt; preparations = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L217" title="All 2 branches covered.">        for (LMConfig lmConfig : lmConfigs) {</span>
+<span class="fc" id="L218">            Double maximumWeight = maximumWeights.get(lmConfig.getName());</span>
+<span class="pc bpc" id="L219" title="1 of 2 branches missed.">            if (maximumWeight == null)</span>
+<span class="nc" id="L220">                throw new IllegalStateException(&quot;maximumWeight cannot be null. Default should be just negative. &quot; +</span>
+<span class="nc" id="L221">                        &quot;Couldn't find &quot; + lmConfig.getName() + &quot; in &quot; + maximumWeights);</span>
+
+<span class="fc" id="L223">            PrepareLandmarks prepareLandmarks = new PrepareLandmarks(graph.getDirectory(), graph, encodedValueLookup,</span>
+                    lmConfig, landmarkCount).
+<span class="fc" id="L225">                    setLandmarkSuggestions(lmSuggestions).</span>
+<span class="fc" id="L226">                    setMaximumWeight(maximumWeight).</span>
+<span class="fc" id="L227">                    setLogDetails(logDetails);</span>
+<span class="pc bpc" id="L228" title="1 of 2 branches missed.">            if (minNodes &gt; 1)</span>
+<span class="nc" id="L229">                prepareLandmarks.setMinimumNodes(minNodes);</span>
+            // using the area index we separate certain areas from each other but we do not change the base graph for this
+            // so that other algorithms still can route between these areas
+<span class="pc bpc" id="L232" title="1 of 2 branches missed.">            if (areaIndex != null)</span>
+<span class="nc" id="L233">                prepareLandmarks.setAreaIndex(areaIndex);</span>
+<span class="fc" id="L234">            preparations.add(prepareLandmarks);</span>
+<span class="fc" id="L235">        }</span>
+<span class="fc" id="L236">        return preparations;</span>
+    }
+
+    private JsonFeatureCollection loadLandmarkSplittingFeatureCollection(String splitAreaLocation) {
+<span class="fc" id="L240">        ObjectMapper objectMapper = new ObjectMapper();</span>
+<span class="fc" id="L241">        objectMapper.registerModule(new JtsModule());</span>
+<span class="fc" id="L242">        URL builtinSplittingFile = LandmarkStorage.class.getResource(&quot;map.geo.json&quot;);</span>
+<span class="pc bpc" id="L243" title="1 of 2 branches missed.">        try (Reader reader = splitAreaLocation.isEmpty() ?</span>
+<span class="fc" id="L244">                new InputStreamReader(builtinSplittingFile.openStream(), UTF_CS) :</span>
+<span class="pc" id="L245">                new InputStreamReader(new FileInputStream(splitAreaLocation), UTF_CS)) {</span>
+<span class="fc" id="L246">            JsonFeatureCollection result = objectMapper.readValue(reader, JsonFeatureCollection.class);</span>
+<span class="pc bpc" id="L247" title="1 of 2 branches missed.">            if (splitAreaLocation.isEmpty()) {</span>
+<span class="fc" id="L248">                LOGGER.info(&quot;Loaded built-in landmark splitting collection from {}&quot;, builtinSplittingFile);</span>
+            } else {
+<span class="nc" id="L250">                LOGGER.info(&quot;Loaded landmark splitting collection from {}&quot;, splitAreaLocation);</span>
+            }
+<span class="fc" id="L252">            return result;</span>
+<span class="nc" id="L253">        } catch (IOException e) {</span>
+<span class="nc" id="L254">            LOGGER.error(&quot;Problem while reading border map GeoJSON. Skipping this.&quot;, e);</span>
+<span class="nc" id="L255">            return null;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

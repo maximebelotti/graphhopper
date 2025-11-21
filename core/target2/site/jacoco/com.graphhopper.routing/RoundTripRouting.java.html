@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RoundTripRouting.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">RoundTripRouting.java</span></div><h1>RoundTripRouting.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.IntHashSet;
+import com.carrotsearch.hppc.IntSet;
+import com.carrotsearch.hppc.cursors.IntCursor;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.util.tour.MultiPointTour;
+import com.graphhopper.routing.util.tour.TourStrategy;
+import com.graphhopper.routing.weighting.AvoidEdgesWeighting;
+import com.graphhopper.storage.index.LocationIndex;
+import com.graphhopper.storage.index.Snap;
+import com.graphhopper.util.DistanceCalcEarth;
+import com.graphhopper.util.PMap;
+import com.graphhopper.util.Parameters.Algorithms.RoundTrip;
+import com.graphhopper.util.PointList;
+import com.graphhopper.util.exceptions.PointNotFoundException;
+import com.graphhopper.util.shapes.GHPoint;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+
+/**
+ * Implementation of calculating a route with one or more round trip (route with identical start and
+ * end).
+ *
+ * @author Peter Karich
+ */
+<span class="nc" id="L47">public class RoundTripRouting {</span>
+
+    public static class Params {
+        final double distanceInMeter;
+        final long seed;
+        final double initialHeading;
+        final int roundTripPointCount;
+        final int maxRetries;
+
+        public Params() {
+<span class="fc" id="L57">            this(new PMap(), 0, 3);</span>
+<span class="fc" id="L58">        }</span>
+
+<span class="fc" id="L60">        public Params(PMap hints, double initialHeading, int maxRetries) {</span>
+<span class="fc" id="L61">            distanceInMeter = hints.getDouble(RoundTrip.DISTANCE, 10_000);</span>
+<span class="fc" id="L62">            seed = hints.getLong(RoundTrip.SEED, 0L);</span>
+<span class="fc" id="L63">            roundTripPointCount = Math.min(20, hints.getInt(RoundTrip.POINTS, 2 + (int) (distanceInMeter / 50000)));</span>
+<span class="fc" id="L64">            this.initialHeading = initialHeading;</span>
+<span class="fc" id="L65">            this.maxRetries = maxRetries;</span>
+<span class="fc" id="L66">        }</span>
+    }
+
+    public static List&lt;Snap&gt; lookup(List&lt;GHPoint&gt; points, EdgeFilter edgeFilter, LocationIndex locationIndex, Params params) {
+        // todo: no snap preventions for round trip so far
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        if (points.size() != 1)</span>
+<span class="fc" id="L72">            throw new IllegalArgumentException(&quot;For round trip calculation exactly one point is required&quot;);</span>
+
+<span class="fc" id="L74">        final GHPoint start = points.get(0);</span>
+
+<span class="fc" id="L76">        TourStrategy strategy = new MultiPointTour(new Random(params.seed), params.distanceInMeter, params.roundTripPointCount, params.initialHeading);</span>
+<span class="fc" id="L77">        List&lt;Snap&gt; snaps = new ArrayList&lt;&gt;(2 + strategy.getNumberOfGeneratedPoints());</span>
+<span class="fc" id="L78">        Snap startSnap = locationIndex.findClosest(start.lat, start.lon, edgeFilter);</span>
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        if (!startSnap.isValid())</span>
+<span class="nc" id="L80">            throw new PointNotFoundException(&quot;Cannot find point 0: &quot; + start, 0);</span>
+
+<span class="fc" id="L82">        snaps.add(startSnap);</span>
+
+<span class="fc" id="L84">        GHPoint last = start;</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">        for (int i = 0; i &lt; strategy.getNumberOfGeneratedPoints(); i++) {</span>
+<span class="fc" id="L86">            double heading = strategy.getHeadingForIteration(i);</span>
+<span class="fc" id="L87">            Snap result = generateValidPoint(last, strategy.getDistanceForIteration(i), heading, edgeFilter, locationIndex, params.maxRetries);</span>
+<span class="fc" id="L88">            last = result.getSnappedPoint();</span>
+<span class="fc" id="L89">            snaps.add(result);</span>
+        }
+
+<span class="fc" id="L92">        snaps.add(startSnap);</span>
+<span class="fc" id="L93">        return snaps;</span>
+    }
+
+    private static Snap generateValidPoint(GHPoint lastPoint, double distanceInMeters, double heading, EdgeFilter edgeFilter, LocationIndex locationIndex, int maxRetries) {
+<span class="fc" id="L97">        int tryCount = 0;</span>
+        while (true) {
+<span class="fc" id="L99">            GHPoint generatedPoint = DistanceCalcEarth.DIST_EARTH.projectCoordinate(lastPoint.getLat(), lastPoint.getLon(), distanceInMeters, heading);</span>
+<span class="fc" id="L100">            Snap snap = locationIndex.findClosest(generatedPoint.getLat(), generatedPoint.getLon(), edgeFilter);</span>
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">            if (snap.isValid())</span>
+<span class="fc" id="L102">                return snap;</span>
+
+<span class="nc" id="L104">            tryCount++;</span>
+<span class="nc" id="L105">            distanceInMeters *= 0.95;</span>
+
+<span class="nc bnc" id="L107" title="All 2 branches missed.">            if (tryCount &gt;= maxRetries)</span>
+<span class="nc" id="L108">                throw new IllegalArgumentException(&quot;Could not find a valid point after &quot; + maxRetries + &quot; tries, for the point:&quot; + lastPoint);</span>
+<span class="nc" id="L109">        }</span>
+    }
+
+    public static Result calcPaths(List&lt;Snap&gt; snaps, FlexiblePathCalculator pathCalculator) {
+<span class="fc" id="L113">        RoundTripCalculator roundTripCalculator = new RoundTripCalculator(pathCalculator);</span>
+<span class="fc" id="L114">        Result result = new Result(snaps.size() - 1);</span>
+<span class="fc" id="L115">        Snap start = snaps.get(0);</span>
+<span class="fc bfc" id="L116" title="All 2 branches covered.">        for (int snapIndex = 1; snapIndex &lt; snaps.size(); snapIndex++) {</span>
+            // instead getClosestNode (which might be a virtual one and introducing unnecessary tails of the route)
+            // use next tower node -&gt; getBaseNode or getAdjNode
+            // Later: remove potential route tail, maybe we can just enforce the heading at the start and when coming
+            // back, and for tower nodes it does not matter anyway
+<span class="fc" id="L121">            Snap startSnap = snaps.get(snapIndex - 1);</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">            int startNode = (startSnap == start) ? startSnap.getClosestNode() : startSnap.getClosestEdge().getBaseNode();</span>
+<span class="fc" id="L123">            Snap endSnap = snaps.get(snapIndex);</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">            int endNode = (endSnap == start) ? endSnap.getClosestNode() : endSnap.getClosestEdge().getBaseNode();</span>
+
+<span class="fc" id="L126">            Path path = roundTripCalculator.calcPath(startNode, endNode);</span>
+<span class="fc bfc" id="L127" title="All 2 branches covered.">            if (snapIndex == 1) {</span>
+<span class="fc" id="L128">                result.wayPoints = new PointList(snaps.size(), path.graph.getNodeAccess().is3D());</span>
+<span class="fc" id="L129">                result.wayPoints.add(path.graph.getNodeAccess(), startNode);</span>
+            }
+<span class="fc" id="L131">            result.wayPoints.add(path.graph.getNodeAccess(), endNode);</span>
+<span class="fc" id="L132">            result.visitedNodes += pathCalculator.getVisitedNodes();</span>
+<span class="fc" id="L133">            result.paths.add(path);</span>
+        }
+
+<span class="fc" id="L136">        return result;</span>
+    }
+
+    public static class Result {
+        public List&lt;Path&gt; paths;
+        public PointList wayPoints;
+        public long visitedNodes;
+
+<span class="fc" id="L144">        Result(int legs) {</span>
+<span class="fc" id="L145">            paths = new ArrayList&lt;&gt;(legs);</span>
+<span class="fc" id="L146">        }</span>
+    }
+
+    /**
+     * Calculates paths and avoids edges of previous path calculations
+     */
+    private static class RoundTripCalculator {
+        private final FlexiblePathCalculator pathCalculator;
+<span class="fc" id="L154">        private final IntSet previousEdges = new IntHashSet();</span>
+
+<span class="fc" id="L156">        RoundTripCalculator(FlexiblePathCalculator pathCalculator) {</span>
+<span class="fc" id="L157">            this.pathCalculator = pathCalculator;</span>
+            // we make the path calculator use our avoid edges weighting
+<span class="fc" id="L159">            AvoidEdgesWeighting avoidPreviousPathsWeighting = new AvoidEdgesWeighting(pathCalculator.getWeighting())</span>
+<span class="fc" id="L160">                    .setEdgePenaltyFactor(5);</span>
+<span class="fc" id="L161">            avoidPreviousPathsWeighting.setAvoidedEdges(previousEdges);</span>
+<span class="fc" id="L162">            pathCalculator.setWeighting(avoidPreviousPathsWeighting);</span>
+<span class="fc" id="L163">        }</span>
+
+        Path calcPath(int from, int to) {
+<span class="fc" id="L166">            Path path = pathCalculator.calcPaths(from, to, new EdgeRestrictions()).get(0);</span>
+            // add the edges of this path to the set of previous edges so they will be avoided from now, otherwise
+            // we do not get a nice 'round trip'. note that for this reason we cannot use CH for round-trips currently
+<span class="fc bfc" id="L169" title="All 2 branches covered.">            for (IntCursor c : path.getEdges()) {</span>
+<span class="fc" id="L170">                previousEdges.add(c.value);</span>
+<span class="fc" id="L171">            }</span>
+<span class="fc" id="L172">            return path;</span>
+        }
+
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FlexiblePathCalculator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">FlexiblePathCalculator.java</span></div><h1>FlexiblePathCalculator.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.cursors.IntCursor;
+import com.graphhopper.routing.querygraph.QueryGraph;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.util.Parameters;
+import com.graphhopper.util.StopWatch;
+import com.graphhopper.util.exceptions.MaximumNodesExceededException;
+
+import java.util.Collections;
+import java.util.List;
+
+import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
+
+public class FlexiblePathCalculator implements PathCalculator {
+    private final QueryGraph queryGraph;
+    private final RoutingAlgorithmFactory algoFactory;
+    private Weighting weighting;
+    private final AlgorithmOptions algoOpts;
+    private String debug;
+    private int visitedNodes;
+
+<span class="fc" id="L41">    public FlexiblePathCalculator(QueryGraph queryGraph, RoutingAlgorithmFactory algoFactory, Weighting weighting, AlgorithmOptions algoOpts) {</span>
+<span class="fc" id="L42">        this.queryGraph = queryGraph;</span>
+<span class="fc" id="L43">        this.algoFactory = algoFactory;</span>
+<span class="fc" id="L44">        this.weighting = weighting;</span>
+<span class="fc" id="L45">        this.algoOpts = algoOpts;</span>
+<span class="fc" id="L46">    }</span>
+
+    @Override
+    public List&lt;Path&gt; calcPaths(int from, int to, EdgeRestrictions edgeRestrictions) {
+<span class="fc" id="L50">        RoutingAlgorithm algo = createAlgo();</span>
+<span class="fc" id="L51">        return calcPaths(from, to, edgeRestrictions, algo);</span>
+    }
+
+    private RoutingAlgorithm createAlgo() {
+<span class="fc" id="L55">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L56">        RoutingAlgorithm algo = algoFactory.createAlgo(queryGraph, weighting, algoOpts);</span>
+<span class="fc" id="L57">        debug = &quot;, algoInit:&quot; + (sw.stop().getNanos() / 1000) + &quot; μs&quot;;</span>
+<span class="fc" id="L58">        return algo;</span>
+    }
+
+    private List&lt;Path&gt; calcPaths(int from, int to, EdgeRestrictions edgeRestrictions, RoutingAlgorithm algo) {
+<span class="fc" id="L62">        StopWatch sw = new StopWatch().start();</span>
+        // todo: so far 'heading' is implemented like this: we mark the unfavored edges on the query graph and then
+        // our weighting applies a penalty to these edges. however, this only works for virtual edges and to make
+        // this compatible with edge-based routing we would have to use edge keys instead of edge ids. either way a
+        // better approach seems to be making the weighting (or the algorithm for that matter) aware of the unfavored
+        // edges directly without changing the graph
+<span class="fc bfc" id="L68" title="All 2 branches covered.">        for (IntCursor c : edgeRestrictions.getUnfavoredEdges())</span>
+<span class="fc" id="L69">            queryGraph.unfavorVirtualEdge(c.value);</span>
+
+        List&lt;Path&gt; paths;
+<span class="fc bfc" id="L72" title="All 4 branches covered.">        if (edgeRestrictions.getSourceOutEdge() != ANY_EDGE || edgeRestrictions.getTargetInEdge() != ANY_EDGE) {</span>
+<span class="pc bpc" id="L73" title="1 of 2 branches missed.">            if (!(algo instanceof EdgeToEdgeRoutingAlgorithm))</span>
+<span class="nc" id="L74">                throw new IllegalArgumentException(&quot;To make use of the &quot; + Parameters.Routing.CURBSIDE + &quot; parameter you need a bidirectional algorithm, got: &quot; + algo.getName());</span>
+<span class="fc" id="L75">            paths = Collections.singletonList(((EdgeToEdgeRoutingAlgorithm) algo).calcPath(from, to, edgeRestrictions.getSourceOutEdge(), edgeRestrictions.getTargetInEdge()));</span>
+        } else {
+<span class="fc" id="L77">            paths = algo.calcPaths(from, to);</span>
+        }
+
+        // reset all direction enforcements in queryGraph to avoid influencing next path
+        // note that afterwards for path processing (like instructions) there will not be a penalty for the unfavored
+        // edges so the edge weight calculated then will be different to the one we used when calculating the route
+<span class="fc" id="L83">        queryGraph.clearUnfavoredStatus();</span>
+
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">        if (paths.isEmpty())</span>
+<span class="nc" id="L86">            throw new IllegalStateException(&quot;Path list was empty for &quot; + from + &quot; -&gt; &quot; + to);</span>
+<span class="fc bfc" id="L87" title="All 2 branches covered.">        if (algo.getVisitedNodes() &gt;= algoOpts.getMaxVisitedNodes())</span>
+<span class="fc" id="L88">            throw new MaximumNodesExceededException(&quot;No path found due to maximum nodes exceeded &quot; + algoOpts.getMaxVisitedNodes(), algoOpts.getMaxVisitedNodes());</span>
+<span class="fc" id="L89">        visitedNodes = algo.getVisitedNodes();</span>
+<span class="fc" id="L90">        debug += &quot;, &quot; + algo.getName() + &quot;-routing:&quot; + sw.stop().getMillis() + &quot; ms&quot;;</span>
+<span class="fc" id="L91">        return paths;</span>
+    }
+
+    @Override
+    public String getDebugString() {
+<span class="fc" id="L96">        return debug;</span>
+    }
+
+    @Override
+    public int getVisitedNodes() {
+<span class="fc" id="L101">        return visitedNodes;</span>
+    }
+
+    public Weighting getWeighting() {
+<span class="fc" id="L105">        return weighting;</span>
+    }
+
+    public void setWeighting(Weighting weighting) {
+<span class="fc" id="L109">        this.weighting = weighting;</span>
+<span class="fc" id="L110">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

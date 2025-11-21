@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StringEncodedValue.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">StringEncodedValue.java</span></div><h1>StringEncodedValue.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.ev;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.util.*;
+
+/**
+ * This class holds a List of up to {@link #maxValues} encountered Strings and stores
+ * &lt;i&gt;index+1&lt;/i&gt; to indicate a string is set or &lt;i&gt;0&lt;/i&gt; if no value is assigned
+ *
+ * @author Peter Karich
+ * @author Thomas Butz
+ */
+public final class StringEncodedValue extends IntEncodedValueImpl {
+    private final int maxValues;
+    private final List&lt;String&gt; values;
+    private final Map&lt;String, Integer&gt; indexMap;
+
+    public StringEncodedValue(String name, int expectedValueCount) {
+<span class="fc" id="L21">        this(name, expectedValueCount, false);</span>
+<span class="fc" id="L22">    }</span>
+
+    public StringEncodedValue(String name, int expectedValueCount, boolean storeTwoDirections) {
+<span class="fc" id="L25">        super(name, 32 - Integer.numberOfLeadingZeros(expectedValueCount), storeTwoDirections);</span>
+
+<span class="fc" id="L27">        this.maxValues = roundUp(expectedValueCount);</span>
+<span class="fc" id="L28">        this.values = new ArrayList&lt;&gt;(maxValues);</span>
+<span class="fc" id="L29">        this.indexMap = new HashMap&lt;&gt;(maxValues);</span>
+<span class="fc" id="L30">    }</span>
+
+    public StringEncodedValue(String name, int bits, List&lt;String&gt; values, boolean storeTwoDirections) {
+<span class="fc" id="L33">        super(name, bits, storeTwoDirections);</span>
+
+<span class="fc" id="L35">        this.maxValues = (1 &lt;&lt; bits) - 1;</span>
+<span class="fc bfc" id="L36" title="All 2 branches covered.">        if (values.size() &gt; maxValues)</span>
+<span class="fc" id="L37">            throw new IllegalArgumentException(&quot;Number of values is higher than the maximum value count: &quot;</span>
+<span class="fc" id="L38">                    + values.size() + &quot; &gt; &quot; + maxValues);</span>
+
+<span class="fc" id="L40">        this.values = new ArrayList&lt;&gt;(values);</span>
+<span class="fc" id="L41">        this.indexMap = new HashMap&lt;&gt;(values.size());</span>
+<span class="fc" id="L42">        int index = 1;</span>
+<span class="fc bfc" id="L43" title="All 2 branches covered.">        for (String value : values) {</span>
+<span class="fc" id="L44">            indexMap.put(value, index++);</span>
+<span class="fc" id="L45">        }</span>
+<span class="fc" id="L46">    }</span>
+
+    @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
+    StringEncodedValue(
+            @JsonProperty(&quot;name&quot;) String name,
+            @JsonProperty(&quot;bits&quot;) int bits,
+            @JsonProperty(&quot;min_storable_value&quot;) int minStorableValue,
+            @JsonProperty(&quot;max_storable_value&quot;) int maxStorableValue,
+            @JsonProperty(&quot;max_value&quot;) int maxValue,
+            @JsonProperty(&quot;negate_reverse_direction&quot;) boolean negateReverseDirection,
+            @JsonProperty(&quot;store_two_directions&quot;) boolean storeTwoDirections,
+            @JsonProperty(&quot;fwd_data_index&quot;) int fwdDataIndex,
+            @JsonProperty(&quot;bwd_data_index&quot;) int bwdDataIndex,
+            @JsonProperty(&quot;fwd_shift&quot;) int fwdShift,
+            @JsonProperty(&quot;bwd_shift&quot;) int bwdShift,
+            @JsonProperty(&quot;fwd_mask&quot;) int fwdMask,
+            @JsonProperty(&quot;bwd_mask&quot;) int bwdMask,
+            @JsonProperty(&quot;max_values&quot;) int maxValues,
+            @JsonProperty(&quot;values&quot;) List&lt;String&gt; values,
+            @JsonProperty(&quot;index_map&quot;) HashMap&lt;String, Integer&gt; indexMap) {
+        // we need this constructor for Jackson
+<span class="fc" id="L67">        super(name, bits, minStorableValue, maxStorableValue, maxValue, negateReverseDirection, storeTwoDirections, fwdDataIndex, bwdDataIndex, fwdShift, bwdShift, fwdMask, bwdMask);</span>
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">        if (values.size() &gt; maxValues)</span>
+<span class="nc" id="L69">            throw new IllegalArgumentException(&quot;Number of values is higher than the maximum value count: &quot;</span>
+<span class="nc" id="L70">                    + values.size() + &quot; &gt; &quot; + maxValues);</span>
+<span class="fc" id="L71">        this.maxValues = maxValues;</span>
+<span class="fc" id="L72">        this.values = values;</span>
+<span class="fc" id="L73">        this.indexMap = indexMap;</span>
+<span class="fc" id="L74">    }</span>
+
+    public final void setString(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess, String value) {
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        if (value == null) {</span>
+<span class="fc" id="L78">            super.setInt(reverse, edgeId, edgeIntAccess, 0);</span>
+<span class="fc" id="L79">            return;</span>
+        }
+<span class="fc" id="L81">        int index = indexMap.getOrDefault(value, 0);</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">        if (index == 0) {</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">            if (values.size() == maxValues)</span>
+<span class="fc" id="L84">                throw new IllegalStateException(&quot;Maximum number of values reached for &quot; + getName() + &quot;: &quot; + maxValues);</span>
+
+<span class="fc" id="L86">            values.add(value);</span>
+<span class="fc" id="L87">            index = values.size();</span>
+<span class="fc" id="L88">            indexMap.put(value, index);</span>
+        }
+<span class="fc" id="L90">        super.setInt(reverse, edgeId, edgeIntAccess, index);</span>
+<span class="fc" id="L91">    }</span>
+
+    public final String getString(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess) {
+<span class="fc" id="L94">        int value = super.getInt(reverse, edgeId, edgeIntAccess);</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        if (value == 0) {</span>
+<span class="fc" id="L96">            return null;</span>
+        }
+<span class="fc" id="L98">        return values.get(value - 1);</span>
+    }
+
+    /**
+     * @param value the value to be rounded
+     * @return the value rounded to the highest integer with the same number of leading zeros
+     */
+    private static int roundUp(int value) {
+<span class="fc" id="L106">        return -1 &gt;&gt;&gt; Integer.numberOfLeadingZeros(value);</span>
+    }
+
+    /**
+     * @param value the String to retrieve the index
+     * @return the non-zero index of the String or &lt;i&gt;0&lt;/i&gt; if it couldn't be found
+     */
+    public int indexOf(String value) {
+<span class="nc" id="L114">        return indexMap.getOrDefault(value, 0);</span>
+    }
+
+    /**
+     * @return an unmodifiable List of the current values
+     */
+    public List&lt;String&gt; getValues() {
+<span class="fc" id="L121">        return Collections.unmodifiableList(values);</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

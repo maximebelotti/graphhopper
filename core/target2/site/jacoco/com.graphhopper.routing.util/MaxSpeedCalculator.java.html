@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MaxSpeedCalculator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util</a> &gt; <span class="el_source">MaxSpeedCalculator.java</span></div><h1>MaxSpeedCalculator.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.util.parsers.DefaultMaxSpeedParser;
+import com.graphhopper.routing.util.parsers.OSMMaxSpeedParser;
+import com.graphhopper.routing.util.parsers.TagParser;
+import com.graphhopper.storage.DataAccess;
+import com.graphhopper.storage.Directory;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.StopWatch;
+import de.westnordost.osm_legal_default_speeds.LegalDefaultSpeeds;
+import de.westnordost.osm_legal_default_speeds.RoadType;
+import de.westnordost.osm_legal_default_speeds.RoadTypeFilter;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+
+public class MaxSpeedCalculator {
+
+    private final DefaultMaxSpeedParser parser;
+    private final LegalDefaultSpeeds defaultSpeeds;
+    private EdgeIntAccess internalMaxSpeedStorage;
+    private DecimalEncodedValue ruralMaxSpeedEnc;
+    private DecimalEncodedValue urbanMaxSpeedEnc;
+    private DataAccess dataAccess;
+
+<span class="fc" id="L35">    public MaxSpeedCalculator(LegalDefaultSpeeds defaultSpeeds) {</span>
+<span class="fc" id="L36">        this.defaultSpeeds = defaultSpeeds;</span>
+<span class="fc" id="L37">        parser = new DefaultMaxSpeedParser(defaultSpeeds);</span>
+<span class="fc" id="L38">    }</span>
+
+    DecimalEncodedValue getRuralMaxSpeedEnc() {
+<span class="fc" id="L41">        return ruralMaxSpeedEnc;</span>
+    }
+
+    public DecimalEncodedValue getUrbanMaxSpeedEnc() {
+<span class="fc" id="L45">        return urbanMaxSpeedEnc;</span>
+    }
+
+    EdgeIntAccess getInternalMaxSpeedStorage() {
+<span class="fc" id="L49">        return internalMaxSpeedStorage;</span>
+    }
+
+    public LegalDefaultSpeeds getDefaultSpeeds() {
+<span class="nc" id="L53">        return defaultSpeeds;</span>
+    }
+
+    public static LegalDefaultSpeeds createLegalDefaultSpeeds() {
+        SpeedLimitsJson data;
+        try {
+<span class="fc" id="L59">            data = new ObjectMapper().readValue(MaxSpeedCalculator.class.getResource(&quot;legal_default_speeds.json&quot;), SpeedLimitsJson.class);</span>
+<span class="nc" id="L60">        } catch (IOException e) {</span>
+<span class="nc" id="L61">            throw new RuntimeException(e);</span>
+<span class="fc" id="L62">        }</span>
+
+        // pre-converts kmh, mph and &quot;walk&quot; into kmh
+<span class="fc" id="L65">        convertMaxspeed(data.speedLimitsByCountryCode.entrySet());</span>
+
+<span class="fc" id="L67">        LegalDefaultSpeeds speeds = new LegalDefaultSpeeds(data.roadTypesByName, data.speedLimitsByCountryCode);</span>
+<span class="fc" id="L68">        return speeds;</span>
+    }
+
+    private static void convertMaxspeed(Set&lt;Map.Entry&lt;String, List&lt;RoadTypeImpl&gt;&gt;&gt; entrySet) {
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        for (Map.Entry&lt;String, List&lt;RoadTypeImpl&gt;&gt; entry : entrySet) {</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">            for (RoadTypeImpl roadType : entry.getValue()) {</span>
+<span class="fc" id="L74">                Map&lt;String, String&gt; newTags = new HashMap&lt;&gt;(roadType.getTags().size());</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">                for (Map.Entry&lt;String, String&gt; tags : roadType.getTags().entrySet()) {</span>
+                    // note, we could remove conditional tags here to reduce load a bit at import
+
+<span class="fc bfc" id="L78" title="All 2 branches covered.">                    if (&quot;maxspeed&quot;.equals(tags.getKey())</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">                            || &quot;maxspeed:advisory&quot;.equals(tags.getKey())) {</span>
+<span class="fc" id="L80">                        double tmp = OSMMaxSpeedParser.parseMaxspeedString(tags.getValue());</span>
+<span class="pc bpc" id="L81" title="2 of 4 branches missed.">                        if (tmp == MaxSpeed.MAXSPEED_MISSING || tmp == OSMMaxSpeedParser.MAXSPEED_NONE)</span>
+<span class="nc" id="L82">                            throw new IllegalStateException(&quot;illegal maxspeed &quot; + tags.getValue());</span>
+<span class="fc" id="L83">                        newTags.put(tags.getKey(), &quot;&quot; + Math.round(tmp));</span>
+                    }
+<span class="fc" id="L85">                }</span>
+<span class="fc" id="L86">                roadType.setTags(newTags);</span>
+<span class="fc" id="L87">            }</span>
+<span class="fc" id="L88">        }</span>
+<span class="fc" id="L89">    }</span>
+
+    /**
+     * Creates temporary uni dir max_speed storage that is removed after import.
+     */
+    private EdgeIntAccess createMaxSpeedStorage(DataAccess dataAccess) {
+<span class="fc" id="L95">        return new EdgeIntAccess() {</span>
+
+            public int getInt(int edgeId, int index) {
+<span class="fc" id="L98">                dataAccess.ensureCapacity(edgeId * 2L + 2L);</span>
+<span class="fc" id="L99">                return dataAccess.getShort(edgeId * 2L);</span>
+            }
+
+            public void setInt(int edgeId, int index, int value) {
+<span class="fc" id="L103">                dataAccess.ensureCapacity(edgeId * 2L + 2L);</span>
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">                if (value &gt; Short.MAX_VALUE)</span>
+<span class="nc" id="L105">                    throw new IllegalStateException(&quot;value too large for short: &quot; + value);</span>
+<span class="fc" id="L106">                dataAccess.setShort(edgeId * 2L, (short) value);</span>
+<span class="fc" id="L107">            }</span>
+        };
+    }
+
+    public TagParser getParser() {
+<span class="fc" id="L112">        return parser;</span>
+    }
+
+    public void createDataAccessForParser(Directory directory) {
+<span class="fc" id="L116">        this.dataAccess = directory.create(&quot;max_speed_storage_tmp&quot;).create(1000);</span>
+<span class="fc" id="L117">        this.internalMaxSpeedStorage = createMaxSpeedStorage(this.dataAccess);</span>
+<span class="fc" id="L118">        this.ruralMaxSpeedEnc = new DecimalEncodedValueImpl(&quot;tmp_rural&quot;, 7, 0, 2, false, false, true);</span>
+<span class="fc" id="L119">        this.urbanMaxSpeedEnc = new DecimalEncodedValueImpl(&quot;tmp_urban&quot;, 7, 0, 2, false, false, true);</span>
+<span class="fc" id="L120">        EncodedValue.InitializerConfig config = new EncodedValue.InitializerConfig();</span>
+<span class="fc" id="L121">        ruralMaxSpeedEnc.init(config);</span>
+<span class="fc" id="L122">        urbanMaxSpeedEnc.init(config);</span>
+<span class="pc bpc" id="L123" title="1 of 2 branches missed.">        if (config.getRequiredBytes() &gt; 2)</span>
+<span class="nc" id="L124">            throw new IllegalStateException(&quot;bytes are not sufficient &quot; + config.getRequiredBytes());</span>
+
+<span class="fc" id="L126">        parser.init(ruralMaxSpeedEnc, urbanMaxSpeedEnc, internalMaxSpeedStorage);</span>
+<span class="fc" id="L127">    }</span>
+
+    /**
+     * This method sets max_speed values where the value is {@link MaxSpeed.MAXSPEED_MISSING} to a
+     * value determined by the default speed library which is country-dependent.
+     */
+    public void fillMaxSpeed(Graph graph, EncodingManager em) {
+        // In DefaultMaxSpeedParser and in OSMMaxSpeedParser we don't have the rural/urban info,
+        // but now we have and can fill the country-dependent max_speed value where missing.
+<span class="fc" id="L136">        EnumEncodedValue&lt;UrbanDensity&gt; udEnc = em.getEnumEncodedValue(UrbanDensity.KEY, UrbanDensity.class);</span>
+<span class="fc bfc" id="L137" title="All 2 branches covered.">        fillMaxSpeed(graph, em, edge -&gt; edge.get(udEnc) != UrbanDensity.RURAL);</span>
+<span class="fc" id="L138">    }</span>
+
+    public void fillMaxSpeed(Graph graph, EncodingManager em, Function&lt;EdgeIteratorState, Boolean&gt; isUrbanDensityFun) {
+<span class="fc" id="L141">        DecimalEncodedValue maxSpeedEnc = em.getDecimalEncodedValue(MaxSpeed.KEY);</span>
+<span class="fc" id="L142">        BooleanEncodedValue maxSpeedEstEnc = em.getBooleanEncodedValue(MaxSpeedEstimated.KEY);</span>
+
+<span class="fc" id="L144">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L145">        AllEdgesIterator iter = graph.getAllEdges();</span>
+<span class="fc bfc" id="L146" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L147">            double fwdMaxSpeedPureOSM = iter.get(maxSpeedEnc);</span>
+<span class="fc" id="L148">            double bwdMaxSpeedPureOSM = iter.getReverse(maxSpeedEnc);</span>
+
+            // skip speeds-library if max_speed is known for both directions
+<span class="fc bfc" id="L151" title="All 4 branches covered.">            if (fwdMaxSpeedPureOSM != MaxSpeed.MAXSPEED_MISSING</span>
+<span class="fc" id="L152">                    &amp;&amp; bwdMaxSpeedPureOSM != MaxSpeed.MAXSPEED_MISSING) continue;</span>
+
+<span class="fc bfc" id="L154" title="All 2 branches covered.">            double maxSpeed = isUrbanDensityFun.apply(iter)</span>
+<span class="fc" id="L155">                    ? urbanMaxSpeedEnc.getDecimal(false, iter.getEdge(), internalMaxSpeedStorage)</span>
+<span class="fc" id="L156">                    : ruralMaxSpeedEnc.getDecimal(false, iter.getEdge(), internalMaxSpeedStorage);</span>
+<span class="fc bfc" id="L157" title="All 2 branches covered.">            if (maxSpeed != MaxSpeed.MAXSPEED_MISSING) {</span>
+<span class="pc bpc" id="L158" title="1 of 2 branches missed.">                if (maxSpeed == 0) {</span>
+                    // TODO fix properly: RestrictionSetter adds artificial edges for which
+                    //  we didn't set the speed in DefaultMaxSpeedParser, #2914
+<span class="nc" id="L161">                    iter.set(maxSpeedEnc, MaxSpeed.MAXSPEED_MISSING, MaxSpeed.MAXSPEED_MISSING);</span>
+                } else {
+<span class="fc" id="L163">                    iter.set(maxSpeedEnc,</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">                            fwdMaxSpeedPureOSM == MaxSpeed.MAXSPEED_MISSING ? maxSpeed : fwdMaxSpeedPureOSM,</span>
+<span class="pc bpc" id="L165" title="1 of 2 branches missed.">                            bwdMaxSpeedPureOSM == MaxSpeed.MAXSPEED_MISSING ? maxSpeed : bwdMaxSpeedPureOSM);</span>
+<span class="fc" id="L166">                    iter.set(maxSpeedEstEnc, true);</span>
+                }
+            }
+<span class="fc" id="L169">        }</span>
+
+<span class="fc" id="L171">        LoggerFactory.getLogger(getClass()).info(&quot;max_speed_calculator took: &quot; + sw.stop().getSeconds());</span>
+<span class="fc" id="L172">    }</span>
+
+    public void close() {
+<span class="nc" id="L175">        dataAccess.close();</span>
+<span class="nc" id="L176">    }</span>
+
+    public void checkEncodedValues(EncodingManager encodingManager) {
+<span class="nc bnc" id="L179" title="All 2 branches missed.">        if (!encodingManager.hasEncodedValue(Country.KEY))</span>
+<span class="nc" id="L180">            throw new IllegalArgumentException(&quot;max_speed_calculator needs country&quot;);</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">        if (!encodingManager.hasEncodedValue(UrbanDensity.KEY))</span>
+<span class="nc" id="L182">            throw new IllegalArgumentException(&quot;max_speed_calculator needs urban_density&quot;);</span>
+<span class="nc" id="L183">    }</span>
+
+<span class="fc" id="L185">    static class SpeedLimitsJson {</span>
+        @JsonProperty
+        private Map&lt;String, String&gt; meta;
+        @JsonProperty
+        private Map&lt;String, RoadTypeFilterImpl&gt; roadTypesByName;
+        @JsonProperty
+        private Map&lt;String, List&lt;RoadTypeImpl&gt;&gt; speedLimitsByCountryCode;
+        @JsonProperty
+        private List&lt;String&gt; warnings;
+    }
+
+<span class="fc" id="L196">    static class RoadTypeFilterImpl implements RoadTypeFilter {</span>
+
+        private String filter, fuzzyFilter, relationFilter;
+
+        public void setFilter(String filter) {
+<span class="fc" id="L201">            this.filter = filter;</span>
+<span class="fc" id="L202">        }</span>
+
+        public void setFuzzyFilter(String fuzzyFilter) {
+<span class="fc" id="L205">            this.fuzzyFilter = fuzzyFilter;</span>
+<span class="fc" id="L206">        }</span>
+
+        public void setRelationFilter(String relationFilter) {
+<span class="fc" id="L209">            this.relationFilter = relationFilter;</span>
+<span class="fc" id="L210">        }</span>
+
+        @Override
+        public String getFilter() {
+<span class="fc" id="L214">            return filter;</span>
+        }
+
+        @Override
+        public String getFuzzyFilter() {
+<span class="fc" id="L219">            return fuzzyFilter;</span>
+        }
+
+        @Override
+        public String getRelationFilter() {
+<span class="fc" id="L224">            return relationFilter;</span>
+        }
+    }
+
+<span class="fc" id="L228">    static class RoadTypeImpl implements RoadType {</span>
+
+        private String name;
+        private Map&lt;String, String&gt; tags;
+
+        public void setName(String name) {
+<span class="fc" id="L234">            this.name = name;</span>
+<span class="fc" id="L235">        }</span>
+
+        public void setTags(Map&lt;String, String&gt; tags) {
+<span class="fc" id="L238">            this.tags = tags;</span>
+<span class="fc" id="L239">        }</span>
+
+        @Override
+        public String getName() {
+<span class="fc" id="L243">            return name;</span>
+        }
+
+        @Override
+        public Map&lt;String, String&gt; getTags() {
+<span class="fc" id="L248">            return tags;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CarAverageSpeedParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">CarAverageSpeedParser.java</span></div><h1>CarAverageSpeedParser.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.util.FerrySpeedCalculator;
+import com.graphhopper.util.Helper;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
+public class CarAverageSpeedParser extends AbstractAverageSpeedParser implements TagParser {
+
+<span class="fc" id="L32">    protected final Map&lt;String, Integer&gt; trackTypeSpeedMap = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L33">    protected final Set&lt;String&gt; badSurfaceSpeedMap = new HashSet&lt;&gt;();</span>
+    // This value determines the maximal possible on roads with bad surfaces
+    private final int badSurfaceSpeed;
+
+    /**
+     * A map which associates string to speed. Get some impression:
+     * http://www.itoworld.com/map/124#fullscreen
+     * http://wiki.openstreetmap.org/wiki/OSM_tags_for_routing/Maxspeed
+     */
+<span class="fc" id="L42">    protected final Map&lt;String, Integer&gt; defaultSpeedMap = new HashMap&lt;&gt;();</span>
+
+    public CarAverageSpeedParser(EncodedValueLookup lookup) {
+<span class="fc" id="L45">        this(lookup.getDecimalEncodedValue(VehicleSpeed.key(&quot;car&quot;)),</span>
+<span class="fc" id="L46">                lookup.getDecimalEncodedValue(FerrySpeed.KEY));</span>
+<span class="fc" id="L47">    }</span>
+
+    public CarAverageSpeedParser(DecimalEncodedValue speedEnc, DecimalEncodedValue ferrySpeed) {
+<span class="fc" id="L50">        super(speedEnc, ferrySpeed);</span>
+
+<span class="fc" id="L52">        badSurfaceSpeedMap.add(&quot;cobblestone&quot;);</span>
+<span class="fc" id="L53">        badSurfaceSpeedMap.add(&quot;unhewn_cobblestone&quot;);</span>
+<span class="fc" id="L54">        badSurfaceSpeedMap.add(&quot;sett&quot;);</span>
+<span class="fc" id="L55">        badSurfaceSpeedMap.add(&quot;grass_paver&quot;);</span>
+<span class="fc" id="L56">        badSurfaceSpeedMap.add(&quot;gravel&quot;);</span>
+<span class="fc" id="L57">        badSurfaceSpeedMap.add(&quot;fine_gravel&quot;);</span>
+<span class="fc" id="L58">        badSurfaceSpeedMap.add(&quot;pebblestone&quot;);</span>
+<span class="fc" id="L59">        badSurfaceSpeedMap.add(&quot;sand&quot;);</span>
+<span class="fc" id="L60">        badSurfaceSpeedMap.add(&quot;paving_stones&quot;);</span>
+<span class="fc" id="L61">        badSurfaceSpeedMap.add(&quot;dirt&quot;);</span>
+<span class="fc" id="L62">        badSurfaceSpeedMap.add(&quot;earth&quot;);</span>
+<span class="fc" id="L63">        badSurfaceSpeedMap.add(&quot;ground&quot;);</span>
+<span class="fc" id="L64">        badSurfaceSpeedMap.add(&quot;wood&quot;);</span>
+<span class="fc" id="L65">        badSurfaceSpeedMap.add(&quot;grass&quot;);</span>
+<span class="fc" id="L66">        badSurfaceSpeedMap.add(&quot;unpaved&quot;);</span>
+<span class="fc" id="L67">        badSurfaceSpeedMap.add(&quot;compacted&quot;);</span>
+
+        // autobahn
+<span class="fc" id="L70">        defaultSpeedMap.put(&quot;motorway&quot;, 100);</span>
+<span class="fc" id="L71">        defaultSpeedMap.put(&quot;motorway_link&quot;, 70);</span>
+        // bundesstraße
+<span class="fc" id="L73">        defaultSpeedMap.put(&quot;trunk&quot;, 70);</span>
+<span class="fc" id="L74">        defaultSpeedMap.put(&quot;trunk_link&quot;, 65);</span>
+        // linking bigger town
+<span class="fc" id="L76">        defaultSpeedMap.put(&quot;primary&quot;, 65);</span>
+<span class="fc" id="L77">        defaultSpeedMap.put(&quot;primary_link&quot;, 60);</span>
+        // linking towns + villages
+<span class="fc" id="L79">        defaultSpeedMap.put(&quot;secondary&quot;, 60);</span>
+<span class="fc" id="L80">        defaultSpeedMap.put(&quot;secondary_link&quot;, 50);</span>
+        // streets without middle line separation
+<span class="fc" id="L82">        defaultSpeedMap.put(&quot;tertiary&quot;, 50);</span>
+<span class="fc" id="L83">        defaultSpeedMap.put(&quot;tertiary_link&quot;, 40);</span>
+<span class="fc" id="L84">        defaultSpeedMap.put(&quot;unclassified&quot;, 30);</span>
+<span class="fc" id="L85">        defaultSpeedMap.put(&quot;residential&quot;, 30);</span>
+        // spielstraße
+<span class="fc" id="L87">        defaultSpeedMap.put(&quot;living_street&quot;, 5);</span>
+<span class="fc" id="L88">        defaultSpeedMap.put(&quot;service&quot;, 20);</span>
+        // unknown road
+<span class="fc" id="L90">        defaultSpeedMap.put(&quot;road&quot;, 20);</span>
+        // forestry stuff
+<span class="fc" id="L92">        defaultSpeedMap.put(&quot;track&quot;, 15);</span>
+
+<span class="fc" id="L94">        trackTypeSpeedMap.put(&quot;grade1&quot;, 20); // paved</span>
+<span class="fc" id="L95">        trackTypeSpeedMap.put(&quot;grade2&quot;, 15); // now unpaved - gravel mixed with ...</span>
+<span class="fc" id="L96">        trackTypeSpeedMap.put(&quot;grade3&quot;, 10); // ... hard and soft materials</span>
+<span class="fc" id="L97">        trackTypeSpeedMap.put(null, defaultSpeedMap.get(&quot;track&quot;));</span>
+
+        // limit speed on bad surfaces to 30 km/h
+<span class="fc" id="L100">        badSurfaceSpeed = 30;</span>
+<span class="fc" id="L101">    }</span>
+
+    protected double getSpeed(ReaderWay way) {
+<span class="fc" id="L104">        String highwayValue = way.getTag(&quot;highway&quot;, &quot;&quot;);</span>
+<span class="fc" id="L105">        Integer speed = defaultSpeedMap.get(highwayValue);</span>
+
+        // even inaccessible edges get a speed assigned
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        if (speed == null) speed = 10;</span>
+
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        if (highwayValue.equals(&quot;track&quot;)) {</span>
+<span class="fc" id="L111">            String tt = way.getTag(&quot;tracktype&quot;);</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">            if (!Helper.isEmpty(tt)) {</span>
+<span class="fc" id="L113">                Integer tInt = trackTypeSpeedMap.get(tt);</span>
+<span class="fc bfc" id="L114" title="All 2 branches covered.">                if (tInt != null)</span>
+<span class="fc" id="L115">                    speed = tInt;</span>
+            }
+        }
+
+<span class="fc" id="L119">        return speed;</span>
+    }
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way) {
+<span class="fc bfc" id="L124" title="All 2 branches covered.">        if (FerrySpeedCalculator.isFerry(way)) {</span>
+<span class="fc" id="L125">            double ferrySpeed = FerrySpeedCalculator.minmax(ferrySpeedEnc.getDecimal(false, edgeId, edgeIntAccess), avgSpeedEnc);</span>
+<span class="fc" id="L126">            setSpeed(false, edgeId, edgeIntAccess, ferrySpeed);</span>
+<span class="fc bfc" id="L127" title="All 2 branches covered.">            if (avgSpeedEnc.isStoreTwoDirections())</span>
+<span class="fc" id="L128">                setSpeed(true, edgeId, edgeIntAccess, ferrySpeed);</span>
+<span class="fc" id="L129">            return;</span>
+        }
+
+        // get assumed speed from highway type
+<span class="fc" id="L133">        double speed = getSpeed(way);</span>
+<span class="fc" id="L134">        speed = applyBadSurfaceSpeed(way, speed);</span>
+
+<span class="fc" id="L136">        setSpeed(false, edgeId, edgeIntAccess, applyMaxSpeed(way, speed, false));</span>
+<span class="fc" id="L137">        setSpeed(true, edgeId, edgeIntAccess, applyMaxSpeed(way, speed, true));</span>
+<span class="fc" id="L138">    }</span>
+
+    /**
+     * @param way   needed to retrieve tags
+     * @param speed speed guessed e.g. from the road type or other tags
+     * @return The assumed speed.
+     */
+    protected double applyMaxSpeed(ReaderWay way, double speed, boolean bwd) {
+<span class="fc" id="L146">        double maxSpeed = OSMMaxSpeedParser.parseMaxSpeed(way, bwd);</span>
+<span class="fc bfc" id="L147" title="All 2 branches covered.">        return maxSpeed != MaxSpeed.MAXSPEED_MISSING ? Math.max(1, maxSpeed * 0.9) : speed;</span>
+    }
+
+    /**
+     * @param way   needed to retrieve tags
+     * @param speed speed guessed e.g. from the road type or other tags
+     * @return The assumed speed
+     */
+    protected double applyBadSurfaceSpeed(ReaderWay way, double speed) {
+        // limit speed if bad surface
+<span class="pc bpc" id="L157" title="1 of 4 branches missed.">        if (badSurfaceSpeed &gt; 0 &amp;&amp; speed &gt; badSurfaceSpeed) {</span>
+<span class="fc" id="L158">            String surface = way.getTag(&quot;surface&quot;, &quot;&quot;);</span>
+<span class="fc" id="L159">            int colonIndex = surface.indexOf(&quot;:&quot;);</span>
+<span class="fc bfc" id="L160" title="All 2 branches covered.">            if (colonIndex != -1)</span>
+<span class="fc" id="L161">                surface = surface.substring(0, colonIndex);</span>
+<span class="fc bfc" id="L162" title="All 2 branches covered.">            if (badSurfaceSpeedMap.contains(surface))</span>
+<span class="fc" id="L163">                speed = badSurfaceSpeed;</span>
+        }
+<span class="fc" id="L165">        return speed;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

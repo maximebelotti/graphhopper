@@ -1,0 +1,598 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PrepareContractionHierarchies.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ch</a> &gt; <span class="el_source">PrepareContractionHierarchies.java</span></div><h1>PrepareContractionHierarchies.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ch;
+
+import com.carrotsearch.hppc.IntContainer;
+import com.carrotsearch.hppc.cursors.IntCursor;
+import com.graphhopper.coll.MinHeapWithUpdate;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.storage.*;
+import com.graphhopper.util.Helper;
+import com.graphhopper.util.PMap;
+import com.graphhopper.util.StopWatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Locale;
+import java.util.Random;
+
+import static com.graphhopper.routing.ch.CHParameters.*;
+import static com.graphhopper.util.Helper.getMemInfo;
+import static com.graphhopper.util.Helper.nf;
+
+/**
+ * This class prepares the graph for a bidirectional algorithm supporting contraction hierarchies
+ * ie. an algorithm returned by createAlgo.
+ * &lt;p&gt;
+ * There are several descriptions of contraction hierarchies available. The following is one of the
+ * more detailed: http://web.cs.du.edu/~sturtevant/papers/highlevelpathfinding.pdf
+ * &lt;p&gt;
+ * The only difference is that we use two skipped edges instead of one skipped node for faster
+ * unpacking.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class PrepareContractionHierarchies {
+<span class="fc" id="L52">    private final Logger logger = LoggerFactory.getLogger(getClass());</span>
+    private final CHConfig chConfig;
+    private final CHStorage chStore;
+    private final CHStorageBuilder chBuilder;
+<span class="fc" id="L56">    private final Random rand = new Random(123);</span>
+<span class="fc" id="L57">    private final StopWatch allSW = new StopWatch();</span>
+<span class="fc" id="L58">    private final StopWatch periodicUpdateSW = new StopWatch();</span>
+<span class="fc" id="L59">    private final StopWatch lazyUpdateSW = new StopWatch();</span>
+<span class="fc" id="L60">    private final StopWatch neighborUpdateSW = new StopWatch();</span>
+<span class="fc" id="L61">    private final StopWatch contractionSW = new StopWatch();</span>
+    private final Params params;
+    private final BaseGraph graph;
+    private NodeContractor nodeContractor;
+    private final int nodes;
+    private NodeOrderingProvider nodeOrderingProvider;
+    private int maxLevel;
+    // nodes with highest priority come last
+    private MinHeapWithUpdate sortedNodes;
+<span class="fc" id="L70">    private PMap pMap = new PMap();</span>
+    private int checkCounter;
+<span class="fc" id="L72">    private boolean prepared = false;</span>
+
+    public static PrepareContractionHierarchies fromGraph(BaseGraph graph, CHConfig chConfig) {
+<span class="fc" id="L75">        return new PrepareContractionHierarchies(graph.getBaseGraph(), chConfig);</span>
+    }
+
+<span class="fc" id="L78">    private PrepareContractionHierarchies(BaseGraph graph, CHConfig chConfig) {</span>
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        if (!graph.isFrozen())</span>
+<span class="nc" id="L80">            throw new IllegalStateException(&quot;BaseGraph must be frozen before creating CHs&quot;);</span>
+<span class="fc" id="L81">        this.graph = graph;</span>
+<span class="fc" id="L82">        chStore = CHStorage.fromGraph(graph, chConfig);</span>
+<span class="fc" id="L83">        chBuilder = new CHStorageBuilder(chStore);</span>
+<span class="fc" id="L84">        this.chConfig = chConfig;</span>
+<span class="fc" id="L85">        params = Params.forTraversalMode(chConfig.getTraversalMode());</span>
+<span class="fc" id="L86">        nodes = graph.getNodes();</span>
+<span class="fc bfc" id="L87" title="All 2 branches covered.">        if (chConfig.getTraversalMode().isEdgeBased()) {</span>
+<span class="fc" id="L88">            TurnCostStorage turnCostStorage = graph.getTurnCostStorage();</span>
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">            if (turnCostStorage == null) {</span>
+<span class="nc" id="L90">                throw new IllegalArgumentException(&quot;For edge-based CH you need a turn cost storage&quot;);</span>
+            }
+        }
+<span class="fc" id="L93">    }</span>
+
+    public PrepareContractionHierarchies setParams(PMap pMap) {
+<span class="fc" id="L96">        this.pMap = pMap;</span>
+<span class="fc" id="L97">        params.setPeriodicUpdatesPercentage(pMap.getInt(PERIODIC_UPDATES, params.getPeriodicUpdatesPercentage()));</span>
+<span class="fc" id="L98">        params.setLastNodesLazyUpdatePercentage(pMap.getInt(LAST_LAZY_NODES_UPDATES, params.getLastNodesLazyUpdatePercentage()));</span>
+<span class="fc" id="L99">        params.setNeighborUpdatePercentage(pMap.getInt(NEIGHBOR_UPDATES, params.getNeighborUpdatePercentage()));</span>
+<span class="fc" id="L100">        params.setMaxNeighborUpdates(pMap.getInt(NEIGHBOR_UPDATES_MAX, params.getMaxNeighborUpdates()));</span>
+<span class="fc" id="L101">        params.setNodesContractedPercentage(pMap.getInt(CONTRACTED_NODES, params.getNodesContractedPercentage()));</span>
+<span class="fc" id="L102">        params.setLogMessagesPercentage(pMap.getInt(LOG_MESSAGES, params.getLogMessagesPercentage()));</span>
+<span class="fc" id="L103">        return this;</span>
+    }
+
+    /**
+     * Instead of heuristically determining a node ordering for the graph contraction it is also possible
+     * to use a fixed ordering. For example this allows re-using a previously calculated node ordering.
+     * This will speed up CH preparation, but might lead to slower queries.
+     */
+    public PrepareContractionHierarchies useFixedNodeOrdering(NodeOrderingProvider nodeOrderingProvider) {
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">        if (nodeOrderingProvider.getNumNodes() != nodes) {</span>
+<span class="nc" id="L113">            throw new IllegalArgumentException(</span>
+<span class="nc" id="L114">                    &quot;contraction order size (&quot; + nodeOrderingProvider.getNumNodes() + &quot;)&quot; +</span>
+                            &quot; must be equal to number of nodes in graph (&quot; + nodes + &quot;).&quot;);
+        }
+<span class="fc" id="L117">        this.nodeOrderingProvider = nodeOrderingProvider;</span>
+<span class="fc" id="L118">        return this;</span>
+    }
+
+    public Result doWork() {
+<span class="pc bpc" id="L122" title="1 of 2 branches missed.">        if (prepared)</span>
+<span class="nc" id="L123">            throw new IllegalStateException(&quot;Call doWork only once!&quot;);</span>
+<span class="fc" id="L124">        prepared = true;</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">        if (!graph.isFrozen()) {</span>
+<span class="nc" id="L126">            throw new IllegalStateException(&quot;Given BaseGraph has not been frozen yet&quot;);</span>
+        }
+<span class="pc bpc" id="L128" title="1 of 2 branches missed.">        if (chStore.getShortcuts() &gt; 0) {</span>
+<span class="nc" id="L129">            throw new IllegalStateException(&quot;Given CHStore already contains shortcuts&quot;);</span>
+        }
+<span class="fc" id="L131">        allSW.start();</span>
+<span class="fc" id="L132">        initFromGraph();</span>
+<span class="fc" id="L133">        runGraphContraction();</span>
+<span class="fc" id="L134">        allSW.stop();</span>
+<span class="fc" id="L135">        logFinalGraphStats();</span>
+<span class="fc" id="L136">        return new Result(</span>
+                chConfig, chStore,
+<span class="fc" id="L138">                nodeContractor.getAddedShortcutsCount(),</span>
+<span class="fc" id="L139">                lazyUpdateSW.getCurrentSeconds(),</span>
+<span class="fc" id="L140">                periodicUpdateSW.getCurrentSeconds(),</span>
+<span class="fc" id="L141">                neighborUpdateSW.getCurrentSeconds(),</span>
+<span class="fc" id="L142">                allSW.getMillis()</span>
+        );
+    }
+
+    public boolean isPrepared() {
+<span class="nc" id="L147">        return prepared;</span>
+    }
+
+    private void logFinalGraphStats() {
+<span class="fc" id="L151">        logger.info(&quot;shortcuts that exceed maximum weight: {}&quot;, chStore.getNumShortcutsExceedingWeight());</span>
+<span class="fc" id="L152">        logger.info(&quot;took: {}s, graph now - num edges: {}, num nodes: {}, num shortcuts: {}&quot;,</span>
+<span class="fc" id="L153">                (int) allSW.getSeconds(), nf(graph.getEdges()), nf(nodes), nf(chStore.getShortcuts()));</span>
+<span class="fc" id="L154">    }</span>
+
+    private void runGraphContraction() {
+<span class="fc bfc" id="L157" title="All 2 branches covered.">        if (nodes &lt; 1)</span>
+<span class="fc" id="L158">            return;</span>
+<span class="fc" id="L159">        setMaxLevelOnAllNodes();</span>
+<span class="fc bfc" id="L160" title="All 2 branches covered.">        if (nodeOrderingProvider != null) {</span>
+<span class="fc" id="L161">            contractNodesUsingFixedNodeOrdering();</span>
+        } else {
+<span class="fc" id="L163">            contractNodesUsingHeuristicNodeOrdering();</span>
+        }
+<span class="fc" id="L165">    }</span>
+
+    private boolean isEdgeBased() {
+<span class="fc" id="L168">        return chConfig.isEdgeBased();</span>
+    }
+
+    private void initFromGraph() {
+<span class="fc" id="L172">        logger.info(&quot;Creating CH prepare graph, {}&quot;, getMemInfo());</span>
+        CHPreparationGraph prepareGraph;
+<span class="fc bfc" id="L174" title="All 2 branches covered.">        if (chConfig.getTraversalMode().isEdgeBased()) {</span>
+<span class="fc" id="L175">            TurnCostStorage turnCostStorage = graph.getTurnCostStorage();</span>
+<span class="pc bpc" id="L176" title="1 of 2 branches missed.">            if (turnCostStorage == null)</span>
+<span class="nc" id="L177">                throw new IllegalArgumentException(&quot;For edge-based CH you need a turn cost storage&quot;);</span>
+<span class="fc" id="L178">            CHPreparationGraph.TurnCostFunction turnCostFunction = CHPreparationGraph.buildTurnCostFunctionFromTurnCostStorage(graph, chConfig.getWeighting());</span>
+<span class="fc" id="L179">            prepareGraph = CHPreparationGraph.edgeBased(graph.getNodes(), graph.getEdges(), turnCostFunction);</span>
+<span class="fc" id="L180">            nodeContractor = new EdgeBasedNodeContractor(prepareGraph, chBuilder, pMap);</span>
+<span class="fc" id="L181">        } else {</span>
+<span class="fc" id="L182">            prepareGraph = CHPreparationGraph.nodeBased(graph.getNodes(), graph.getEdges());</span>
+<span class="fc" id="L183">            nodeContractor = new NodeBasedNodeContractor(prepareGraph, chBuilder, pMap);</span>
+        }
+<span class="fc" id="L185">        maxLevel = nodes;</span>
+        // we need a memory-efficient priority queue with an efficient update method
+        // TreeMap is not memory-efficient and PriorityQueue does not support an efficient update method
+        // (and is not memory efficient either)
+<span class="fc" id="L189">        sortedNodes = new MinHeapWithUpdate(prepareGraph.getNodes());</span>
+<span class="fc" id="L190">        logger.info(&quot;Building CH prepare graph, {}&quot;, getMemInfo());</span>
+<span class="fc" id="L191">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L192">        CHPreparationGraph.buildFromGraph(prepareGraph, graph, chConfig.getWeighting());</span>
+<span class="fc" id="L193">        logger.info(&quot;Finished building CH prepare graph, took: {}s, {}&quot;, sw.stop().getSeconds(), getMemInfo());</span>
+<span class="fc" id="L194">        nodeContractor.initFromGraph();</span>
+<span class="fc" id="L195">    }</span>
+
+    private void setMaxLevelOnAllNodes() {
+<span class="fc" id="L198">        chBuilder.setLevelForAllNodes(maxLevel);</span>
+<span class="fc" id="L199">    }</span>
+
+    private void updatePrioritiesOfRemainingNodes() {
+<span class="fc" id="L202">        periodicUpdateSW.start();</span>
+<span class="fc" id="L203">        sortedNodes.clear();</span>
+<span class="fc bfc" id="L204" title="All 2 branches covered.">        for (int node = 0; node &lt; nodes; node++) {</span>
+<span class="fc bfc" id="L205" title="All 2 branches covered.">            if (isContracted(node))</span>
+<span class="fc" id="L206">                continue;</span>
+<span class="fc" id="L207">            float priority = calculatePriority(node);</span>
+<span class="fc" id="L208">            sortedNodes.push(node, priority);</span>
+        }
+<span class="fc" id="L210">        periodicUpdateSW.stop();</span>
+<span class="fc" id="L211">    }</span>
+
+    private void contractNodesUsingHeuristicNodeOrdering() {
+<span class="fc" id="L214">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L215">        logger.info(&quot;Building initial queue of nodes to be contracted: {} nodes, {}&quot;, nodes, getMemInfo());</span>
+        // note that we update the priorities before preparing the node contractor. this does not make much sense,
+        // but has always been like that and changing it would possibly require retuning the contraction parameters
+<span class="fc" id="L218">        updatePrioritiesOfRemainingNodes();</span>
+<span class="fc" id="L219">        logger.info(&quot;Finished building queue, took: {}s, {}&quot;, sw.stop().getSeconds(), getMemInfo());</span>
+<span class="fc" id="L220">        final int initSize = sortedNodes.size();</span>
+<span class="fc" id="L221">        int level = 0;</span>
+<span class="fc" id="L222">        checkCounter = 0;</span>
+<span class="pc bpc" id="L223" title="1 of 2 branches missed.">        final long logSize = params.getLogMessagesPercentage() == 0</span>
+<span class="nc" id="L224">                ? Long.MAX_VALUE</span>
+<span class="fc" id="L225">                : Math.round(Math.max(10, initSize * (params.getLogMessagesPercentage() / 100d)));</span>
+
+        // specifies after how many contracted nodes the queue of remaining nodes is rebuilt. this takes time but the
+        // more often we do this the more up-to-date the node priorities will be
+        // todo: instead of using a fixed interval size maybe try adjusting it depending on the number of remaining
+        // nodes ?
+<span class="fc bfc" id="L231" title="All 2 branches covered.">        final long periodicUpdatesCount = params.getPeriodicUpdatesPercentage() == 0</span>
+<span class="fc" id="L232">                ? Long.MAX_VALUE</span>
+<span class="fc" id="L233">                : Math.round(Math.max(10, initSize * (params.getPeriodicUpdatesPercentage() / 100d)));</span>
+<span class="fc" id="L234">        int updateCounter = 0;</span>
+
+        // enable lazy updates for last x percentage of nodes. lazy updates make preparation slower but potentially
+        // keep node priorities more up to date, possibly resulting in a better preparation.
+<span class="fc" id="L238">        final long lastNodesLazyUpdates = Math.round(initSize * (params.getLastNodesLazyUpdatePercentage() / 100d));</span>
+
+        // according to paper &quot;Polynomial-time Construction of Contraction Hierarchies for Multi-criteria Objectives&quot; by Funke and Storandt
+        // we don't need to wait for all nodes to be contracted
+<span class="fc" id="L242">        final long nodesToAvoidContract = Math.round(initSize * ((100 - params.getNodesContractedPercentage()) / 100d));</span>
+
+        // Recompute priority of (the given percentage of) uncontracted neighbors. Doing neighbor updates takes additional
+        // time during preparation but keeps node priorities more up to date. this potentially improves query time and
+        // reduces number of shortcuts.
+<span class="pc bpc" id="L247" title="1 of 2 branches missed.">        final boolean neighborUpdate = (params.getNeighborUpdatePercentage() != 0);</span>
+
+<span class="fc bfc" id="L249" title="All 2 branches covered.">        while (!sortedNodes.isEmpty()) {</span>
+<span class="fc" id="L250">            stopIfInterrupted();</span>
+            // periodically update priorities of ALL nodes
+<span class="fc bfc" id="L252" title="All 4 branches covered.">            if (checkCounter &gt; 0 &amp;&amp; checkCounter % periodicUpdatesCount == 0) {</span>
+<span class="fc" id="L253">                updatePrioritiesOfRemainingNodes();</span>
+<span class="fc" id="L254">                updateCounter++;</span>
+<span class="pc bpc" id="L255" title="1 of 2 branches missed.">                if (sortedNodes.isEmpty())</span>
+<span class="nc" id="L256">                    throw new IllegalStateException(&quot;Cannot prepare as no unprepared nodes where found. Called preparation twice?&quot;);</span>
+            }
+
+<span class="fc bfc" id="L259" title="All 2 branches covered.">            if (checkCounter % logSize == 0) {</span>
+<span class="fc" id="L260">                logHeuristicStats(updateCounter);</span>
+            }
+
+<span class="fc" id="L263">            checkCounter++;</span>
+<span class="fc" id="L264">            int polledNode = sortedNodes.poll();</span>
+
+<span class="pc bpc" id="L266" title="1 of 4 branches missed.">            if (!sortedNodes.isEmpty() &amp;&amp; sortedNodes.size() &lt; lastNodesLazyUpdates) {</span>
+<span class="fc" id="L267">                lazyUpdateSW.start();</span>
+<span class="fc" id="L268">                float priority = calculatePriority(polledNode);</span>
+<span class="fc bfc" id="L269" title="All 2 branches covered.">                if (priority &gt; sortedNodes.peekValue()) {</span>
+                    // current node got more important =&gt; insert as new value and contract it later
+<span class="fc" id="L271">                    sortedNodes.push(polledNode, priority);</span>
+<span class="fc" id="L272">                    lazyUpdateSW.stop();</span>
+<span class="fc" id="L273">                    continue;</span>
+                }
+<span class="fc" id="L275">                lazyUpdateSW.stop();</span>
+            }
+
+            // contract node v!
+<span class="fc" id="L279">            IntContainer neighbors = contractNode(polledNode, level);</span>
+<span class="fc" id="L280">            level++;</span>
+
+<span class="pc bpc" id="L282" title="1 of 2 branches missed.">            if (sortedNodes.size() &lt; nodesToAvoidContract)</span>
+                // skipped nodes are already set to maxLevel
+<span class="nc" id="L284">                break;</span>
+
+<span class="fc" id="L286">            int neighborCount = 0;</span>
+            // there might be multiple edges going to the same neighbor nodes -&gt; only calculate priority once per node
+<span class="fc bfc" id="L288" title="All 2 branches covered.">            for (IntCursor neighbor : neighbors) {</span>
+<span class="pc bpc" id="L289" title="2 of 8 branches missed.">                if (neighborUpdate &amp;&amp; (params.getMaxNeighborUpdates() &lt; 0 || neighborCount &lt; params.getMaxNeighborUpdates()) &amp;&amp; rand.nextInt(100) &lt; params.getNeighborUpdatePercentage()) {</span>
+<span class="fc" id="L290">                    neighborCount++;</span>
+<span class="fc" id="L291">                    neighborUpdateSW.start();</span>
+<span class="fc" id="L292">                    float priority = calculatePriority(neighbor.value);</span>
+<span class="fc" id="L293">                    sortedNodes.update(neighbor.value, priority);</span>
+<span class="fc" id="L294">                    neighborUpdateSW.stop();</span>
+                }
+<span class="fc" id="L296">            }</span>
+<span class="fc" id="L297">        }</span>
+
+<span class="fc" id="L299">        nodeContractor.finishContraction();</span>
+
+<span class="fc" id="L301">        logHeuristicStats(updateCounter);</span>
+
+<span class="fc" id="L303">        logger.info(</span>
+<span class="fc" id="L304">                &quot;new shortcuts: &quot; + nf(nodeContractor.getAddedShortcutsCount())</span>
+<span class="fc" id="L305">                        + &quot;, initSize:&quot; + nf(initSize)</span>
+<span class="fc" id="L306">                        + &quot;, &quot; + chConfig.getWeighting()</span>
+<span class="fc" id="L307">                        + &quot;, periodic:&quot; + params.getPeriodicUpdatesPercentage()</span>
+<span class="fc" id="L308">                        + &quot;, lazy:&quot; + params.getLastNodesLazyUpdatePercentage()</span>
+<span class="fc" id="L309">                        + &quot;, neighbor:&quot; + params.getNeighborUpdatePercentage()</span>
+<span class="fc" id="L310">                        + &quot;, &quot; + getTimesAsString()</span>
+                        + &quot;, lazy-overhead: &quot; + (int) (100 * ((checkCounter / (double) initSize) - 1)) + &quot;%&quot;
+<span class="fc" id="L312">                        + &quot;, &quot; + Helper.getMemInfo());</span>
+
+        // Preparation works only once so we can release temporary data.
+        // The preparation object itself has to be intact to create the algorithm.
+<span class="fc" id="L316">        _close();</span>
+<span class="fc" id="L317">    }</span>
+
+    private void contractNodesUsingFixedNodeOrdering() {
+<span class="fc" id="L320">        final int nodesToContract = nodeOrderingProvider.getNumNodes();</span>
+<span class="fc" id="L321">        final int logSize = Math.max(10, (int) (params.getLogMessagesPercentage() / 100.0 * nodesToContract));</span>
+<span class="fc" id="L322">        StopWatch stopWatch = new StopWatch();</span>
+<span class="fc" id="L323">        stopWatch.start();</span>
+<span class="fc bfc" id="L324" title="All 2 branches covered.">        for (int i = 0; i &lt; nodesToContract; ++i) {</span>
+<span class="fc" id="L325">            stopIfInterrupted();</span>
+<span class="fc" id="L326">            int node = nodeOrderingProvider.getNodeIdForLevel(i);</span>
+<span class="fc" id="L327">            contractNode(node, i);</span>
+<span class="fc bfc" id="L328" title="All 2 branches covered.">            if (i % logSize == 0) {</span>
+<span class="fc" id="L329">                stopWatch.stop();</span>
+<span class="fc" id="L330">                logFixedNodeOrderingStats(i, logSize, stopWatch);</span>
+<span class="fc" id="L331">                stopWatch.start();</span>
+            }
+        }
+<span class="fc" id="L334">        nodeContractor.finishContraction();</span>
+<span class="fc" id="L335">    }</span>
+
+    private void stopIfInterrupted() {
+<span class="pc bpc" id="L338" title="1 of 2 branches missed.">        if (Thread.currentThread().isInterrupted()) {</span>
+<span class="nc" id="L339">            throw new RuntimeException(&quot;Thread was interrupted&quot;);</span>
+        }
+<span class="fc" id="L341">    }</span>
+
+    private IntContainer contractNode(int node, int level) {
+<span class="pc bpc" id="L344" title="1 of 2 branches missed.">        if (isContracted(node))</span>
+<span class="nc" id="L345">            throw new IllegalArgumentException(&quot;Node &quot; + node + &quot; was contracted already&quot;);</span>
+<span class="fc" id="L346">        contractionSW.start();</span>
+<span class="fc" id="L347">        chBuilder.setLevel(node, level);</span>
+<span class="fc" id="L348">        IntContainer neighbors = nodeContractor.contractNode(node);</span>
+<span class="fc" id="L349">        contractionSW.stop();</span>
+<span class="fc" id="L350">        return neighbors;</span>
+    }
+
+    private boolean isContracted(int node) {
+<span class="fc bfc" id="L354" title="All 2 branches covered.">        return chStore.getLevel(chStore.toNodePointer(node)) != maxLevel;</span>
+    }
+
+    private void logHeuristicStats(int updateCounter) {
+<span class="fc" id="L358">        logger.info(String.format(Locale.ROOT,</span>
+                &quot;%s, nodes: %10s, shortcuts: %10s, updates: %2d, checked-nodes: %10s, %s, %s, %s&quot;,
+<span class="fc bfc" id="L360" title="All 2 branches covered.">                (isEdgeBased() ? &quot;edge&quot; : &quot;node&quot;),</span>
+<span class="fc" id="L361">                nf(sortedNodes.size()),</span>
+<span class="fc" id="L362">                nf(nodeContractor.getAddedShortcutsCount()),</span>
+<span class="fc" id="L363">                updateCounter,</span>
+<span class="fc" id="L364">                nf(checkCounter),</span>
+<span class="fc" id="L365">                getTimesAsString(),</span>
+<span class="fc" id="L366">                nodeContractor.getStatisticsString(),</span>
+<span class="fc" id="L367">                Helper.getMemInfo()));</span>
+<span class="fc" id="L368">    }</span>
+
+    private void logFixedNodeOrderingStats(int nodesContracted, int logSize, StopWatch stopWatch) {
+<span class="fc" id="L371">        logger.info(String.format(Locale.ROOT,</span>
+                &quot;nodes: %10s / %10s (%6.2f%%), shortcuts: %10s, speed = %6.2f nodes/ms, %s, %s&quot;,
+<span class="fc" id="L373">                nf(nodesContracted),</span>
+<span class="fc" id="L374">                nf(nodes),</span>
+<span class="fc" id="L375">                (100.0 * nodesContracted / nodes),</span>
+<span class="fc" id="L376">                nf(nodeContractor.getAddedShortcutsCount()),</span>
+<span class="fc bfc" id="L377" title="All 2 branches covered.">                nodesContracted == 0 ? 0 : logSize / (double) stopWatch.getMillis(),</span>
+<span class="fc" id="L378">                nodeContractor.getStatisticsString(),</span>
+<span class="fc" id="L379">                Helper.getMemInfo())</span>
+        );
+<span class="fc" id="L381">    }</span>
+
+    public CHConfig getCHConfig() {
+<span class="fc" id="L384">        return chConfig;</span>
+    }
+
+    private String getTimesAsString() {
+<span class="fc" id="L388">        float totalTime = allSW.getCurrentSeconds();</span>
+<span class="fc" id="L389">        float periodicUpdateTime = periodicUpdateSW.getCurrentSeconds();</span>
+<span class="fc" id="L390">        float lazyUpdateTime = lazyUpdateSW.getCurrentSeconds();</span>
+<span class="fc" id="L391">        float neighborUpdateTime = neighborUpdateSW.getCurrentSeconds();</span>
+<span class="fc" id="L392">        float contractionTime = contractionSW.getCurrentSeconds();</span>
+<span class="fc" id="L393">        float otherTime = totalTime - (periodicUpdateTime + lazyUpdateTime + neighborUpdateTime + contractionTime);</span>
+        // dijkstra time is included in the others
+<span class="fc" id="L395">        float dijkstraTime = nodeContractor.getDijkstraSeconds();</span>
+<span class="fc" id="L396">        return String.format(Locale.ROOT,</span>
+                &quot;t(total): %6.2f,  t(period): %6.2f, t(lazy): %6.2f, t(neighbor): %6.2f, t(contr): %6.2f, t(other) : %6.2f, dijkstra-ratio: %6.2f%%&quot;,
+<span class="fc" id="L398">                totalTime, periodicUpdateTime, lazyUpdateTime, neighborUpdateTime, contractionTime, otherTime, dijkstraTime / totalTime * 100);</span>
+    }
+
+    public long getTotalPrepareTime() {
+<span class="nc" id="L402">        return allSW.getMillis();</span>
+    }
+
+    private float calculatePriority(int node) {
+<span class="pc bpc" id="L406" title="1 of 2 branches missed.">        if (isContracted(node))</span>
+<span class="nc" id="L407">            throw new IllegalArgumentException(&quot;Priority should only be calculated for not yet contracted nodes&quot;);</span>
+<span class="fc" id="L408">        return nodeContractor.calculatePriority(node);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc bnc" id="L413" title="All 2 branches missed.">        return chConfig.isEdgeBased() ? &quot;prepare|dijkstrabi|edge|ch&quot; : &quot;prepare|dijkstrabi|ch&quot;;</span>
+    }
+
+    private void _close() {
+<span class="fc" id="L417">        nodeContractor.close();</span>
+<span class="fc" id="L418">        sortedNodes = null;</span>
+<span class="fc" id="L419">    }</span>
+
+    void flush() {
+<span class="fc" id="L422">        chStore.flush();</span>
+<span class="fc" id="L423">    }</span>
+
+    void close() {
+<span class="fc" id="L426">        chStore.close();</span>
+<span class="fc" id="L427">    }</span>
+
+    public static class Result {
+        private final CHConfig chConfig;
+        private final CHStorage chStorage;
+        private final long shortcuts;
+        private final double lazyTime;
+        private final double periodTime;
+        private final double neighborTime;
+        private final long totalPrepareTime;
+
+<span class="fc" id="L438">        private Result(CHConfig chConfig, CHStorage chStorage, long shortcuts, double lazyTime, double periodTime, double neighborTime, long totalPrepareTime) {</span>
+<span class="fc" id="L439">            this.chStorage = chStorage;</span>
+<span class="fc" id="L440">            this.shortcuts = shortcuts;</span>
+<span class="fc" id="L441">            this.lazyTime = lazyTime;</span>
+<span class="fc" id="L442">            this.periodTime = periodTime;</span>
+<span class="fc" id="L443">            this.neighborTime = neighborTime;</span>
+<span class="fc" id="L444">            this.totalPrepareTime = totalPrepareTime;</span>
+<span class="fc" id="L445">            this.chConfig = chConfig;</span>
+<span class="fc" id="L446">        }</span>
+
+        public CHConfig getCHConfig() {
+<span class="fc" id="L449">            return chConfig;</span>
+        }
+
+        public CHStorage getCHStorage() {
+<span class="fc" id="L453">            return chStorage;</span>
+        }
+
+        public long getShortcuts() {
+<span class="fc" id="L457">            return shortcuts;</span>
+        }
+
+        public double getLazyTime() {
+<span class="nc" id="L461">            return lazyTime;</span>
+        }
+
+        public double getPeriodTime() {
+<span class="nc" id="L465">            return periodTime;</span>
+        }
+
+        public double getNeighborTime() {
+<span class="nc" id="L469">            return neighborTime;</span>
+        }
+
+        public long getTotalPrepareTime() {
+<span class="nc" id="L473">            return totalPrepareTime;</span>
+        }
+    }
+
+    private static class Params {
+        /**
+         * Specifies after how many contracted nodes a full refresh of the queue of remaining/not contracted nodes
+         * is performed. For example for a graph with 1000 nodes a value of 20 means that a full refresh is performed
+         * after every 200 nodes (20% of the number of nodes of the graph). The more of these updates are performed
+         * the longer the preparation will take, but the more up-to-date the node priorities will be. Higher values
+         * here mean fewer updates!
+         */
+        private int periodicUpdatesPercentage;
+        /**
+         * Specifies the fraction of nodes for which lazy updates will be performed. For example a value of 20 means
+         * that lazy updates will be performed for the last 20% of all nodes. A value of 100 means lazy updates will
+         * be performed for all nodes. Higher values here lead to a longer preparation time, but the node priorities
+         * will be more up-to-date (potentially leading to a better preparation (less shortcuts/faster queries)).
+         */
+        private int lastNodesLazyUpdatePercentage;
+        /**
+         * Specifies the probability that the priority of a given neighbor of a contracted node will be updated after
+         * the node was contracted. For example a value of 20 means that on average 20% of the neighbor nodes will be
+         * updated / each neighbor will be updated with a chance of 20%. Higher values here lead to longer preparation
+         * times, but the node priorities will be more up-to-date.
+         */
+        private int neighborUpdatePercentage;
+        /**
+         * Specifies the maximum number of neighbor updates per contracted node. For example for the foot profile we
+         * see a large number of neighbor updates that can be limited with this setting. -1 means unlimited.
+         */
+        private int maxNeighborUpdates;
+        /**
+         * Defines how many nodes (percentage) should be contracted. A value of 20 means only the first 20% of all nodes
+         * will be contracted. Higher values here mean longer preparation times, but faster queries (because the
+         * graph will be fully contracted).
+         */
+        private int nodesContractedPercentage;
+        /**
+         * Specifies how often a log message should be printed.
+         *
+         * @see #periodicUpdatesPercentage
+         */
+        private int logMessagesPercentage;
+
+        static Params forTraversalMode(TraversalMode traversalMode) {
+            // Lower values for the neighbor update percentage (and/or max neighbor updates) yield a slower
+            // preparation but possibly fewer shortcuts and a slightly better query time.
+<span class="fc bfc" id="L521" title="All 2 branches covered.">            if (traversalMode.isEdgeBased()) {</span>
+<span class="fc" id="L522">                return new Params(0, 100, 50, 3, 100, 5);</span>
+            } else {
+<span class="fc" id="L524">                return new Params(0, 100, 100, 2, 100, 20);</span>
+            }
+        }
+
+        private Params(int periodicUpdatesPercentage, int lastNodesLazyUpdatePercentage, int neighborUpdatePercentage, int maxNeighborUpdates,
+<span class="fc" id="L529">                       int nodesContractedPercentage, int logMessagesPercentage) {</span>
+<span class="fc" id="L530">            setPeriodicUpdatesPercentage(periodicUpdatesPercentage);</span>
+<span class="fc" id="L531">            setLastNodesLazyUpdatePercentage(lastNodesLazyUpdatePercentage);</span>
+<span class="fc" id="L532">            setNeighborUpdatePercentage(neighborUpdatePercentage);</span>
+<span class="fc" id="L533">            setMaxNeighborUpdates(maxNeighborUpdates);</span>
+<span class="fc" id="L534">            setNodesContractedPercentage(nodesContractedPercentage);</span>
+<span class="fc" id="L535">            setLogMessagesPercentage(logMessagesPercentage);</span>
+<span class="fc" id="L536">        }</span>
+
+        int getPeriodicUpdatesPercentage() {
+<span class="fc" id="L539">            return periodicUpdatesPercentage;</span>
+        }
+
+        void setPeriodicUpdatesPercentage(int periodicUpdatesPercentage) {
+<span class="fc" id="L543">            checkPercentage(PERIODIC_UPDATES, periodicUpdatesPercentage);</span>
+<span class="fc" id="L544">            this.periodicUpdatesPercentage = periodicUpdatesPercentage;</span>
+<span class="fc" id="L545">        }</span>
+
+        int getLastNodesLazyUpdatePercentage() {
+<span class="fc" id="L548">            return lastNodesLazyUpdatePercentage;</span>
+        }
+
+        void setLastNodesLazyUpdatePercentage(int lastNodesLazyUpdatePercentage) {
+<span class="fc" id="L552">            checkPercentage(LAST_LAZY_NODES_UPDATES, lastNodesLazyUpdatePercentage);</span>
+<span class="fc" id="L553">            this.lastNodesLazyUpdatePercentage = lastNodesLazyUpdatePercentage;</span>
+<span class="fc" id="L554">        }</span>
+
+        int getNeighborUpdatePercentage() {
+<span class="fc" id="L557">            return neighborUpdatePercentage;</span>
+        }
+
+        void setNeighborUpdatePercentage(int neighborUpdatePercentage) {
+<span class="fc" id="L561">            checkPercentage(NEIGHBOR_UPDATES, neighborUpdatePercentage);</span>
+<span class="fc" id="L562">            this.neighborUpdatePercentage = neighborUpdatePercentage;</span>
+<span class="fc" id="L563">        }</span>
+
+        int getMaxNeighborUpdates() {
+<span class="fc" id="L566">            return maxNeighborUpdates;</span>
+        }
+
+        void setMaxNeighborUpdates(int maxNeighborUpdates) {
+<span class="fc" id="L570">            this.maxNeighborUpdates = maxNeighborUpdates;</span>
+<span class="fc" id="L571">        }</span>
+
+        int getNodesContractedPercentage() {
+<span class="fc" id="L574">            return nodesContractedPercentage;</span>
+        }
+
+        void setNodesContractedPercentage(int nodesContractedPercentage) {
+<span class="fc" id="L578">            checkPercentage(CONTRACTED_NODES, nodesContractedPercentage);</span>
+<span class="fc" id="L579">            this.nodesContractedPercentage = nodesContractedPercentage;</span>
+<span class="fc" id="L580">        }</span>
+
+        int getLogMessagesPercentage() {
+<span class="fc" id="L583">            return logMessagesPercentage;</span>
+        }
+
+        void setLogMessagesPercentage(int logMessagesPercentage) {
+<span class="fc" id="L587">            checkPercentage(LOG_MESSAGES, logMessagesPercentage);</span>
+<span class="fc" id="L588">            this.logMessagesPercentage = logMessagesPercentage;</span>
+<span class="fc" id="L589">        }</span>
+
+        private void checkPercentage(String name, int value) {
+<span class="pc bpc" id="L592" title="2 of 4 branches missed.">            if (value &lt; 0 || value &gt; 100) {</span>
+<span class="nc" id="L593">                throw new IllegalArgumentException(name + &quot; has to be in [0, 100], to disable it use 0&quot;);</span>
+            }
+<span class="fc" id="L595">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

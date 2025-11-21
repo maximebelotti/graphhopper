@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DecimalEncodedValueImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">DecimalEncodedValueImpl.java</span></div><h1>DecimalEncodedValueImpl.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ev;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+/**
+ * This class holds a signed decimal value and stores it as an integer value via a conversion factor and a certain
+ * number of bits that determine the maximum value.
+ */
+public final class DecimalEncodedValueImpl extends IntEncodedValueImpl implements DecimalEncodedValue {
+    private final double factor;
+    private final boolean useMaximumAsInfinity;
+
+    /**
+     * @see #DecimalEncodedValueImpl(String, int, double, double, boolean, boolean, boolean)
+     */
+    public DecimalEncodedValueImpl(String name, int bits, double factor, boolean storeTwoDirections) {
+<span class="fc" id="L35">        this(name, bits, 0, factor, false, storeTwoDirections, false);</span>
+<span class="fc" id="L36">    }</span>
+
+    /**
+     * @param name                   the key to identify this EncodedValue
+     * @param bits                   the bits that should be reserved for storing the integer value. This determines the
+     *                               maximum value.
+     * @param minStorableValue       the minimum storable value. Use e.g. 0 if no negative values are needed.
+     * @param factor                 the precision factor, i.e. store = (int) Math.round(value / factor)
+     * @param negateReverseDirection true if the reverse direction should be always negative of the forward direction.
+     *                               This is used to reduce space and store the value only once.
+     * @param storeTwoDirections     true if forward and backward direction of the edge should get two independent values.
+     * @param useMaximumAsInfinity   true if the maximum value should be treated as Double.Infinity
+     */
+    public DecimalEncodedValueImpl(String name, int bits, double minStorableValue, double factor,
+                                   boolean negateReverseDirection, boolean storeTwoDirections, boolean useMaximumAsInfinity) {
+<span class="fc" id="L51">        super(name, bits, (int) Math.round(minStorableValue / factor), negateReverseDirection, storeTwoDirections);</span>
+<span class="fc bfc" id="L52" title="All 4 branches covered.">        if (!negateReverseDirection &amp;&amp; super.minStorableValue * factor != minStorableValue)</span>
+<span class="fc" id="L53">            throw new IllegalArgumentException(&quot;minStorableValue &quot; + minStorableValue + &quot; is not a multiple of the specified factor &quot;</span>
+                    + factor + &quot; (&quot; + super.minStorableValue * factor + &quot;)&quot;);
+<span class="fc" id="L55">        this.factor = factor;</span>
+<span class="fc" id="L56">        this.useMaximumAsInfinity = useMaximumAsInfinity;</span>
+<span class="fc" id="L57">    }</span>
+
+    @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
+    DecimalEncodedValueImpl(@JsonProperty(&quot;name&quot;) String name,
+                            @JsonProperty(&quot;bits&quot;) int bits,
+                            @JsonProperty(&quot;min_storable_value&quot;) int minStorableValue,
+                            @JsonProperty(&quot;max_storable_value&quot;) int maxStorableValue,
+                            @JsonProperty(&quot;max_value&quot;) int maxValue,
+                            @JsonProperty(&quot;negate_reverse_direction&quot;) boolean negateReverseDirection,
+                            @JsonProperty(&quot;store_two_directions&quot;) boolean storeTwoDirections,
+                            @JsonProperty(&quot;fwd_data_index&quot;) int fwdDataIndex,
+                            @JsonProperty(&quot;bwd_data_index&quot;) int bwdDataIndex,
+                            @JsonProperty(&quot;fwd_shift&quot;) int fwdShift,
+                            @JsonProperty(&quot;bwd_shift&quot;) int bwdShift,
+                            @JsonProperty(&quot;fwd_mask&quot;) int fwdMask,
+                            @JsonProperty(&quot;bwd_mask&quot;) int bwdMask,
+                            @JsonProperty(&quot;factor&quot;) double factor,
+                            @JsonProperty(&quot;use_maximum_as_infinity&quot;) boolean useMaximumAsInfinity) {
+        // we need this constructor for Jackson
+<span class="fc" id="L76">        super(name, bits, minStorableValue, maxStorableValue, maxValue, negateReverseDirection, storeTwoDirections, fwdDataIndex, bwdDataIndex, fwdShift, bwdShift, fwdMask, bwdMask);</span>
+<span class="fc" id="L77">        this.factor = factor;</span>
+<span class="fc" id="L78">        this.useMaximumAsInfinity = useMaximumAsInfinity;</span>
+<span class="fc" id="L79">    }</span>
+
+    @Override
+    public void setDecimal(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess, double value) {
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">        if (!isInitialized())</span>
+<span class="nc" id="L84">            throw new IllegalStateException(&quot;Call init before using EncodedValue &quot; + getName());</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">        if (useMaximumAsInfinity) {</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">            if (Double.isInfinite(value)) {</span>
+<span class="fc" id="L87">                super.setInt(reverse, edgeId, edgeIntAccess, maxStorableValue);</span>
+<span class="fc" id="L88">                return;</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">            } else if (value &gt;= maxStorableValue * factor) { // equality is important as maxStorableValue is reserved for infinity</span>
+<span class="fc" id="L90">                super.uncheckedSet(reverse, edgeId, edgeIntAccess, maxStorableValue - 1);</span>
+<span class="fc" id="L91">                return;</span>
+            }
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">        } else if (Double.isInfinite(value))</span>
+<span class="nc" id="L94">            throw new IllegalArgumentException(&quot;Value cannot be infinite if useMaximumAsInfinity is false&quot;);</span>
+
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">        if (Double.isNaN(value))</span>
+<span class="nc" id="L97">            throw new IllegalArgumentException(&quot;NaN value for &quot; + getName() + &quot; not allowed!&quot;);</span>
+
+<span class="fc" id="L99">        value /= factor;</span>
+<span class="pc bpc" id="L100" title="1 of 2 branches missed.">        if (value &gt; maxStorableValue)</span>
+<span class="nc" id="L101">            throw new IllegalArgumentException(getName() + &quot; value too large for encoding: &quot; + value + &quot;, maxValue:&quot; + maxStorableValue + &quot;, factor: &quot; + factor);</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        if (value &lt; minStorableValue)</span>
+<span class="fc" id="L103">            throw new IllegalArgumentException(getName() + &quot; value too small for encoding &quot; + value + &quot;, minValue:&quot; + minStorableValue + &quot;, factor: &quot; + factor);</span>
+
+<span class="fc" id="L105">        super.uncheckedSet(reverse, edgeId, edgeIntAccess, (int) Math.round(value));</span>
+<span class="fc" id="L106">    }</span>
+
+    @Override
+    public double getDecimal(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess) {
+<span class="fc" id="L110">        int value = getInt(reverse, edgeId, edgeIntAccess);</span>
+<span class="fc bfc" id="L111" title="All 4 branches covered.">        if (useMaximumAsInfinity &amp;&amp; value == maxStorableValue)</span>
+<span class="fc" id="L112">            return Double.POSITIVE_INFINITY;</span>
+<span class="fc" id="L113">        return value * factor;</span>
+    }
+
+    @Override
+    public double getNextStorableValue(double value) {
+<span class="fc bfc" id="L118" title="All 4 branches covered.">        if (!useMaximumAsInfinity &amp;&amp; value &gt; getMaxStorableDecimal())</span>
+<span class="fc" id="L119">            throw new IllegalArgumentException(getName() + &quot;: There is no next storable value for &quot; + value + &quot;. max:&quot; + getMaxStorableDecimal());</span>
+<span class="fc bfc" id="L120" title="All 4 branches covered.">        else if (useMaximumAsInfinity &amp;&amp; value &gt; (maxStorableValue - 1) * factor)</span>
+<span class="fc" id="L121">            return Double.POSITIVE_INFINITY;</span>
+        else
+<span class="fc" id="L123">            return (factor * (int) Math.ceil(value / factor));</span>
+    }
+
+    @Override
+    public double getSmallestNonZeroValue() {
+<span class="pc bpc" id="L128" title="1 of 4 branches missed.">        if (minStorableValue != 0 || negateReverseDirection)</span>
+<span class="fc" id="L129">            throw new IllegalStateException(&quot;getting the smallest non-zero value is not possible if minValue!=0 or negateReverseDirection&quot;);</span>
+<span class="fc" id="L130">        return factor;</span>
+    }
+
+    @Override
+    public double getMaxStorableDecimal() {
+<span class="fc bfc" id="L135" title="All 2 branches covered.">        if (useMaximumAsInfinity) return Double.POSITIVE_INFINITY;</span>
+<span class="fc" id="L136">        return maxStorableValue * factor;</span>
+    }
+
+    @Override
+    public double getMinStorableDecimal() {
+<span class="fc" id="L141">        return minStorableValue * factor;</span>
+    }
+
+    @Override
+    public double getMaxOrMaxStorableDecimal() {
+<span class="fc" id="L146">        int maxOrMaxStorable = getMaxOrMaxStorableInt();</span>
+<span class="fc bfc" id="L147" title="All 4 branches covered.">        if (useMaximumAsInfinity &amp;&amp; maxOrMaxStorable == maxStorableValue) return Double.POSITIVE_INFINITY;</span>
+<span class="fc" id="L148">        return maxOrMaxStorable * factor;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PathMerger.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">PathMerger.java</span></div><h1>PathMerger.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import com.graphhopper.ResponsePath;
+import com.graphhopper.routing.InstructionsFromEdges;
+import com.graphhopper.routing.Path;
+import com.graphhopper.routing.ev.EncodedValueLookup;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.util.details.PathDetailsBuilderFactory;
+import com.graphhopper.util.details.PathDetailsFromEdges;
+import com.graphhopper.util.exceptions.ConnectionNotFoundException;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * This class merges multiple {@link Path} objects into one continuous object that
+ * can be used in the {@link ResponsePath}. There will be a Path between every waypoint.
+ * So for two waypoints there will be only one Path object. For three waypoints there will be
+ * two Path objects.
+ * &lt;p&gt;
+ * The instructions are generated per Path object and are merged into one continuous InstructionList.
+ * The PointList per Path object are merged and optionally simplified.
+ *
+ * @author Peter Karich
+ * @author ratrun
+ * @author Robin Boldt
+ */
+public class PathMerger {
+<span class="fc" id="L48">    private static final RamerDouglasPeucker RDP = new RamerDouglasPeucker();</span>
+    private final Graph graph;
+    private final Weighting weighting;
+
+<span class="fc" id="L52">    private boolean enableInstructions = true;</span>
+<span class="fc" id="L53">    private boolean simplifyResponse = true;</span>
+<span class="fc" id="L54">    private RamerDouglasPeucker ramerDouglasPeucker = RDP;</span>
+<span class="fc" id="L55">    private boolean calcPoints = true;</span>
+    private PathDetailsBuilderFactory pathBuilderFactory;
+<span class="fc" id="L57">    private List&lt;String&gt; requestedPathDetails = Collections.emptyList();</span>
+<span class="fc" id="L58">    private double favoredHeading = Double.NaN;</span>
+
+<span class="fc" id="L60">    public PathMerger(Graph graph, Weighting weighting) {</span>
+<span class="fc" id="L61">        this.graph = graph;</span>
+<span class="fc" id="L62">        this.weighting = graph.wrapWeighting(weighting);</span>
+<span class="fc" id="L63">    }</span>
+
+    public PathMerger setCalcPoints(boolean calcPoints) {
+<span class="fc" id="L66">        this.calcPoints = calcPoints;</span>
+<span class="fc" id="L67">        return this;</span>
+    }
+
+    public PathMerger setRamerDouglasPeucker(RamerDouglasPeucker ramerDouglasPeucker) {
+<span class="fc" id="L71">        this.ramerDouglasPeucker = ramerDouglasPeucker;</span>
+<span class="fc" id="L72">        return this;</span>
+    }
+
+    public PathMerger setPathDetailsBuilders(PathDetailsBuilderFactory pathBuilderFactory, List&lt;String&gt; requestedPathDetails) {
+<span class="fc" id="L76">        this.pathBuilderFactory = pathBuilderFactory;</span>
+<span class="fc" id="L77">        this.requestedPathDetails = requestedPathDetails;</span>
+<span class="fc" id="L78">        return this;</span>
+    }
+
+    public PathMerger setSimplifyResponse(boolean simplifyRes) {
+<span class="fc" id="L82">        this.simplifyResponse = simplifyRes;</span>
+<span class="fc" id="L83">        return this;</span>
+    }
+
+    public PathMerger setEnableInstructions(boolean enableInstructions) {
+<span class="fc" id="L87">        this.enableInstructions = enableInstructions;</span>
+<span class="fc" id="L88">        return this;</span>
+    }
+
+    public ResponsePath doWork(PointList waypoints, List&lt;Path&gt; paths, EncodedValueLookup evLookup, Translation tr) {
+<span class="fc" id="L92">        ResponsePath responsePath = new ResponsePath();</span>
+<span class="fc" id="L93">        int origPoints = 0;</span>
+<span class="fc" id="L94">        long fullTimeInMillis = 0;</span>
+<span class="fc" id="L95">        double fullWeight = 0;</span>
+<span class="fc" id="L96">        double fullDistance = 0;</span>
+<span class="fc" id="L97">        boolean allFound = true;</span>
+
+<span class="fc" id="L99">        InstructionList fullInstructions = new InstructionList(tr);</span>
+<span class="fc" id="L100">        PointList fullPoints = PointList.EMPTY;</span>
+<span class="fc" id="L101">        List&lt;String&gt; description = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L102">        List&lt;Integer&gt; wayPointIndices = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        for (int pathIndex = 0; pathIndex &lt; paths.size(); pathIndex++) {</span>
+<span class="fc" id="L104">            Path path = paths.get(pathIndex);</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">            if (!path.isFound()) {</span>
+<span class="fc" id="L106">                allFound = false;</span>
+<span class="fc" id="L107">                continue;</span>
+            }
+<span class="fc" id="L109">            description.addAll(path.getDescription());</span>
+<span class="fc" id="L110">            fullTimeInMillis += path.getTime();</span>
+<span class="fc" id="L111">            fullDistance += path.getDistance();</span>
+<span class="fc" id="L112">            fullWeight += path.getWeight();</span>
+<span class="fc bfc" id="L113" title="All 2 branches covered.">            if (enableInstructions) {</span>
+<span class="fc" id="L114">                InstructionList il = InstructionsFromEdges.calcInstructions(path, graph, weighting, evLookup, tr);</span>
+
+<span class="pc bpc" id="L116" title="1 of 2 branches missed.">                if (!il.isEmpty()) {</span>
+<span class="fc" id="L117">                    fullInstructions.addAll(il);</span>
+
+                    // for all paths except the last replace the FinishInstruction with a ViaInstruction
+<span class="fc bfc" id="L120" title="All 2 branches covered.">                    if (pathIndex + 1 &lt; paths.size()) {</span>
+<span class="fc" id="L121">                        ViaInstruction newInstr = new ViaInstruction(fullInstructions.get(fullInstructions.size() - 1));</span>
+<span class="fc" id="L122">                        newInstr.setViaCount(pathIndex + 1);</span>
+<span class="fc" id="L123">                        fullInstructions.set(fullInstructions.size() - 1, newInstr);</span>
+                    }
+                }
+
+            }
+<span class="pc bpc" id="L128" title="3 of 4 branches missed.">            if (calcPoints || enableInstructions) {</span>
+<span class="fc" id="L129">                PointList tmpPoints = path.calcPoints();</span>
+<span class="fc bfc" id="L130" title="All 2 branches covered.">                if (fullPoints.isEmpty())</span>
+<span class="fc" id="L131">                    fullPoints = new PointList(tmpPoints.size(), tmpPoints.is3D());</span>
+
+                // Remove duplicated points, see #1138
+<span class="fc bfc" id="L134" title="All 2 branches covered.">                if (pathIndex + 1 &lt; paths.size()) {</span>
+<span class="fc" id="L135">                    tmpPoints.removeLastPoint();</span>
+                }
+
+<span class="fc" id="L138">                fullPoints.add(tmpPoints);</span>
+<span class="fc" id="L139">                responsePath.addPathDetails(PathDetailsFromEdges.calcDetails(path, evLookup, weighting, requestedPathDetails, pathBuilderFactory, origPoints, graph));</span>
+<span class="fc" id="L140">                wayPointIndices.add(origPoints);</span>
+<span class="fc bfc" id="L141" title="All 2 branches covered.">                if (pathIndex == paths.size() - 1)</span>
+<span class="fc" id="L142">                    wayPointIndices.add(fullPoints.size() - 1);</span>
+<span class="fc" id="L143">                origPoints = fullPoints.size();</span>
+            }
+
+<span class="pc bpc" id="L146" title="1 of 4 branches missed.">            allFound = allFound &amp;&amp; path.isFound();</span>
+        }
+
+<span class="fc bfc" id="L149" title="All 4 branches covered.">        if (!fullPoints.isEmpty() &amp;&amp; fullPoints.is3D)</span>
+<span class="fc" id="L150">            calcAscendDescend(responsePath, fullPoints);</span>
+
+<span class="fc bfc" id="L152" title="All 2 branches covered.">        if (enableInstructions) {</span>
+<span class="fc" id="L153">            fullInstructions = updateInstructionsWithContext(fullInstructions);</span>
+<span class="fc" id="L154">            responsePath.setInstructions(fullInstructions);</span>
+        }
+
+<span class="fc bfc" id="L157" title="All 2 branches covered.">        if (!allFound) {</span>
+<span class="fc" id="L158">            responsePath.addError(new ConnectionNotFoundException(&quot;Connection between locations not found&quot;, Collections.emptyMap()));</span>
+        }
+
+        // make sure the way point indices actually point to the points in waypoints...
+<span class="pc bpc" id="L162" title="1 of 4 branches missed.">        if (allFound &amp;&amp; !waypoints.isEmpty()) { // we use empty waypoints for map-matching...</span>
+<span class="fc bfc" id="L163" title="All 2 branches covered.">            for (int i = 0; i &lt; wayPointIndices.size(); i++) {</span>
+<span class="fc" id="L164">                int index = wayPointIndices.get(i);</span>
+<span class="pc bpc" id="L165" title="2 of 4 branches missed.">                if (waypoints.getLat(i) != fullPoints.getLat(index) || waypoints.getLon(i) != fullPoints.getLon(index))</span>
+<span class="nc" id="L166">                    throw new IllegalStateException(&quot;waypoints are not included in points, or waypoint indices are wrong&quot;);</span>
+            }
+        }
+
+<span class="fc" id="L170">        responsePath.setDescription(description).</span>
+<span class="fc" id="L171">                setPoints(fullPoints).</span>
+<span class="fc" id="L172">                setRouteWeight(fullWeight).</span>
+<span class="fc" id="L173">                setDistance(fullDistance).</span>
+<span class="fc" id="L174">                setTime(fullTimeInMillis).</span>
+<span class="fc" id="L175">                setWaypoints(waypoints).</span>
+<span class="fc" id="L176">                setWaypointIndices(wayPointIndices);</span>
+
+<span class="pc bpc" id="L178" title="3 of 8 branches missed.">        if (allFound &amp;&amp; simplifyResponse &amp;&amp; (calcPoints || enableInstructions)) {</span>
+<span class="fc" id="L179">            PathSimplification.simplify(responsePath, ramerDouglasPeucker, enableInstructions);</span>
+        }
+<span class="fc" id="L181">        return responsePath;</span>
+    }
+
+    /**
+     * This method iterates over all instructions and uses the available context to improve the instructions.
+     * If the requests contains a heading, this method can transform the first continue to a u-turn if the heading
+     * points into the opposite direction of the route.
+     * At a waypoint it can transform the continue to a u-turn if the route involves turning.
+     */
+    private InstructionList updateInstructionsWithContext(InstructionList instructions) {
+        Instruction instruction;
+        Instruction nextInstruction;
+
+<span class="fc bfc" id="L194" title="All 2 branches covered.">        for (int i = 0; i &lt; instructions.size() - 1; i++) {</span>
+<span class="fc" id="L195">            instruction = instructions.get(i);</span>
+
+<span class="pc bpc" id="L197" title="1 of 6 branches missed.">            if (i == 0 &amp;&amp; !Double.isNaN(favoredHeading) &amp;&amp; instruction.extraInfo.containsKey(&quot;heading&quot;)) {</span>
+<span class="fc" id="L198">                double heading = (double) instruction.extraInfo.get(&quot;heading&quot;);</span>
+<span class="fc" id="L199">                double diff = Math.abs(heading - favoredHeading) % 360;</span>
+<span class="fc bfc" id="L200" title="All 4 branches covered.">                if (diff &gt; 170 &amp;&amp; diff &lt; 190) {</span>
+                    // The requested heading points into the opposite direction of the calculated heading
+                    // therefore we change the continue instruction to a u-turn
+<span class="fc" id="L203">                    instruction.setSign(Instruction.U_TURN_UNKNOWN);</span>
+                }
+            }
+
+<span class="fc bfc" id="L207" title="All 2 branches covered.">            if (instruction.getSign() == Instruction.REACHED_VIA) {</span>
+<span class="fc" id="L208">                nextInstruction = instructions.get(i + 1);</span>
+<span class="fc bfc" id="L209" title="All 2 branches covered.">                if (nextInstruction.getSign() != Instruction.CONTINUE_ON_STREET</span>
+<span class="fc bfc" id="L210" title="All 2 branches covered.">                        || !instruction.extraInfo.containsKey(&quot;last_heading&quot;)</span>
+<span class="pc bpc" id="L211" title="1 of 2 branches missed.">                        || !nextInstruction.extraInfo.containsKey(&quot;heading&quot;)) {</span>
+                    // TODO throw exception?
+<span class="nc" id="L213">                    continue;</span>
+                }
+<span class="fc" id="L215">                double lastHeading = (double) instruction.extraInfo.get(&quot;last_heading&quot;);</span>
+<span class="fc" id="L216">                double heading = (double) nextInstruction.extraInfo.get(&quot;heading&quot;);</span>
+
+                // Since it's supposed to go back the same edge, we can be very strict with the diff
+<span class="fc" id="L219">                double diff = Math.abs(lastHeading - heading) % 360;</span>
+<span class="pc bpc" id="L220" title="1 of 4 branches missed.">                if (diff &gt; 179 &amp;&amp; diff &lt; 181) {</span>
+<span class="fc" id="L221">                    nextInstruction.setSign(Instruction.U_TURN_UNKNOWN);</span>
+                }
+            }
+        }
+
+<span class="fc" id="L226">        return instructions;</span>
+    }
+
+    private void calcAscendDescend(final ResponsePath responsePath, final PointList pointList) {
+<span class="fc" id="L230">        double ascendMeters = 0;</span>
+<span class="fc" id="L231">        double descendMeters = 0;</span>
+<span class="fc" id="L232">        double lastEle = pointList.getEle(0);</span>
+<span class="fc bfc" id="L233" title="All 2 branches covered.">        for (int i = 1; i &lt; pointList.size(); ++i) {</span>
+<span class="fc" id="L234">            double ele = pointList.getEle(i);</span>
+<span class="fc" id="L235">            double diff = Math.abs(ele - lastEle);</span>
+
+<span class="fc bfc" id="L237" title="All 2 branches covered.">            if (ele &gt; lastEle)</span>
+<span class="fc" id="L238">                ascendMeters += diff;</span>
+            else
+<span class="fc" id="L240">                descendMeters += diff;</span>
+
+<span class="fc" id="L242">            lastEle = ele;</span>
+
+        }
+<span class="fc" id="L245">        responsePath.setAscend(ascendMeters);</span>
+<span class="fc" id="L246">        responsePath.setDescend(descendMeters);</span>
+<span class="fc" id="L247">    }</span>
+
+    public void setFavoredHeading(double favoredHeading) {
+<span class="fc" id="L250">        this.favoredHeading = favoredHeading;</span>
+<span class="fc" id="L251">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

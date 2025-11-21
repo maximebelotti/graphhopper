@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PixelGridTraversal.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage.index</a> &gt; <span class="el_source">PixelGridTraversal.java</span></div><h1>PixelGridTraversal.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage.index;
+
+import com.graphhopper.util.shapes.BBox;
+import org.locationtech.jts.geom.Coordinate;
+
+import java.util.function.Consumer;
+
+/**
+ * We need all grid cells intersected by a line. The best algorithm is a 'voxel grid traversal algorithm' and
+ * described in &quot;A Fast Voxel Traversal Algorithm for Ray Tracing&quot; by John Amanatides and Andrew Woo
+ * (1987): http://www.cse.yorku.ca/~amana/research/grid.pdf
+ *
+ * @author Michael Zilske
+ */
+public class PixelGridTraversal {
+
+    private final double deltaY;
+    private final double deltaX;
+    int parts;
+    BBox bounds;
+
+<span class="fc" id="L39">    public PixelGridTraversal(int parts, BBox bounds) {</span>
+<span class="fc" id="L40">        this.parts = parts;</span>
+<span class="fc" id="L41">        this.bounds = bounds;</span>
+<span class="fc" id="L42">        deltaY = (bounds.maxLat - bounds.minLat) / parts;</span>
+<span class="fc" id="L43">        deltaX = (bounds.maxLon - bounds.minLon) / parts;</span>
+<span class="fc" id="L44">    }</span>
+
+    public void traverse(Coordinate a, Coordinate b, Consumer&lt;Coordinate&gt; consumer) {
+<span class="fc" id="L47">        double ax = a.x - bounds.minLon;</span>
+<span class="fc" id="L48">        double ay = a.y - bounds.minLat;</span>
+<span class="fc" id="L49">        double bx = b.x - bounds.minLon;</span>
+<span class="fc" id="L50">        double by = b.y - bounds.minLat;</span>
+
+<span class="fc bfc" id="L52" title="All 2 branches covered.">        int stepX = ax &lt; bx ? 1 : -1;</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        int stepY = ay &lt; by ? 1 : -1;</span>
+<span class="fc" id="L54">        double tDeltaX = deltaX / Math.abs(bx - ax);</span>
+<span class="fc" id="L55">        double tDeltaY = deltaY / Math.abs(by - ay);</span>
+
+        // Bounding this with parts - 1 only concerns the case where we are exactly on the bounding box.
+        // (The next cell would already start there..)
+<span class="fc" id="L59">        int x = Math.min((int) (ax / deltaX), parts - 1);</span>
+<span class="fc" id="L60">        int y = Math.min((int) (ay / deltaY), parts - 1);</span>
+<span class="fc" id="L61">        int x2 = Math.min((int) (bx / deltaX), parts - 1);</span>
+<span class="fc" id="L62">        int y2 = Math.min((int) (by / deltaY), parts - 1);</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        double tMaxX =  ((x + (stepX &lt; 0 ? 0 : 1)) * deltaX - ax) / (bx - ax);</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        double tMaxY =  ((y + (stepY &lt; 0 ? 0 : 1)) * deltaY - ay) / (by - ay);</span>
+
+<span class="fc" id="L66">        consumer.accept(new Coordinate(x, y));</span>
+<span class="fc bfc" id="L67" title="All 4 branches covered.">        while (y != y2 || x != x2) {</span>
+<span class="fc bfc" id="L68" title="All 6 branches covered.">            if ((tMaxX &lt; tMaxY || y == y2) &amp;&amp; x != x2) {</span>
+<span class="fc" id="L69">                tMaxX += tDeltaX;</span>
+<span class="fc" id="L70">                x += stepX;</span>
+            } else {
+<span class="fc" id="L72">                tMaxY += tDeltaY;</span>
+<span class="fc" id="L73">                y += stepY;</span>
+            }
+<span class="fc" id="L75">            consumer.accept(new Coordinate(x, y));</span>
+        }
+<span class="fc" id="L77">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

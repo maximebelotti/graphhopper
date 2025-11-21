@@ -1,0 +1,466 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GHLongLongBTree.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.coll</a> &gt; <span class="el_source">GHLongLongBTree.java</span></div><h1>GHLongLongBTree.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.coll;
+
+import com.graphhopper.util.Helper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
+
+/**
+ * An in-memory B-Tree with configurable value size (1-8 bytes). Delete not supported.
+ * (Later we could use DataAccess to allow on-disc storage for very large data sets.)
+ *
+ * @author Peter Karich
+ */
+public class GHLongLongBTree implements LongLongMap {
+<span class="fc" id="L33">    private final static Logger logger = LoggerFactory.getLogger(GHLongLongBTree.class);</span>
+    private final long emptyValue;
+    private final int maxLeafEntries;
+    private final int initLeafSize;
+    private final int splitIndex;
+    private final float factor;
+    private long size;
+    private int height;
+    private BTreeEntry root;
+    private final int bytesPerValue;
+    private final long maxValue;
+
+<span class="fc" id="L45">    public GHLongLongBTree(int maxLeafEntries, int bytesPerValue, long emptyValue) {</span>
+<span class="fc" id="L46">        this.maxLeafEntries = maxLeafEntries;</span>
+<span class="fc" id="L47">        this.bytesPerValue = bytesPerValue;</span>
+<span class="pc bpc" id="L48" title="1 of 2 branches missed.">        if (bytesPerValue &gt; 8)</span>
+<span class="nc" id="L49">            throw new IllegalArgumentException(&quot;Values can have 8 bytes maximum but requested was &quot; + bytesPerValue);</span>
+<span class="fc" id="L50">        this.emptyValue = emptyValue;</span>
+
+        // reserve one bit for negative values
+<span class="fc" id="L53">        this.maxValue = (1L &lt;&lt; (bytesPerValue * 8 - 1)) - 1;</span>
+<span class="pc bpc" id="L54" title="1 of 2 branches missed.">        if (maxLeafEntries &lt; 1)</span>
+<span class="nc" id="L55">            throw new IllegalArgumentException(&quot;illegal maxLeafEntries:&quot; + maxLeafEntries);</span>
+
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        if (maxLeafEntries % 2 == 0)</span>
+<span class="fc" id="L58">            maxLeafEntries++;</span>
+
+<span class="fc" id="L60">        splitIndex = maxLeafEntries / 2;</span>
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        if (maxLeafEntries &lt; 10) {</span>
+<span class="fc" id="L62">            factor = 2;</span>
+<span class="fc" id="L63">            initLeafSize = 1;</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        } else if (maxLeafEntries &lt; 20) {</span>
+<span class="fc" id="L65">            factor = 2;</span>
+<span class="fc" id="L66">            initLeafSize = 4;</span>
+        } else {
+<span class="fc" id="L68">            factor = 1.7f;</span>
+<span class="fc" id="L69">            initLeafSize = maxLeafEntries / 10;</span>
+        }
+<span class="fc" id="L71">        clear();</span>
+<span class="fc" id="L72">    }</span>
+
+    static int binarySearch(long[] keys, int start, int len, long key) {
+<span class="fc" id="L75">        int high = start + len, low = start - 1, guess;</span>
+<span class="fc bfc" id="L76" title="All 2 branches covered.">        while (high - low &gt; 1) {</span>
+            // use &gt;&gt;&gt; for average or we could get an integer overflow.
+<span class="fc" id="L78">            guess = (high + low) &gt;&gt;&gt; 1;</span>
+<span class="fc" id="L79">            long guessedKey = keys[guess];</span>
+<span class="fc bfc" id="L80" title="All 2 branches covered.">            if (guessedKey &lt; key) {</span>
+<span class="fc" id="L81">                low = guess;</span>
+            } else {
+<span class="fc" id="L83">                high = guess;</span>
+            }
+<span class="fc" id="L85">        }</span>
+
+<span class="fc bfc" id="L87" title="All 2 branches covered.">        if (high == start + len) {</span>
+<span class="fc" id="L88">            return ~(start + len);</span>
+        }
+
+<span class="fc" id="L91">        long highKey = keys[high];</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">        if (highKey == key) {</span>
+<span class="fc" id="L93">            return high;</span>
+        } else {
+<span class="fc" id="L95">            return ~high;</span>
+        }
+    }
+
+    @Override
+    public long put(long key, long value) {
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">        if (value &gt; maxValue)</span>
+<span class="nc" id="L102">            throw new IllegalArgumentException(&quot;Value &quot; + value + &quot; exceeded max value: &quot; + maxValue</span>
+                    + &quot;. Increase bytesPerValue (&quot; + bytesPerValue + &quot;)&quot;);
+<span class="fc bfc" id="L104" title="All 2 branches covered.">        if (value == emptyValue)</span>
+<span class="fc" id="L105">            throw new IllegalArgumentException(&quot;Value cannot be the 'empty value' &quot; + emptyValue);</span>
+
+<span class="fc" id="L107">        ReturnValue rv = root.put(key, value);</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        if (rv.tree != null) {</span>
+<span class="fc" id="L109">            height++;</span>
+<span class="fc" id="L110">            root = rv.tree;</span>
+        }
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        if (rv.oldValue == null) {</span>
+            // successfully inserted
+<span class="fc" id="L114">            size++;</span>
+<span class="pc bpc" id="L115" title="1 of 2 branches missed.">            if (size % 1000000 == 0)</span>
+<span class="nc" id="L116">                optimize();</span>
+        }
+<span class="fc bfc" id="L118" title="All 2 branches covered.">        return rv.oldValue == null ? emptyValue : toLong(rv.oldValue);</span>
+    }
+
+    @Override
+    public long get(long key) {
+<span class="fc" id="L123">        return root.get(key);</span>
+    }
+
+    int height() {
+<span class="fc" id="L127">        return height;</span>
+    }
+
+    @Override
+    public long getSize() {
+<span class="fc" id="L132">        return size;</span>
+    }
+
+    /**
+     * @return memory usage in MB
+     */
+    @Override
+    public int getMemoryUsage() {
+<span class="fc" id="L140">        return Math.round(root.getCapacity() / Helper.MB);</span>
+    }
+
+    @Override
+    public void clear() {
+<span class="fc" id="L145">        size = 0;</span>
+<span class="fc" id="L146">        height = 1;</span>
+<span class="fc" id="L147">        root = new BTreeEntry(initLeafSize, true);</span>
+<span class="fc" id="L148">    }</span>
+
+    public long getEmptyValue() {
+<span class="fc" id="L151">        return emptyValue;</span>
+    }
+
+    private int getEntries() {
+<span class="nc" id="L155">        return root.getEntries();</span>
+    }
+
+    @Override
+    public void optimize() {
+<span class="pc bpc" id="L160" title="1 of 2 branches missed.">        if (getSize() &gt; 10000) {</span>
+//            StopWatch sw = new StopWatch().start();
+//            int old = memoryUsage();
+<span class="nc" id="L163">            root.compact();</span>
+//            logger.info(size + &quot;| osmIdMap.optimize took: &quot; + sw.stop().getSeconds()
+//                    + &quot; =&gt; freed: &quot; + (old - memoryUsage()) + &quot;MB&quot;);
+        }
+<span class="fc" id="L167">    }</span>
+
+    @Override
+    public String toString() {
+<span class="nc" id="L171">        return &quot;Height:&quot; + height() + &quot;, entries:&quot; + getEntries();</span>
+    }
+
+    @Override
+    public long getMaxValue() {
+<span class="fc" id="L176">        return maxValue;</span>
+    }
+
+    void print() {
+<span class="nc" id="L180">        logger.info(root.toString(1));</span>
+<span class="nc" id="L181">    }</span>
+
+    static class ReturnValue {
+        byte[] oldValue;
+        BTreeEntry tree;
+
+<span class="fc" id="L187">        public ReturnValue(byte[] oldValue) {</span>
+<span class="fc" id="L188">            this.oldValue = oldValue;</span>
+<span class="fc" id="L189">        }</span>
+    }
+
+    long toLong(byte[] b) {
+<span class="fc" id="L193">        return toLong(b, 0);</span>
+    }
+
+    long toLong(byte[] bytes, int offset) {
+<span class="fc" id="L197">        long res = 0;</span>
+<span class="fc bfc" id="L198" title="All 2 branches covered.">        if (bytesPerValue == 8) res |= (long) bytes[offset + 7] &lt;&lt; 56;</span>
+<span class="pc bpc" id="L199" title="1 of 2 branches missed.">        else if (bytesPerValue &gt; 7) res |= ((long) bytes[offset + 7] &lt;&lt; 56);</span>
+
+<span class="fc bfc" id="L201" title="All 2 branches covered.">        if (bytesPerValue == 7) res |= (long) bytes[offset + 6] &lt;&lt; 48;</span>
+<span class="fc bfc" id="L202" title="All 2 branches covered.">        else if (bytesPerValue &gt; 6) res |= ((long) bytes[offset + 6] &amp; 0xFF) &lt;&lt; 48;</span>
+
+<span class="fc bfc" id="L204" title="All 2 branches covered.">        if (bytesPerValue == 6) res |= (long) bytes[offset + 5] &lt;&lt; 40;</span>
+<span class="fc bfc" id="L205" title="All 2 branches covered.">        else if (bytesPerValue &gt; 5) res |= ((long) bytes[offset + 5] &amp; 0xFF) &lt;&lt; 40;</span>
+
+<span class="fc bfc" id="L207" title="All 2 branches covered.">        if (bytesPerValue == 5) res |= (long) bytes[offset + 4] &lt;&lt; 32;</span>
+<span class="fc bfc" id="L208" title="All 2 branches covered.">        else if (bytesPerValue &gt; 4) res |= ((long) bytes[offset + 4] &amp; 0xFF) &lt;&lt; 32;</span>
+
+<span class="fc bfc" id="L210" title="All 2 branches covered.">        if (bytesPerValue == 4) res |= (long) bytes[offset + 3] &lt;&lt; 24;</span>
+<span class="fc bfc" id="L211" title="All 2 branches covered.">        else if (bytesPerValue &gt; 3) res |= ((long) bytes[offset + 3] &amp; 0xFF) &lt;&lt; 24;</span>
+
+<span class="fc bfc" id="L213" title="All 2 branches covered.">        if (bytesPerValue == 3) res |= (long) bytes[offset + 2] &lt;&lt; 16;</span>
+<span class="pc bpc" id="L214" title="1 of 2 branches missed.">        else if (bytesPerValue &gt; 2) res |= ((long) bytes[offset + 2] &amp; 0xFF) &lt;&lt; 16;</span>
+
+<span class="pc bpc" id="L216" title="1 of 2 branches missed.">        if (bytesPerValue == 2) res |= (long) bytes[offset + 1] &lt;&lt; 8;</span>
+<span class="pc bpc" id="L217" title="1 of 2 branches missed.">        else if (bytesPerValue &gt; 1) res |= ((long) bytes[offset + 1] &amp; 0xFF) &lt;&lt; 8;</span>
+
+<span class="fc" id="L219">        res |= ((long) bytes[offset] &amp; 0xff);</span>
+<span class="fc" id="L220">        return res;</span>
+    }
+
+    final byte[] fromLong(long value) {
+<span class="fc" id="L224">        byte[] bytes = new byte[bytesPerValue];</span>
+<span class="fc" id="L225">        fromLong(bytes, value, 0);</span>
+<span class="fc" id="L226">        return bytes;</span>
+    }
+
+    final void fromLong(byte[] bytes, long value, int offset) {
+<span class="fc bfc" id="L230" title="All 2 branches covered.">        if (bytesPerValue &gt; 7) bytes[offset + 7] = (byte) (value &gt;&gt; 56);</span>
+<span class="fc bfc" id="L231" title="All 2 branches covered.">        if (bytesPerValue &gt; 6) bytes[offset + 6] = (byte) (value &gt;&gt; 48);</span>
+<span class="fc bfc" id="L232" title="All 2 branches covered.">        if (bytesPerValue &gt; 5) bytes[offset + 5] = (byte) (value &gt;&gt; 40);</span>
+<span class="fc bfc" id="L233" title="All 2 branches covered.">        if (bytesPerValue &gt; 4) bytes[offset + 4] = (byte) (value &gt;&gt; 32);</span>
+<span class="fc bfc" id="L234" title="All 2 branches covered.">        if (bytesPerValue &gt; 3) bytes[offset + 3] = (byte) (value &gt;&gt; 24);</span>
+<span class="pc bpc" id="L235" title="1 of 2 branches missed.">        if (bytesPerValue &gt; 2) bytes[offset + 2] = (byte) (value &gt;&gt; 16);</span>
+<span class="pc bpc" id="L236" title="1 of 2 branches missed.">        if (bytesPerValue &gt; 1) bytes[offset + 1] = (byte) (value &gt;&gt; 8);</span>
+<span class="fc" id="L237">        bytes[offset] = (byte) (value);</span>
+<span class="fc" id="L238">    }</span>
+
+    class BTreeEntry {
+        int entrySize;
+        long[] keys;
+        byte[] values;
+        BTreeEntry[] children;
+        boolean isLeaf;
+
+<span class="fc" id="L247">        public BTreeEntry(int tmpSize, boolean leaf) {</span>
+<span class="fc" id="L248">            this.isLeaf = leaf;</span>
+<span class="fc" id="L249">            keys = new long[tmpSize];</span>
+<span class="fc" id="L250">            values = new byte[tmpSize * bytesPerValue];</span>
+
+<span class="fc bfc" id="L252" title="All 2 branches covered.">            if (!isLeaf) {</span>
+                // in a b-tree we need one more entry to point to all children!
+<span class="fc" id="L254">                children = new BTreeEntry[tmpSize + 1];</span>
+            }
+<span class="fc" id="L256">        }</span>
+
+        /**
+         * @return the old value which was associated with the specified key or if no update it
+         * returns noNumberValue
+         */
+        ReturnValue put(long key, long newValue) {
+<span class="fc" id="L263">            int index = binarySearch(keys, 0, entrySize, key);</span>
+<span class="fc bfc" id="L264" title="All 2 branches covered.">            if (index &gt;= 0) {</span>
+                // update
+<span class="fc" id="L266">                byte[] oldValue = new byte[bytesPerValue];</span>
+<span class="fc" id="L267">                System.arraycopy(values, index * bytesPerValue, oldValue, 0, bytesPerValue);</span>
+                // copy newValue to values
+<span class="fc" id="L269">                fromLong(values, newValue, index * bytesPerValue);</span>
+<span class="fc" id="L270">                return new ReturnValue(oldValue);</span>
+            }
+
+<span class="fc" id="L273">            index = ~index;</span>
+            ReturnValue downTreeRV;
+<span class="pc bpc" id="L275" title="1 of 4 branches missed.">            if (isLeaf || children[index] == null) {</span>
+                // insert
+<span class="fc" id="L277">                downTreeRV = new ReturnValue(null);</span>
+<span class="fc" id="L278">                downTreeRV.tree = checkSplitEntry();</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">                if (downTreeRV.tree == null) {</span>
+<span class="fc" id="L280">                    insertKeyValue(index, key, fromLong(newValue));</span>
+<span class="fc bfc" id="L281" title="All 2 branches covered.">                } else if (index &lt;= splitIndex) {</span>
+<span class="fc" id="L282">                    downTreeRV.tree.children[0].insertKeyValue(index, key, fromLong(newValue));</span>
+                } else {
+<span class="fc" id="L284">                    downTreeRV.tree.children[1].insertKeyValue(index - splitIndex - 1, key, fromLong(newValue));</span>
+                }
+<span class="fc" id="L286">                return downTreeRV;</span>
+            }
+
+<span class="fc" id="L289">            downTreeRV = children[index].put(key, newValue);</span>
+<span class="fc bfc" id="L290" title="All 2 branches covered.">            if (downTreeRV.oldValue != null) // only update</span>
+<span class="fc" id="L291">                return downTreeRV;</span>
+
+<span class="fc bfc" id="L293" title="All 2 branches covered.">            if (downTreeRV.tree != null) {</span>
+                // split this treeEntry if it is too big
+<span class="fc" id="L295">                BTreeEntry returnTree, downTree = returnTree = checkSplitEntry();</span>
+<span class="fc bfc" id="L296" title="All 2 branches covered.">                if (downTree == null) {</span>
+<span class="fc" id="L297">                    insertTree(index, downTreeRV.tree);</span>
+<span class="fc bfc" id="L298" title="All 2 branches covered.">                } else if (index &lt;= splitIndex) {</span>
+<span class="fc" id="L299">                    downTree.children[0].insertTree(index, downTreeRV.tree);</span>
+                } else {
+<span class="fc" id="L301">                    downTree.children[1].insertTree(index - splitIndex - 1, downTreeRV.tree);</span>
+                }
+
+<span class="fc" id="L304">                downTreeRV.tree = returnTree;</span>
+            }
+<span class="fc" id="L306">            return downTreeRV;</span>
+        }
+
+        /**
+         * @return null if nothing to do or a new sub tree if this tree capacity is no longer
+         * sufficient.
+         */
+        BTreeEntry checkSplitEntry() {
+<span class="fc bfc" id="L314" title="All 2 branches covered.">            if (entrySize &lt; maxLeafEntries) {</span>
+<span class="fc" id="L315">                return null;</span>
+            }
+
+            // right child: copy from this
+<span class="fc" id="L319">            int count = entrySize - splitIndex - 1;</span>
+<span class="fc" id="L320">            BTreeEntry newRightChild = new BTreeEntry(Math.max(initLeafSize, count), isLeaf);</span>
+<span class="fc" id="L321">            copy(this, newRightChild, splitIndex + 1, count);</span>
+
+            // left child: copy from this
+            // avoid: http://stackoverflow.com/q/15897869/194609
+<span class="fc" id="L325">            BTreeEntry newLeftChild = new BTreeEntry(Math.max(initLeafSize, splitIndex), isLeaf);</span>
+<span class="fc" id="L326">            copy(this, newLeftChild, 0, splitIndex);</span>
+
+            // new tree pointing to left + right tree only
+<span class="fc" id="L329">            BTreeEntry newTree = new BTreeEntry(1, false);</span>
+<span class="fc" id="L330">            newTree.entrySize = 1;</span>
+<span class="fc" id="L331">            newTree.keys[0] = this.keys[splitIndex];</span>
+
+<span class="fc" id="L333">            System.arraycopy(this.values, splitIndex * bytesPerValue, newTree.values, 0, bytesPerValue);</span>
+<span class="fc" id="L334">            newTree.children[0] = newLeftChild;</span>
+<span class="fc" id="L335">            newTree.children[1] = newRightChild;</span>
+<span class="fc" id="L336">            return newTree;</span>
+        }
+
+        void copy(BTreeEntry fromChild, BTreeEntry toChild, int from, int count) {
+<span class="fc" id="L340">            System.arraycopy(fromChild.keys, from, toChild.keys, 0, count);</span>
+<span class="fc" id="L341">            System.arraycopy(fromChild.values, from * bytesPerValue, toChild.values, 0, count * bytesPerValue);</span>
+<span class="fc bfc" id="L342" title="All 2 branches covered.">            if (!fromChild.isLeaf) {</span>
+<span class="fc" id="L343">                System.arraycopy(fromChild.children, from, toChild.children, 0, count + 1);</span>
+            }
+
+<span class="fc" id="L346">            toChild.entrySize = count;</span>
+<span class="fc" id="L347">        }</span>
+
+        void insertKeyValue(int index, long key, byte[] newValueFromIdx0) {
+<span class="fc" id="L350">            ensureSize(entrySize + 1);</span>
+<span class="fc" id="L351">            int count = entrySize - index;</span>
+<span class="fc bfc" id="L352" title="All 2 branches covered.">            if (count &gt; 0) {</span>
+<span class="fc" id="L353">                System.arraycopy(keys, index, keys, index + 1, count);</span>
+<span class="fc" id="L354">                System.arraycopy(values, index * bytesPerValue, values, index * bytesPerValue + bytesPerValue, count * bytesPerValue);</span>
+<span class="fc bfc" id="L355" title="All 2 branches covered.">                if (!isLeaf) {</span>
+<span class="fc" id="L356">                    System.arraycopy(children, index + 1, children, index + 2, count);</span>
+                }
+            }
+
+<span class="fc" id="L360">            keys[index] = key;</span>
+<span class="fc" id="L361">            System.arraycopy(newValueFromIdx0, 0, values, index * bytesPerValue, bytesPerValue);</span>
+<span class="fc" id="L362">            entrySize++;</span>
+<span class="fc" id="L363">        }</span>
+
+        void insertTree(int index, BTreeEntry tree) {
+<span class="fc" id="L366">            insertKeyValue(index, tree.keys[0], tree.values);</span>
+<span class="pc bpc" id="L367" title="1 of 2 branches missed.">            if (!isLeaf) {</span>
+                // overwrite children
+<span class="fc" id="L369">                children[index] = tree.children[0];</span>
+                // set
+<span class="fc" id="L371">                children[index + 1] = tree.children[1];</span>
+            }
+<span class="fc" id="L373">        }</span>
+
+        long get(long key) {
+<span class="fc" id="L376">            int index = binarySearch(keys, 0, entrySize, key);</span>
+<span class="fc bfc" id="L377" title="All 2 branches covered.">            if (index &gt;= 0) {</span>
+<span class="fc" id="L378">                return toLong(values, index * bytesPerValue);</span>
+            }
+<span class="fc" id="L380">            index = ~index;</span>
+<span class="pc bpc" id="L381" title="1 of 4 branches missed.">            if (isLeaf || children[index] == null) {</span>
+<span class="fc" id="L382">                return emptyValue;</span>
+            }
+<span class="fc" id="L384">            return children[index].get(key);</span>
+        }
+
+        /**
+         * @return used bytes
+         */
+        long getCapacity() {
+<span class="fc" id="L391">            long cap = keys.length * (8 + 4) + 3 * 12 + 4 + 1;</span>
+<span class="fc bfc" id="L392" title="All 2 branches covered.">            if (!isLeaf) {</span>
+<span class="fc" id="L393">                cap += children.length * 4;</span>
+<span class="fc bfc" id="L394" title="All 2 branches covered.">                for (int i = 0; i &lt; children.length; i++) {</span>
+<span class="fc bfc" id="L395" title="All 2 branches covered.">                    if (children[i] != null) {</span>
+<span class="fc" id="L396">                        cap += children[i].getCapacity();</span>
+                    }
+                }
+            }
+<span class="fc" id="L400">            return cap;</span>
+        }
+
+        int getEntries() {
+<span class="nc" id="L404">            int entries = 1;</span>
+<span class="nc bnc" id="L405" title="All 2 branches missed.">            if (!isLeaf) {</span>
+<span class="nc bnc" id="L406" title="All 2 branches missed.">                for (int i = 0; i &lt; children.length; i++) {</span>
+<span class="nc bnc" id="L407" title="All 2 branches missed.">                    if (children[i] != null) {</span>
+<span class="nc" id="L408">                        entries += children[i].getEntries();</span>
+                    }
+                }
+            }
+<span class="nc" id="L412">            return entries;</span>
+        }
+
+        void ensureSize(int size) {
+<span class="fc bfc" id="L416" title="All 2 branches covered.">            if (size &lt;= keys.length) {</span>
+<span class="fc" id="L417">                return;</span>
+            }
+<span class="fc" id="L419">            int newSize = Math.min(maxLeafEntries, Math.max(size + 1, Math.round(size * factor)));</span>
+<span class="fc" id="L420">            keys = Arrays.copyOf(keys, newSize);</span>
+<span class="fc" id="L421">            values = Arrays.copyOf(values, newSize * bytesPerValue);</span>
+<span class="fc bfc" id="L422" title="All 2 branches covered.">            if (!isLeaf) {</span>
+<span class="fc" id="L423">                children = Arrays.copyOf(children, newSize + 1);</span>
+            }
+<span class="fc" id="L425">        }</span>
+
+        void compact() {
+<span class="nc" id="L428">            int tolerance = 1;</span>
+<span class="nc bnc" id="L429" title="All 2 branches missed.">            if (entrySize + tolerance &lt; keys.length) {</span>
+<span class="nc" id="L430">                keys = Arrays.copyOf(keys, entrySize);</span>
+<span class="nc" id="L431">                values = Arrays.copyOf(values, entrySize * bytesPerValue);</span>
+<span class="nc bnc" id="L432" title="All 2 branches missed.">                if (!isLeaf) {</span>
+<span class="nc" id="L433">                    children = Arrays.copyOf(children, entrySize + 1);</span>
+                }
+            }
+
+<span class="nc bnc" id="L437" title="All 2 branches missed.">            if (!isLeaf) {</span>
+<span class="nc bnc" id="L438" title="All 2 branches missed.">                for (int i = 0; i &lt; children.length; i++) {</span>
+<span class="nc bnc" id="L439" title="All 2 branches missed.">                    if (children[i] != null) {</span>
+<span class="nc" id="L440">                        children[i].compact();</span>
+                    }
+                }
+            }
+<span class="nc" id="L444">        }</span>
+
+        String toString(int height) {
+<span class="nc" id="L447">            String str = height + &quot;: &quot;;</span>
+<span class="nc bnc" id="L448" title="All 2 branches missed.">            for (int i = 0; i &lt; entrySize; i++) {</span>
+<span class="nc bnc" id="L449" title="All 2 branches missed.">                if (i &gt; 0) {</span>
+<span class="nc" id="L450">                    str += &quot;,&quot;;</span>
+                }
+<span class="nc" id="L452">                str += keys[i];</span>
+            }
+<span class="nc" id="L454">            str += &quot;\n&quot;;</span>
+<span class="nc bnc" id="L455" title="All 2 branches missed.">            if (!isLeaf) {</span>
+<span class="nc bnc" id="L456" title="All 2 branches missed.">                for (int i = 0; i &lt; entrySize + 1; i++) {</span>
+<span class="nc bnc" id="L457" title="All 2 branches missed.">                    if (children[i] != null) {</span>
+<span class="nc" id="L458">                        str += children[i].toString(height + 1) + &quot;| &quot;;</span>
+                    }
+                }
+            }
+<span class="nc" id="L462">            return str;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

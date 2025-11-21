@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TurnCostStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">TurnCostStorage.java</span></div><h1>TurnCostStorage.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.routing.ev.IntsRefEdgeIntAccess;
+import com.graphhopper.util.Constants;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.GHUtility;
+
+import java.util.function.IntUnaryOperator;
+
+/**
+ * A key/value store, where the unique keys are triples (fromEdge, viaNode, toEdge) and the values
+ * are integers that can be used to store encoded values.
+ *
+ * @author Karl Hübner
+ * @author Peter Karich
+ * @author Michael Zilske
+ */
+public class TurnCostStorage {
+    static final int NO_TURN_ENTRY = -1;
+    // we store each turn cost entry in the format |from_edge|to_edge|flags|next|. each entry has 4 bytes -&gt; 16 bytes total
+    private static final int TC_FROM = 0;
+    private static final int TC_TO = 4;
+    private static final int TC_FLAGS = 8;
+    private static final int TC_NEXT = 12;
+    private static final int BYTES_PER_ENTRY = 16;
+
+    private final BaseGraph baseGraph;
+    private final DataAccess turnCosts;
+<span class="fc" id="L50">    private final EdgeIntAccess edgeIntAccess = createEdgeIntAccess();</span>
+    private int turnCostsCount;
+
+<span class="fc" id="L53">    public TurnCostStorage(BaseGraph baseGraph, DataAccess turnCosts) {</span>
+<span class="fc" id="L54">        this.baseGraph = baseGraph;</span>
+<span class="fc" id="L55">        this.turnCosts = turnCosts;</span>
+<span class="fc" id="L56">    }</span>
+
+    public TurnCostStorage create(long initBytes) {
+<span class="fc" id="L59">        turnCosts.create(initBytes);</span>
+<span class="fc" id="L60">        return this;</span>
+    }
+
+    public void flush() {
+<span class="fc" id="L64">        turnCosts.setHeader(0, Constants.VERSION_TURN_COSTS);</span>
+<span class="fc" id="L65">        turnCosts.setHeader(4, BYTES_PER_ENTRY);</span>
+<span class="fc" id="L66">        turnCosts.setHeader(2 * 4, turnCostsCount);</span>
+<span class="fc" id="L67">        turnCosts.flush();</span>
+<span class="fc" id="L68">    }</span>
+
+    public void close() {
+<span class="fc" id="L71">        turnCosts.close();</span>
+<span class="fc" id="L72">    }</span>
+
+    public long getCapacity() {
+<span class="fc" id="L75">        return turnCosts.getCapacity();</span>
+    }
+
+    public boolean loadExisting() {
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        if (!turnCosts.loadExisting())</span>
+<span class="nc" id="L80">            return false;</span>
+
+<span class="fc" id="L82">        GHUtility.checkDAVersion(turnCosts.getName(), Constants.VERSION_TURN_COSTS, turnCosts.getHeader(0));</span>
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">        if (turnCosts.getHeader(4) != BYTES_PER_ENTRY) {</span>
+<span class="nc" id="L84">            throw new IllegalStateException(&quot;Number of bytes per turn cost entry does not match the current configuration: &quot; + turnCosts.getHeader(0) + &quot; vs. &quot; + BYTES_PER_ENTRY);</span>
+        }
+<span class="fc" id="L86">        turnCostsCount = turnCosts.getHeader(8);</span>
+<span class="fc" id="L87">        return true;</span>
+    }
+
+    public void set(BooleanEncodedValue bev, int fromEdge, int viaNode, int toEdge, boolean value) {
+<span class="fc" id="L91">        int index = findOrCreateTurnCostEntry(fromEdge, viaNode, toEdge);</span>
+<span class="pc bpc" id="L92" title="1 of 2 branches missed.">        if (index &lt; 0)</span>
+<span class="nc" id="L93">            throw new IllegalStateException(&quot;Invalid index: &quot; + index + &quot; at (&quot; + fromEdge + &quot;, &quot; + viaNode + &quot;, &quot; + toEdge + &quot;)&quot;);</span>
+<span class="fc" id="L94">        bev.setBool(false, index, edgeIntAccess, value);</span>
+<span class="fc" id="L95">    }</span>
+
+    /**
+     * Sets the turn cost at the viaNode when going from &quot;fromEdge&quot; to &quot;toEdge&quot;
+     */
+    public void set(DecimalEncodedValue turnCostEnc, int fromEdge, int viaNode, int toEdge, double cost) {
+<span class="fc" id="L101">        int index = findOrCreateTurnCostEntry(fromEdge, viaNode, toEdge);</span>
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">        if (index &lt; 0)</span>
+<span class="nc" id="L103">            throw new IllegalStateException(&quot;Invalid index: &quot; + index + &quot; at (&quot; + fromEdge + &quot;, &quot; + viaNode + &quot;, &quot; + toEdge + &quot;)&quot;);</span>
+<span class="fc" id="L104">        turnCostEnc.setDecimal(false, index, edgeIntAccess, cost);</span>
+<span class="fc" id="L105">    }</span>
+
+    private int findOrCreateTurnCostEntry(int fromEdge, int viaNode, int toEdge) {
+<span class="fc" id="L108">        int index = findIndex(fromEdge, viaNode, toEdge);</span>
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        if (index &lt; 0) {</span>
+            // create a new entry
+<span class="fc" id="L111">            index = turnCostsCount;</span>
+<span class="fc" id="L112">            ensureTurnCostIndex(index);</span>
+<span class="fc" id="L113">            int prevIndex = baseGraph.getNodeAccess().getTurnCostIndex(viaNode);</span>
+<span class="fc" id="L114">            baseGraph.getNodeAccess().setTurnCostIndex(viaNode, index);</span>
+<span class="fc" id="L115">            long pointer = toPointer(index);</span>
+<span class="fc" id="L116">            turnCosts.setInt(pointer + TC_FROM, fromEdge);</span>
+<span class="fc" id="L117">            turnCosts.setInt(pointer + TC_TO, toEdge);</span>
+<span class="fc" id="L118">            turnCosts.setInt(pointer + TC_NEXT, prevIndex);</span>
+<span class="fc" id="L119">            turnCostsCount++;</span>
+        }
+<span class="fc" id="L121">        return index;</span>
+    }
+
+    public double get(DecimalEncodedValue dev, int fromEdge, int viaNode, int toEdge) {
+<span class="fc" id="L125">        int index = findIndex(fromEdge, viaNode, toEdge);</span>
+        // todo: should we rather pass 0 to the encoded value so it can decide what this means?
+<span class="fc bfc" id="L127" title="All 2 branches covered.">        if (index &lt; 0) return 0;</span>
+<span class="fc" id="L128">        return dev.getDecimal(false, index, edgeIntAccess);</span>
+    }
+
+    public boolean get(BooleanEncodedValue bev, int fromEdge, int viaNode, int toEdge) {
+<span class="fc" id="L132">        int index = findIndex(fromEdge, viaNode, toEdge);</span>
+        // todo: should we rather pass 0 to the encoded value so it can decide what this means?
+<span class="fc bfc" id="L134" title="All 2 branches covered.">        if (index &lt; 0) return false;</span>
+<span class="fc" id="L135">        return bev.getBool(false, index, edgeIntAccess);</span>
+    }
+
+    private EdgeIntAccess createEdgeIntAccess() {
+<span class="fc" id="L139">        return new EdgeIntAccess() {</span>
+            @Override
+            public int getInt(int entryIndex, int index) {
+<span class="fc" id="L142">                return turnCosts.getInt(toPointer(entryIndex) + TC_FLAGS);</span>
+            }
+
+            @Override
+            public void setInt(int entryIndex, int index, int value) {
+<span class="fc" id="L147">                turnCosts.setInt(toPointer(entryIndex) + TC_FLAGS, value);</span>
+<span class="fc" id="L148">            }</span>
+        };
+    }
+
+    private void ensureTurnCostIndex(int index) {
+<span class="fc" id="L153">        turnCosts.ensureCapacity(toPointer(index + 1));</span>
+<span class="fc" id="L154">    }</span>
+
+    private int findIndex(int fromEdge, int viaNode, int toEdge) {
+<span class="pc bpc" id="L157" title="2 of 4 branches missed.">        if (!EdgeIterator.Edge.isValid(fromEdge) || !EdgeIterator.Edge.isValid(toEdge))</span>
+<span class="nc" id="L158">            throw new IllegalArgumentException(&quot;from and to edge cannot be NO_EDGE&quot;);</span>
+<span class="pc bpc" id="L159" title="1 of 2 branches missed.">        if (viaNode &lt; 0)</span>
+<span class="nc" id="L160">            throw new IllegalArgumentException(&quot;via node cannot be negative&quot;);</span>
+
+<span class="fc" id="L162">        final int maxEntries = 1000;</span>
+<span class="fc" id="L163">        int index = baseGraph.getNodeAccess().getTurnCostIndex(viaNode);</span>
+<span class="pc bpc" id="L164" title="1 of 2 branches missed.">        for (int i = 0; i &lt; maxEntries; ++i) {</span>
+<span class="fc bfc" id="L165" title="All 2 branches covered.">            if (index == NO_TURN_ENTRY) return -1;</span>
+<span class="fc" id="L166">            long pointer = toPointer(index);</span>
+<span class="fc bfc" id="L167" title="All 4 branches covered.">            if (fromEdge == turnCosts.getInt(pointer + TC_FROM) &amp;&amp; toEdge == turnCosts.getInt(pointer + TC_TO))</span>
+<span class="fc" id="L168">                return index;</span>
+<span class="fc" id="L169">            index = turnCosts.getInt(pointer + TC_NEXT);</span>
+        }
+<span class="nc" id="L171">        throw new IllegalStateException(&quot;Turn cost list for node: &quot; + viaNode + &quot; is longer than expected, max: &quot; + maxEntries);</span>
+    }
+
+    public void sortEdges(IntUnaryOperator getNewEdgeForOldEdge) {
+<span class="fc bfc" id="L175" title="All 2 branches covered.">        for (int i = 0; i &lt; turnCostsCount; i++) {</span>
+<span class="fc" id="L176">            long pointer = toPointer(i);</span>
+<span class="fc" id="L177">            turnCosts.setInt(pointer + TC_FROM, getNewEdgeForOldEdge.applyAsInt(turnCosts.getInt(pointer + TC_FROM)));</span>
+<span class="fc" id="L178">            turnCosts.setInt(pointer + TC_TO, getNewEdgeForOldEdge.applyAsInt(turnCosts.getInt(pointer + TC_TO)));</span>
+        }
+<span class="fc" id="L180">    }</span>
+
+    private long toPointer(int index) {
+<span class="fc" id="L183">        return (long) index * BYTES_PER_ENTRY;</span>
+    }
+
+    public int getTurnCostsCount() {
+<span class="fc" id="L187">        return turnCostsCount;</span>
+    }
+
+    public int getTurnCostsCount(int node) {
+<span class="fc" id="L191">        int index = baseGraph.getNodeAccess().getTurnCostIndex(node);</span>
+<span class="fc" id="L192">        int count = 0;</span>
+<span class="fc bfc" id="L193" title="All 2 branches covered.">        while (index != NO_TURN_ENTRY) {</span>
+<span class="fc" id="L194">            long pointer = toPointer(index);</span>
+<span class="fc" id="L195">            index = turnCosts.getInt(pointer + TC_NEXT);</span>
+<span class="fc" id="L196">            count++;</span>
+<span class="fc" id="L197">        }</span>
+<span class="fc" id="L198">        return count;</span>
+    }
+
+    public boolean isClosed() {
+<span class="nc" id="L202">        return turnCosts.isClosed();</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L207">        return &quot;turn_cost&quot;;</span>
+    }
+
+    // TODO: Maybe some of the stuff above could now be re-implemented in a simpler way with some of the stuff below.
+    // For now, I just wanted to iterate over all entries.
+
+    /**
+     * Returns an iterator over all entries.
+     *
+     * @return an iterator over all entries.
+     */
+    public Iterator getAllTurnCosts() {
+<span class="fc" id="L219">        return new Itr();</span>
+    }
+
+    public void sortNodes() {
+<span class="fc" id="L223">        IntArrayList tcFroms = new IntArrayList();</span>
+<span class="fc" id="L224">        IntArrayList tcTos = new IntArrayList();</span>
+<span class="fc" id="L225">        IntArrayList tcFlags = new IntArrayList();</span>
+<span class="fc" id="L226">        IntArrayList tcNexts = new IntArrayList();</span>
+<span class="fc bfc" id="L227" title="All 2 branches covered.">        for (int i = 0; i &lt; turnCostsCount; i++) {</span>
+<span class="fc" id="L228">            long pointer = toPointer(i);</span>
+<span class="fc" id="L229">            tcFroms.add(turnCosts.getInt(pointer + TC_FROM));</span>
+<span class="fc" id="L230">            tcTos.add(turnCosts.getInt(pointer + TC_TO));</span>
+<span class="fc" id="L231">            tcFlags.add(turnCosts.getInt(pointer + TC_FLAGS));</span>
+<span class="fc" id="L232">            tcNexts.add(turnCosts.getInt(pointer + TC_NEXT));</span>
+        }
+<span class="fc" id="L234">        long turnCostsCountBefore = turnCostsCount;</span>
+<span class="fc" id="L235">        turnCostsCount = 0;</span>
+<span class="fc bfc" id="L236" title="All 2 branches covered.">        for (int node = 0; node &lt; baseGraph.getNodes(); node++) {</span>
+<span class="fc" id="L237">            boolean firstForNode = true;</span>
+<span class="fc" id="L238">            int turnCostIndex = baseGraph.getNodeAccess().getTurnCostIndex(node);</span>
+<span class="fc bfc" id="L239" title="All 2 branches covered.">            while (turnCostIndex != NO_TURN_ENTRY) {</span>
+<span class="fc bfc" id="L240" title="All 2 branches covered.">                if (firstForNode) {</span>
+<span class="fc" id="L241">                    baseGraph.getNodeAccess().setTurnCostIndex(node, turnCostsCount);</span>
+                } else {
+<span class="fc" id="L243">                    long prevPointer = toPointer(turnCostsCount - 1);</span>
+<span class="fc" id="L244">                    turnCosts.setInt(prevPointer + TC_NEXT, turnCostsCount);</span>
+                }
+<span class="fc" id="L246">                long pointer = toPointer(turnCostsCount);</span>
+<span class="fc" id="L247">                turnCosts.setInt(pointer + TC_FROM, tcFroms.get(turnCostIndex));</span>
+<span class="fc" id="L248">                turnCosts.setInt(pointer + TC_TO, tcTos.get(turnCostIndex));</span>
+<span class="fc" id="L249">                turnCosts.setInt(pointer + TC_FLAGS, tcFlags.get(turnCostIndex));</span>
+<span class="fc" id="L250">                turnCosts.setInt(pointer + TC_NEXT, NO_TURN_ENTRY);</span>
+<span class="fc" id="L251">                turnCostsCount++;</span>
+<span class="fc" id="L252">                firstForNode = false;</span>
+<span class="fc" id="L253">                turnCostIndex = tcNexts.get(turnCostIndex);</span>
+<span class="fc" id="L254">            }</span>
+        }
+<span class="pc bpc" id="L256" title="1 of 2 branches missed.">        if (turnCostsCountBefore != turnCostsCount)</span>
+<span class="nc" id="L257">            throw new IllegalStateException(&quot;Turn cost count changed unexpectedly: &quot; + turnCostsCountBefore + &quot; -&gt; &quot; + turnCostsCount);</span>
+<span class="fc" id="L258">    }</span>
+
+    public interface Iterator {
+        int getFromEdge();
+
+        int getViaNode();
+
+        int getToEdge();
+
+        boolean get(BooleanEncodedValue booleanEncodedValue);
+
+        double getCost(DecimalEncodedValue encodedValue);
+
+        boolean next();
+    }
+
+<span class="fc" id="L274">    private class Itr implements Iterator {</span>
+<span class="fc" id="L275">        private int viaNode = -1;</span>
+<span class="fc" id="L276">        private int turnCostIndex = -1;</span>
+<span class="fc" id="L277">        private final IntsRef intsRef = new IntsRef(1);</span>
+<span class="fc" id="L278">        private final EdgeIntAccess edgeIntAccess = new IntsRefEdgeIntAccess(intsRef);</span>
+
+        private long turnCostPtr() {
+<span class="fc" id="L281">            return toPointer(turnCostIndex);</span>
+        }
+
+        @Override
+        public int getFromEdge() {
+<span class="fc" id="L286">            return turnCosts.getInt(turnCostPtr() + TC_FROM);</span>
+        }
+
+        @Override
+        public int getViaNode() {
+<span class="fc" id="L291">            return viaNode;</span>
+        }
+
+        @Override
+        public int getToEdge() {
+<span class="fc" id="L296">            return turnCosts.getInt(turnCostPtr() + TC_TO);</span>
+        }
+
+        @Override
+        public boolean get(BooleanEncodedValue booleanEncodedValue) {
+<span class="nc" id="L301">            intsRef.ints[0] = turnCosts.getInt(turnCostPtr() + TC_FLAGS);</span>
+<span class="nc" id="L302">            return booleanEncodedValue.getBool(false, -1, edgeIntAccess);</span>
+        }
+
+        @Override
+        public double getCost(DecimalEncodedValue encodedValue) {
+<span class="fc" id="L307">            intsRef.ints[0] = turnCosts.getInt(turnCostPtr() + TC_FLAGS);</span>
+<span class="fc" id="L308">            return encodedValue.getDecimal(false, -1, edgeIntAccess);</span>
+        }
+
+        @Override
+        public boolean next() {
+<span class="fc" id="L313">            boolean gotNextTci = nextTci();</span>
+<span class="fc bfc" id="L314" title="All 2 branches covered.">            if (!gotNextTci) {</span>
+<span class="fc" id="L315">                turnCostIndex = NO_TURN_ENTRY;</span>
+<span class="fc" id="L316">                boolean gotNextNode = true;</span>
+<span class="fc bfc" id="L317" title="All 4 branches covered.">                while (turnCostIndex == NO_TURN_ENTRY &amp;&amp; (gotNextNode = nextNode())) {</span>
+
+                }
+<span class="fc bfc" id="L320" title="All 2 branches covered.">                if (!gotNextNode) {</span>
+<span class="fc" id="L321">                    return false;</span>
+                }
+            }
+<span class="fc" id="L324">            return true;</span>
+        }
+
+        private boolean nextNode() {
+<span class="fc" id="L328">            viaNode++;</span>
+<span class="fc bfc" id="L329" title="All 2 branches covered.">            if (viaNode &gt;= baseGraph.getNodes()) {</span>
+<span class="fc" id="L330">                return false;</span>
+            }
+<span class="fc" id="L332">            turnCostIndex = baseGraph.getNodeAccess().getTurnCostIndex(viaNode);</span>
+<span class="fc" id="L333">            return true;</span>
+        }
+
+        private boolean nextTci() {
+<span class="fc bfc" id="L337" title="All 2 branches covered.">            if (turnCostIndex == NO_TURN_ENTRY) {</span>
+<span class="fc" id="L338">                return false;</span>
+            }
+<span class="fc" id="L340">            turnCostIndex = turnCosts.getInt(turnCostPtr() + TC_NEXT);</span>
+<span class="fc bfc" id="L341" title="All 2 branches covered.">            if (turnCostIndex == NO_TURN_ENTRY) {</span>
+<span class="fc" id="L342">                return false;</span>
+            }
+<span class="fc" id="L344">            return true;</span>
+        }
+    }
+
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

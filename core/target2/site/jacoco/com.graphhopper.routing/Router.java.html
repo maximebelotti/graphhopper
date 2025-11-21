@@ -1,0 +1,597 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Router.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">Router.java</span></div><h1>Router.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.cursors.IntCursor;
+import com.graphhopper.GHRequest;
+import com.graphhopper.GHResponse;
+import com.graphhopper.ResponsePath;
+import com.graphhopper.config.Profile;
+import com.graphhopper.routing.ch.CHRoutingAlgorithmFactory;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.EncodedValueLookup;
+import com.graphhopper.routing.ev.Subnetwork;
+import com.graphhopper.routing.lm.LMRoutingAlgorithmFactory;
+import com.graphhopper.routing.lm.LandmarkStorage;
+import com.graphhopper.routing.querygraph.QueryGraph;
+import com.graphhopper.routing.util.*;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.routing.weighting.custom.CustomWeighting;
+import com.graphhopper.routing.weighting.custom.FindMinMax;
+import com.graphhopper.storage.BaseGraph;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.RoutingCHGraph;
+import com.graphhopper.storage.index.LocationIndex;
+import com.graphhopper.storage.index.Snap;
+import com.graphhopper.util.*;
+import com.graphhopper.util.details.PathDetailsBuilderFactory;
+import com.graphhopper.util.exceptions.PointDistanceExceededException;
+import com.graphhopper.util.exceptions.PointNotFoundException;
+import com.graphhopper.util.exceptions.PointOutOfBoundsException;
+import com.graphhopper.util.shapes.BBox;
+import com.graphhopper.util.shapes.GHPoint;
+
+import java.util.*;
+
+import static com.graphhopper.util.DistanceCalcEarth.DIST_EARTH;
+import static com.graphhopper.util.Parameters.Algorithms.ALT_ROUTE;
+import static com.graphhopper.util.Parameters.Algorithms.ROUND_TRIP;
+import static com.graphhopper.util.Parameters.Routing.*;
+import static com.graphhopper.util.TurnCostsConfig.INFINITE_U_TURN_COSTS;
+
+public class Router {
+    protected final BaseGraph graph;
+    protected final EncodingManager encodingManager;
+    protected final LocationIndex locationIndex;
+    protected final Map&lt;String, Profile&gt; profilesByName;
+    protected final PathDetailsBuilderFactory pathDetailsBuilderFactory;
+    protected final TranslationMap translationMap;
+    protected final RouterConfig routerConfig;
+    protected final WeightingFactory weightingFactory;
+    protected final Map&lt;String, RoutingCHGraph&gt; chGraphs;
+    protected final Map&lt;String, LandmarkStorage&gt; landmarks;
+    protected final boolean chEnabled;
+    protected final boolean lmEnabled;
+
+    public Router(BaseGraph graph, EncodingManager encodingManager, LocationIndex locationIndex,
+                  Map&lt;String, Profile&gt; profilesByName, PathDetailsBuilderFactory pathDetailsBuilderFactory,
+                  TranslationMap translationMap, RouterConfig routerConfig, WeightingFactory weightingFactory,
+<span class="fc" id="L75">                  Map&lt;String, RoutingCHGraph&gt; chGraphs, Map&lt;String, LandmarkStorage&gt; landmarks) {</span>
+<span class="fc" id="L76">        this.graph = graph;</span>
+<span class="fc" id="L77">        this.encodingManager = encodingManager;</span>
+<span class="fc" id="L78">        this.locationIndex = locationIndex;</span>
+<span class="fc" id="L79">        this.profilesByName = profilesByName;</span>
+<span class="fc" id="L80">        this.pathDetailsBuilderFactory = pathDetailsBuilderFactory;</span>
+<span class="fc" id="L81">        this.translationMap = translationMap;</span>
+<span class="fc" id="L82">        this.routerConfig = routerConfig;</span>
+<span class="fc" id="L83">        this.weightingFactory = weightingFactory;</span>
+<span class="fc" id="L84">        this.chGraphs = chGraphs;</span>
+<span class="fc" id="L85">        this.landmarks = landmarks;</span>
+        // note that his is not the same as !ghStorage.getCHConfigs().isEmpty(), because the GHStorage might have some
+        // CHGraphs that were not built yet (and possibly no CH profiles were configured).
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        this.chEnabled = !chGraphs.isEmpty();</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        this.lmEnabled = !landmarks.isEmpty();</span>
+
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        for (String profile : profilesByName.keySet()) {</span>
+<span class="pc bpc" id="L92" title="1 of 2 branches missed.">            if (!encodingManager.hasEncodedValue(Subnetwork.key(profile)))</span>
+<span class="nc" id="L93">                throw new IllegalStateException(&quot;The profile '&quot; + profile + &quot;' needs an EncodedValue '&quot; + Subnetwork.key(profile) + &quot;'&quot;);</span>
+<span class="fc" id="L94">        }</span>
+<span class="fc" id="L95">    }</span>
+
+    public GHResponse route(GHRequest request) {
+        try {
+<span class="fc" id="L99">            checkNoLegacyParameters(request);</span>
+<span class="fc" id="L100">            checkAtLeastOnePoint(request);</span>
+<span class="fc" id="L101">            checkIfPointsAreInBoundsAndNotNull(request.getPoints());</span>
+<span class="fc" id="L102">            checkHeadings(request);</span>
+<span class="fc" id="L103">            checkPointHints(request);</span>
+<span class="fc" id="L104">            checkCurbsides(request);</span>
+<span class="fc" id="L105">            checkNoBlockArea(request);</span>
+<span class="fc" id="L106">            checkCustomModel(request);</span>
+
+<span class="fc" id="L108">            Solver solver = createSolver(request);</span>
+<span class="fc" id="L109">            solver.checkRequest();</span>
+<span class="fc" id="L110">            solver.init();</span>
+
+<span class="fc bfc" id="L112" title="All 2 branches covered.">            if (ROUND_TRIP.equalsIgnoreCase(request.getAlgorithm())) {</span>
+<span class="pc bpc" id="L113" title="1 of 2 branches missed.">                if (!(solver instanceof FlexSolver))</span>
+<span class="nc" id="L114">                    throw new IllegalArgumentException(&quot;algorithm=round_trip only works with a flexible algorithm&quot;);</span>
+<span class="fc" id="L115">                return routeRoundTrip(request, (FlexSolver) solver);</span>
+<span class="fc bfc" id="L116" title="All 2 branches covered.">            } else if (ALT_ROUTE.equalsIgnoreCase(request.getAlgorithm())) {</span>
+<span class="fc" id="L117">                return routeAlt(request, solver);</span>
+            } else {
+<span class="fc" id="L119">                return routeVia(request, solver);</span>
+            }
+<span class="nc" id="L121">        } catch (MultiplePointsNotFoundException ex) {</span>
+<span class="nc" id="L122">            GHResponse ghRsp = new GHResponse();</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">            for (IntCursor p : ex.getPointsNotFound()) {</span>
+<span class="nc" id="L124">                ghRsp.addError(new PointNotFoundException(&quot;Cannot find point &quot; + p.value + &quot;: &quot; + request.getPoints().get(p.value), p.value));</span>
+<span class="nc" id="L125">            }</span>
+<span class="nc" id="L126">            return ghRsp;</span>
+<span class="fc" id="L127">        } catch (IllegalArgumentException ex) {</span>
+<span class="fc" id="L128">            GHResponse ghRsp = new GHResponse();</span>
+<span class="fc" id="L129">            ghRsp.addError(ex);</span>
+<span class="fc" id="L130">            return ghRsp;</span>
+        }
+    }
+
+    private void checkNoLegacyParameters(GHRequest request) {
+<span class="pc bpc" id="L135" title="1 of 2 branches missed.">        if (request.getHints().has(&quot;vehicle&quot;))</span>
+<span class="nc" id="L136">            throw new IllegalArgumentException(&quot;GHRequest may no longer contain a vehicle, use the profile parameter instead, see docs/core/profiles.md&quot;);</span>
+<span class="pc bpc" id="L137" title="1 of 2 branches missed.">        if (request.getHints().has(&quot;weighting&quot;))</span>
+<span class="nc" id="L138">            throw new IllegalArgumentException(&quot;GHRequest may no longer contain a weighting, use the profile parameter instead, see docs/core/profiles.md&quot;);</span>
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">        if (request.getHints().has(Parameters.Routing.TURN_COSTS))</span>
+<span class="nc" id="L140">            throw new IllegalArgumentException(&quot;GHRequest may no longer contain the turn_costs=true/false parameter, use the profile parameter instead, see docs/core/profiles.md&quot;);</span>
+<span class="pc bpc" id="L141" title="1 of 2 branches missed.">        if (request.getHints().has(Parameters.Routing.EDGE_BASED))</span>
+<span class="nc" id="L142">            throw new IllegalArgumentException(&quot;GHRequest may no longer contain the edge_based=true/false parameter, use the profile parameter instead, see docs/core/profiles.md&quot;);</span>
+<span class="fc" id="L143">    }</span>
+
+    private void checkAtLeastOnePoint(GHRequest request) {
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">        if (request.getPoints().isEmpty())</span>
+<span class="nc" id="L147">            throw new IllegalArgumentException(&quot;You have to pass at least one point&quot;);</span>
+<span class="fc" id="L148">    }</span>
+
+    private void checkIfPointsAreInBoundsAndNotNull(List&lt;GHPoint&gt; points) {
+<span class="fc" id="L151">        BBox bounds = graph.getBounds();</span>
+<span class="fc bfc" id="L152" title="All 2 branches covered.">        for (int i = 0; i &lt; points.size(); i++) {</span>
+<span class="fc" id="L153">            GHPoint point = points.get(i);</span>
+<span class="pc bpc" id="L154" title="1 of 2 branches missed.">            if (point == null)</span>
+<span class="nc" id="L155">                throw new IllegalArgumentException(&quot;Point &quot; + i + &quot; is null&quot;);</span>
+<span class="pc bpc" id="L156" title="1 of 2 branches missed.">            if (!bounds.contains(point.getLat(), point.getLon()))</span>
+<span class="nc" id="L157">                throw new PointOutOfBoundsException(&quot;Point &quot; + i + &quot; is out of bounds: &quot; + point + &quot;, the bounds are: &quot; + bounds, i);</span>
+        }
+<span class="fc" id="L159">    }</span>
+
+    private void checkHeadings(GHRequest request) {
+<span class="fc bfc" id="L162" title="All 4 branches covered.">        if (request.getHeadings().size() &gt; 1 &amp;&amp; request.getHeadings().size() != request.getPoints().size())</span>
+<span class="fc" id="L163">            throw new IllegalArgumentException(&quot;The number of 'heading' parameters must be zero, one &quot;</span>
+<span class="fc" id="L164">                    + &quot;or equal to the number of points (&quot; + request.getPoints().size() + &quot;)&quot;);</span>
+<span class="fc bfc" id="L165" title="All 2 branches covered.">        for (int i = 0; i &lt; request.getHeadings().size(); i++)</span>
+<span class="fc bfc" id="L166" title="All 2 branches covered.">            if (!GHRequest.isAzimuthValue(request.getHeadings().get(i)))</span>
+<span class="fc" id="L167">                throw new IllegalArgumentException(&quot;Heading for point &quot; + i + &quot; must be in range [0,360) or NaN, but was: &quot; + request.getHeadings().get(i));</span>
+<span class="fc" id="L168">    }</span>
+
+    private void checkPointHints(GHRequest request) {
+<span class="pc bpc" id="L171" title="1 of 4 branches missed.">        if (!request.getPointHints().isEmpty() &amp;&amp; request.getPointHints().size() != request.getPoints().size())</span>
+<span class="nc" id="L172">            throw new IllegalArgumentException(&quot;If you pass &quot; + POINT_HINT + &quot;, you need to pass exactly one hint for every point, empty hints will be ignored&quot;);</span>
+<span class="fc" id="L173">    }</span>
+
+    private void checkCurbsides(GHRequest request) {
+<span class="pc bpc" id="L176" title="1 of 4 branches missed.">        if (!request.getCurbsides().isEmpty() &amp;&amp; request.getCurbsides().size() != request.getPoints().size())</span>
+<span class="nc" id="L177">            throw new IllegalArgumentException(&quot;If you pass &quot; + CURBSIDE + &quot;, you need to pass exactly one curbside for every point, empty curbsides will be ignored&quot;);</span>
+<span class="fc" id="L178">    }</span>
+
+    private void checkNoBlockArea(GHRequest request) {
+<span class="pc bpc" id="L181" title="1 of 2 branches missed.">        if (request.getHints().has(&quot;block_area&quot;))</span>
+<span class="nc" id="L182">            throw new IllegalArgumentException(&quot;The `block_area` parameter is no longer supported. Use a custom model with `areas` instead.&quot;);</span>
+<span class="fc" id="L183">    }</span>
+
+    private void checkCustomModel(GHRequest request) {
+<span class="pc bpc" id="L186" title="1 of 4 branches missed.">        if (request.getCustomModel() != null &amp;&amp; request.getCustomModel().isInternal())</span>
+<span class="nc" id="L187">            throw new IllegalArgumentException(&quot;CustomModel of query cannot be internal&quot;);</span>
+<span class="fc" id="L188">    }</span>
+
+    protected Solver createSolver(GHRequest request) {
+<span class="fc" id="L191">        final boolean disableCH = getDisableCH(request.getHints());</span>
+<span class="fc" id="L192">        final boolean disableLM = getDisableLM(request.getHints());</span>
+<span class="fc bfc" id="L193" title="All 4 branches covered.">        if (chEnabled &amp;&amp; !disableCH) {</span>
+<span class="fc" id="L194">            return createCHSolver(request, profilesByName, routerConfig, encodingManager, chGraphs);</span>
+<span class="fc bfc" id="L195" title="All 4 branches covered.">        } else if (lmEnabled &amp;&amp; !disableLM) {</span>
+<span class="fc" id="L196">            return createLMSolver(request, profilesByName, routerConfig, encodingManager, weightingFactory, graph, locationIndex, landmarks);</span>
+        } else {
+<span class="fc" id="L198">            return createFlexSolver(request, profilesByName, routerConfig, encodingManager, weightingFactory, graph, locationIndex);</span>
+        }
+    }
+
+    protected Solver createCHSolver(GHRequest request, Map&lt;String, Profile&gt; profilesByName, RouterConfig routerConfig,
+                                    EncodingManager encodingManager, Map&lt;String, RoutingCHGraph&gt; chGraphs) {
+<span class="fc" id="L204">        return new CHSolver(request, profilesByName, routerConfig, encodingManager, chGraphs);</span>
+    }
+
+    protected Solver createLMSolver(GHRequest request, Map&lt;String, Profile&gt; profilesByName, RouterConfig routerConfig,
+                                    EncodingManager encodingManager, WeightingFactory weightingFactory, BaseGraph baseGraph,
+                                    LocationIndex locationIndex, Map&lt;String, LandmarkStorage&gt; landmarks) {
+<span class="fc" id="L210">        return new LMSolver(request, profilesByName, routerConfig, encodingManager, weightingFactory, baseGraph, locationIndex, landmarks);</span>
+    }
+
+    protected Solver createFlexSolver(GHRequest request, Map&lt;String, Profile&gt; profilesByName, RouterConfig routerConfig,
+                                      EncodingManager encodingManager, WeightingFactory weightingFactory, BaseGraph baseGraph,
+                                      LocationIndex locationIndex) {
+<span class="fc" id="L216">        return new FlexSolver(request, profilesByName, routerConfig, encodingManager, weightingFactory, baseGraph, locationIndex);</span>
+    }
+
+    protected GHResponse routeRoundTrip(GHRequest request, FlexSolver solver) {
+<span class="fc" id="L220">        GHResponse ghRsp = new GHResponse();</span>
+<span class="fc" id="L221">        StopWatch sw = new StopWatch().start();</span>
+<span class="pc bpc" id="L222" title="1 of 2 branches missed.">        double startHeading = request.getHeadings().isEmpty() ? Double.NaN : request.getHeadings().get(0);</span>
+<span class="fc" id="L223">        RoundTripRouting.Params params = new RoundTripRouting.Params(request.getHints(), startHeading, routerConfig.getMaxRoundTripRetries());</span>
+<span class="fc" id="L224">        List&lt;Snap&gt; snaps = RoundTripRouting.lookup(request.getPoints(), solver.createSnapFilter(), locationIndex, params);</span>
+<span class="fc" id="L225">        ghRsp.addDebugInfo(&quot;idLookup:&quot; + sw.stop().getSeconds() + &quot;s&quot;);</span>
+
+<span class="fc" id="L227">        QueryGraph queryGraph = QueryGraph.create(graph, snaps);</span>
+<span class="fc" id="L228">        FlexiblePathCalculator pathCalculator = solver.createPathCalculator(queryGraph);</span>
+
+<span class="fc" id="L230">        RoundTripRouting.Result result = RoundTripRouting.calcPaths(snaps, pathCalculator);</span>
+        // we merge the different legs of the roundtrip into one response path
+        // note that the waypoints are not just the snapped points of the snaps, as usual, because we do some kind of tweak
+        // to avoid 'unnecessary tails' in the roundtrip algo
+<span class="fc" id="L234">        ResponsePath responsePath = concatenatePaths(request, solver.weighting, queryGraph, result.paths, result.wayPoints);</span>
+<span class="fc" id="L235">        ghRsp.add(responsePath);</span>
+<span class="fc" id="L236">        ghRsp.getHints().putObject(&quot;visited_nodes.sum&quot;, result.visitedNodes);</span>
+<span class="fc" id="L237">        ghRsp.getHints().putObject(&quot;visited_nodes.average&quot;, (float) result.visitedNodes / (snaps.size() - 1));</span>
+<span class="fc" id="L238">        return ghRsp;</span>
+    }
+
+    protected GHResponse routeAlt(GHRequest request, Solver solver) {
+<span class="pc bpc" id="L242" title="1 of 2 branches missed.">        if (request.getPoints().size() &gt; 2)</span>
+<span class="nc" id="L243">            throw new IllegalArgumentException(&quot;Currently alternative routes work only with start and end point. You tried to use: &quot; + request.getPoints().size() + &quot; points&quot;);</span>
+<span class="fc" id="L244">        GHResponse ghRsp = new GHResponse();</span>
+<span class="fc" id="L245">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L246">        DirectedEdgeFilter directedEdgeFilter = solver.createDirectedEdgeFilter();</span>
+<span class="fc" id="L247">        List&lt;Snap&gt; snaps = ViaRouting.lookup(encodingManager, request.getPoints(), solver.createSnapFilter(), locationIndex,</span>
+<span class="fc" id="L248">                request.getSnapPreventions(), request.getPointHints(), directedEdgeFilter, request.getHeadings());</span>
+<span class="fc" id="L249">        ghRsp.addDebugInfo(&quot;idLookup:&quot; + sw.stop().getSeconds() + &quot;s&quot;);</span>
+<span class="fc" id="L250">        QueryGraph queryGraph = QueryGraph.create(graph, snaps);</span>
+<span class="fc" id="L251">        PathCalculator pathCalculator = solver.createPathCalculator(queryGraph);</span>
+<span class="fc" id="L252">        boolean passThrough = getPassThrough(request.getHints());</span>
+<span class="fc" id="L253">        String curbsideStrictness = getCurbsideStrictness(request.getHints());</span>
+<span class="pc bpc" id="L254" title="1 of 2 branches missed.">        if (passThrough)</span>
+<span class="nc" id="L255">            throw new IllegalArgumentException(&quot;Alternative paths and &quot; + PASS_THROUGH + &quot; at the same time is currently not supported&quot;);</span>
+<span class="pc bpc" id="L256" title="1 of 2 branches missed.">        if (!request.getCurbsides().isEmpty())</span>
+<span class="nc" id="L257">            throw new IllegalArgumentException(&quot;Alternative paths do not support the &quot; + CURBSIDE + &quot; parameter yet&quot;);</span>
+
+<span class="fc" id="L259">        ViaRouting.Result result = ViaRouting.calcPaths(request.getPoints(), queryGraph, snaps, directedEdgeFilter,</span>
+<span class="fc" id="L260">                pathCalculator, request.getCurbsides(), curbsideStrictness, request.getHeadings(), passThrough);</span>
+<span class="pc bpc" id="L261" title="1 of 2 branches missed.">        if (result.paths.isEmpty())</span>
+<span class="nc" id="L262">            throw new RuntimeException(&quot;Empty paths for alternative route calculation not expected&quot;);</span>
+
+        // each path represents a different alternative and we do the path merging for each of them
+<span class="fc" id="L265">        PathMerger pathMerger = createPathMerger(request, solver.weighting, queryGraph);</span>
+<span class="fc bfc" id="L266" title="All 2 branches covered.">        for (Path path : result.paths) {</span>
+<span class="fc" id="L267">            PointList waypoints = getWaypoints(snaps);</span>
+<span class="fc" id="L268">            ResponsePath responsePath = pathMerger.doWork(waypoints, Collections.singletonList(path), encodingManager, translationMap.getWithFallBack(request.getLocale()));</span>
+<span class="fc" id="L269">            ghRsp.add(responsePath);</span>
+<span class="fc" id="L270">        }</span>
+<span class="fc" id="L271">        ghRsp.getHints().putObject(&quot;visited_nodes.sum&quot;, result.visitedNodes);</span>
+<span class="fc" id="L272">        ghRsp.getHints().putObject(&quot;visited_nodes.average&quot;, (float) result.visitedNodes / (snaps.size() - 1));</span>
+<span class="fc" id="L273">        return ghRsp;</span>
+    }
+
+    protected GHResponse routeVia(GHRequest request, Solver solver) {
+<span class="fc" id="L277">        GHResponse ghRsp = new GHResponse();</span>
+<span class="fc" id="L278">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L279">        DirectedEdgeFilter directedEdgeFilter = solver.createDirectedEdgeFilter();</span>
+<span class="fc" id="L280">        List&lt;Snap&gt; snaps = ViaRouting.lookup(encodingManager, request.getPoints(), solver.createSnapFilter(), locationIndex,</span>
+<span class="fc" id="L281">                request.getSnapPreventions(), request.getPointHints(), directedEdgeFilter, request.getHeadings());</span>
+<span class="fc" id="L282">        ghRsp.addDebugInfo(&quot;idLookup:&quot; + sw.stop().getSeconds() + &quot;s&quot;);</span>
+        // (base) query graph used to resolve headings, curbsides etc. this is not necessarily the same thing as
+        // the (possibly implementation specific) query graph used by PathCalculator
+<span class="fc" id="L285">        QueryGraph queryGraph = QueryGraph.create(graph, snaps);</span>
+<span class="fc" id="L286">        PathCalculator pathCalculator = solver.createPathCalculator(queryGraph);</span>
+<span class="fc" id="L287">        boolean passThrough = getPassThrough(request.getHints());</span>
+<span class="fc" id="L288">        String curbsideStrictness = getCurbsideStrictness(request.getHints());</span>
+<span class="fc" id="L289">        ViaRouting.Result result = ViaRouting.calcPaths(request.getPoints(), queryGraph, snaps, directedEdgeFilter,</span>
+<span class="fc" id="L290">                pathCalculator, request.getCurbsides(), curbsideStrictness, request.getHeadings(), passThrough);</span>
+
+<span class="pc bpc" id="L292" title="1 of 2 branches missed.">        if (request.getPoints().size() != result.paths.size() + 1)</span>
+<span class="nc" id="L293">            throw new RuntimeException(&quot;There should be exactly one more point than paths. points:&quot; + request.getPoints().size() + &quot;, paths:&quot; + result.paths.size());</span>
+
+        // here each path represents one leg of the via-route and we merge them all together into one response path
+<span class="fc" id="L296">        ResponsePath responsePath = concatenatePaths(request, solver.weighting, queryGraph, result.paths, getWaypoints(snaps));</span>
+<span class="fc" id="L297">        responsePath.addDebugInfo(result.debug);</span>
+<span class="fc" id="L298">        ghRsp.add(responsePath);</span>
+<span class="fc" id="L299">        ghRsp.getHints().putObject(&quot;visited_nodes.sum&quot;, result.visitedNodes);</span>
+<span class="fc" id="L300">        ghRsp.getHints().putObject(&quot;visited_nodes.average&quot;, (float) result.visitedNodes / (snaps.size() - 1));</span>
+<span class="fc" id="L301">        return ghRsp;</span>
+    }
+
+    private PathMerger createPathMerger(GHRequest request, Weighting weighting, Graph graph) {
+<span class="fc" id="L305">        boolean enableInstructions = request.getHints().getBool(Parameters.Routing.INSTRUCTIONS, routerConfig.isInstructionsEnabled());</span>
+<span class="fc" id="L306">        boolean calcPoints = request.getHints().getBool(Parameters.Routing.CALC_POINTS, routerConfig.isCalcPoints());</span>
+<span class="fc" id="L307">        double wayPointMaxDistance = request.getHints().getDouble(Parameters.Routing.WAY_POINT_MAX_DISTANCE, 0.5);</span>
+<span class="fc" id="L308">        double elevationWayPointMaxDistance = request.getHints().getDouble(ELEVATION_WAY_POINT_MAX_DISTANCE, routerConfig.getElevationWayPointMaxDistance());</span>
+
+<span class="fc" id="L310">        RamerDouglasPeucker peucker = new RamerDouglasPeucker().</span>
+<span class="fc" id="L311">                setMaxDistance(wayPointMaxDistance).</span>
+<span class="fc" id="L312">                setElevationMaxDistance(elevationWayPointMaxDistance);</span>
+<span class="fc" id="L313">        PathMerger pathMerger = new PathMerger(graph, weighting).</span>
+<span class="fc" id="L314">                setCalcPoints(calcPoints).</span>
+<span class="fc" id="L315">                setRamerDouglasPeucker(peucker).</span>
+<span class="fc" id="L316">                setEnableInstructions(enableInstructions).</span>
+<span class="fc" id="L317">                setPathDetailsBuilders(pathDetailsBuilderFactory, request.getPathDetails()).</span>
+<span class="pc bpc" id="L318" title="1 of 4 branches missed.">                setSimplifyResponse(routerConfig.isSimplifyResponse() &amp;&amp; wayPointMaxDistance &gt; 0);</span>
+
+<span class="fc bfc" id="L320" title="All 2 branches covered.">        if (!request.getHeadings().isEmpty())</span>
+<span class="fc" id="L321">            pathMerger.setFavoredHeading(request.getHeadings().get(0));</span>
+<span class="fc" id="L322">        return pathMerger;</span>
+    }
+
+    private ResponsePath concatenatePaths(GHRequest request, Weighting weighting, QueryGraph queryGraph, List&lt;Path&gt; paths, PointList waypoints) {
+<span class="fc" id="L326">        PathMerger pathMerger = createPathMerger(request, weighting, queryGraph);</span>
+<span class="fc" id="L327">        return pathMerger.doWork(waypoints, paths, encodingManager, translationMap.getWithFallBack(request.getLocale()));</span>
+    }
+
+    private PointList getWaypoints(List&lt;Snap&gt; snaps) {
+<span class="fc" id="L331">        PointList pointList = new PointList(snaps.size(), graph.getNodeAccess().is3D());</span>
+<span class="fc bfc" id="L332" title="All 2 branches covered.">        for (Snap snap : snaps) {</span>
+<span class="fc" id="L333">            pointList.add(snap.getSnappedPoint());</span>
+<span class="fc" id="L334">        }</span>
+<span class="fc" id="L335">        return pointList;</span>
+    }
+
+    private static boolean getDisableLM(PMap hints) {
+<span class="fc" id="L339">        return hints.getBool(Parameters.Landmark.DISABLE, false);</span>
+    }
+
+    private static boolean getDisableCH(PMap hints) {
+<span class="fc" id="L343">        return hints.getBool(Parameters.CH.DISABLE, false);</span>
+    }
+
+    private static boolean getPassThrough(PMap hints) {
+<span class="fc" id="L347">        return hints.getBool(PASS_THROUGH, false);</span>
+    }
+
+    private static String getCurbsideStrictness(PMap hints) {
+<span class="fc bfc" id="L351" title="All 2 branches covered.">        if (hints.has(CURBSIDE_STRICTNESS)) return hints.getString(CURBSIDE_STRICTNESS, &quot;strict&quot;);</span>
+
+        // legacy
+<span class="pc bpc" id="L354" title="1 of 2 branches missed.">        return hints.getBool(&quot;force_curbside&quot;, true) ? &quot;strict&quot; : &quot;soft&quot;;</span>
+    }
+
+    public static abstract class Solver {
+        protected final GHRequest request;
+        private final Map&lt;String, Profile&gt; profilesByName;
+        private final RouterConfig routerConfig;
+        protected Profile profile;
+        protected Weighting weighting;
+        protected final EncodedValueLookup lookup;
+
+<span class="fc" id="L365">        public Solver(GHRequest request, Map&lt;String, Profile&gt; profilesByName, RouterConfig routerConfig, EncodedValueLookup lookup) {</span>
+<span class="fc" id="L366">            this.request = request;</span>
+<span class="fc" id="L367">            this.profilesByName = profilesByName;</span>
+<span class="fc" id="L368">            this.routerConfig = routerConfig;</span>
+<span class="fc" id="L369">            this.lookup = lookup;</span>
+<span class="fc" id="L370">        }</span>
+
+        protected void checkRequest() {
+<span class="fc" id="L373">            checkProfileSpecified();</span>
+<span class="fc" id="L374">            checkMaxVisitedNodes();</span>
+<span class="fc" id="L375">        }</span>
+
+        private void checkProfileSpecified() {
+<span class="pc bpc" id="L378" title="1 of 2 branches missed.">            if (Helper.isEmpty(request.getProfile()))</span>
+<span class="nc" id="L379">                throw new IllegalArgumentException(&quot;You need to specify a profile to perform a routing request, see docs/core/profiles.md&quot;);</span>
+<span class="fc" id="L380">        }</span>
+
+        private void checkMaxVisitedNodes() {
+<span class="pc bpc" id="L383" title="1 of 2 branches missed.">            if (getMaxVisitedNodes(request.getHints()) &gt; routerConfig.getMaxVisitedNodes())</span>
+<span class="nc" id="L384">                throw new IllegalArgumentException(&quot;The max_visited_nodes parameter has to be below or equal to:&quot; + routerConfig.getMaxVisitedNodes());</span>
+<span class="fc" id="L385">        }</span>
+
+        private void init() {
+<span class="fc" id="L388">            profile = getProfile();</span>
+<span class="fc" id="L389">            checkProfileCompatibility();</span>
+<span class="fc" id="L390">            weighting = createWeighting();</span>
+<span class="fc" id="L391">        }</span>
+
+        protected Profile getProfile() {
+<span class="fc" id="L394">            Profile profile = profilesByName.get(request.getProfile());</span>
+<span class="fc bfc" id="L395" title="All 2 branches covered.">            if (profile == null)</span>
+<span class="fc" id="L396">                throw new IllegalArgumentException(&quot;The requested profile '&quot; + request.getProfile() + &quot;' does not exist.\nAvailable profiles: &quot; + profilesByName.keySet());</span>
+<span class="fc" id="L397">            return profile;</span>
+        }
+
+        protected void checkProfileCompatibility() {
+<span class="pc bpc" id="L401" title="1 of 4 branches missed.">            if (!profile.hasTurnCosts() &amp;&amp; !request.getCurbsides().isEmpty())</span>
+<span class="nc" id="L402">                throw new IllegalArgumentException(&quot;To make use of the &quot; + CURBSIDE + &quot; parameter you need to use a profile that supports turn costs&quot; +</span>
+<span class="nc" id="L403">                        &quot;\nThe following profiles do support turn costs: &quot; + getTurnCostProfiles());</span>
+<span class="pc bpc" id="L404" title="1 of 4 branches missed.">            if (request.getCustomModel() != null &amp;&amp; !CustomWeighting.NAME.equals(profile.getWeighting()))</span>
+<span class="nc" id="L405">                throw new IllegalArgumentException(&quot;The requested profile '&quot; + request.getProfile() + &quot;' cannot be used with `custom_model`, because it has weighting=&quot; + profile.getWeighting());</span>
+
+<span class="fc" id="L407">            final int uTurnCostsInt = request.getHints().getInt(Parameters.Routing.U_TURN_COSTS, INFINITE_U_TURN_COSTS);</span>
+<span class="pc bpc" id="L408" title="3 of 4 branches missed.">            if (uTurnCostsInt != INFINITE_U_TURN_COSTS &amp;&amp; !profile.hasTurnCosts()) {</span>
+<span class="nc" id="L409">                throw new IllegalArgumentException(&quot;Finite u-turn costs can only be used for edge-based routing, you need to use a profile that&quot; +</span>
+<span class="nc" id="L410">                        &quot; supports turn costs. Currently the following profiles that support turn costs are available: &quot; + getTurnCostProfiles());</span>
+            }
+<span class="fc" id="L412">        }</span>
+
+        protected abstract Weighting createWeighting();
+
+        protected EdgeFilter createSnapFilter() {
+<span class="fc" id="L417">            return new DefaultSnapFilter(weighting, lookup.getBooleanEncodedValue(Subnetwork.key(profile.getName())));</span>
+        }
+
+        protected DirectedEdgeFilter createDirectedEdgeFilter() {
+<span class="fc" id="L421">            BooleanEncodedValue inSubnetworkEnc = lookup.getBooleanEncodedValue(Subnetwork.key(profile.getName()));</span>
+<span class="fc bfc" id="L422" title="All 4 branches covered.">            return (edgeState, reverse) -&gt; !edgeState.get(inSubnetworkEnc) &amp;&amp; Double.isFinite(weighting.calcEdgeWeight(edgeState, reverse));</span>
+        }
+
+        protected abstract PathCalculator createPathCalculator(QueryGraph queryGraph);
+
+        private List&lt;String&gt; getTurnCostProfiles() {
+<span class="nc" id="L428">            List&lt;String&gt; turnCostProfiles = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L429" title="All 2 branches missed.">            for (Profile p : profilesByName.values()) {</span>
+<span class="nc bnc" id="L430" title="All 2 branches missed.">                if (p.hasTurnCosts()) {</span>
+<span class="nc" id="L431">                    turnCostProfiles.add(p.getName());</span>
+                }
+<span class="nc" id="L433">            }</span>
+<span class="nc" id="L434">            return turnCostProfiles;</span>
+        }
+
+        int getMaxVisitedNodes(PMap hints) {
+<span class="fc" id="L438">            return hints.getInt(Parameters.Routing.MAX_VISITED_NODES, routerConfig.getMaxVisitedNodes());</span>
+        }
+
+        long getTimeoutMillis(PMap hints) {
+            // we silently use the minimum between the requested timeout and the server-side limit
+            // see: https://github.com/graphhopper/graphhopper/pull/2795#discussion_r1168371343
+<span class="fc" id="L444">            return Math.min(routerConfig.getTimeoutMillis(), hints.getLong(TIMEOUT_MS, routerConfig.getTimeoutMillis()));</span>
+        }
+    }
+
+    private static class CHSolver extends Solver {
+        private final Map&lt;String, RoutingCHGraph&gt; chGraphs;
+
+        CHSolver(GHRequest request, Map&lt;String, Profile&gt; profilesByName, RouterConfig routerConfig, EncodedValueLookup lookup, Map&lt;String, RoutingCHGraph&gt; chGraphs) {
+<span class="fc" id="L452">            super(request, profilesByName, routerConfig, lookup);</span>
+<span class="fc" id="L453">            this.chGraphs = chGraphs;</span>
+<span class="fc" id="L454">        }</span>
+
+        @Override
+        protected void checkRequest() {
+<span class="fc" id="L458">            super.checkRequest();</span>
+<span class="fc bfc" id="L459" title="All 2 branches covered.">            if (!request.getHeadings().isEmpty())</span>
+<span class="fc" id="L460">                throw new IllegalArgumentException(&quot;The 'heading' parameter is currently not supported for speed mode, you need to disable speed mode with `ch.disable=true`. See issue #483&quot;);</span>
+
+<span class="pc bpc" id="L462" title="1 of 2 branches missed.">            if (getPassThrough(request.getHints()))</span>
+<span class="nc" id="L463">                throw new IllegalArgumentException(&quot;The '&quot; + Parameters.Routing.PASS_THROUGH + &quot;' parameter is currently not supported for speed mode, you need to disable speed mode with `ch.disable=true`. See issue #1765&quot;);</span>
+
+<span class="pc bpc" id="L465" title="1 of 2 branches missed.">            if (request.getCustomModel() != null)</span>
+<span class="nc" id="L466">                throw new IllegalArgumentException(&quot;The 'custom_model' parameter is currently not supported for speed mode, you need to disable speed mode with `ch.disable=true`.&quot;);</span>
+
+<span class="pc bpc" id="L468" title="1 of 2 branches missed.">            if (ROUND_TRIP.equalsIgnoreCase(request.getAlgorithm()))</span>
+<span class="nc" id="L469">                throw new IllegalArgumentException(&quot;algorithm=round_trip cannot be used with CH&quot;);</span>
+<span class="fc" id="L470">        }</span>
+
+        @Override
+        protected Weighting createWeighting() {
+            // todo: do not allow things like short_fastest.distance_factor or u_turn_costs unless CH is disabled
+            // and only under certain conditions for LM
+
+            // the request hints are ignored for CH as we cannot change the profile after the preparation like this.
+            // the weighting here needs to be the same as the one we later use for CHPathCalculator and as it was
+            // used for the preparation
+<span class="fc" id="L480">            return getRoutingCHGraph(profile.getName()).getWeighting();</span>
+        }
+
+        @Override
+        protected PathCalculator createPathCalculator(QueryGraph queryGraph) {
+<span class="fc" id="L485">            PMap opts = new PMap(request.getHints());</span>
+<span class="fc" id="L486">            opts.putObject(ALGORITHM, request.getAlgorithm());</span>
+<span class="fc" id="L487">            opts.putObject(MAX_VISITED_NODES, getMaxVisitedNodes(request.getHints()));</span>
+<span class="fc" id="L488">            opts.putObject(TIMEOUT_MS, getTimeoutMillis(request.getHints()));</span>
+<span class="fc" id="L489">            return new CHPathCalculator(new CHRoutingAlgorithmFactory(getRoutingCHGraph(profile.getName()), queryGraph), opts);</span>
+        }
+
+        private RoutingCHGraph getRoutingCHGraph(String profileName) {
+<span class="fc" id="L493">            RoutingCHGraph chGraph = chGraphs.get(profileName);</span>
+<span class="fc bfc" id="L494" title="All 2 branches covered.">            if (chGraph == null)</span>
+<span class="fc" id="L495">                throw new IllegalArgumentException(&quot;Cannot find CH preparation for the requested profile: '&quot; + profileName + &quot;'&quot; +</span>
+                        &quot;\nYou can try disabling CH using &quot; + Parameters.CH.DISABLE + &quot;=true&quot; +
+<span class="fc" id="L497">                        &quot;\navailable CH profiles: &quot; + chGraphs.keySet());</span>
+<span class="fc" id="L498">            return chGraph;</span>
+        }
+    }
+
+    public static class FlexSolver extends Solver {
+        protected final RouterConfig routerConfig;
+        private final WeightingFactory weightingFactory;
+        private final BaseGraph baseGraph;
+        private final LocationIndex locationIndex;
+
+        protected FlexSolver(GHRequest request, Map&lt;String, Profile&gt; profilesByName, RouterConfig routerConfig,
+                             EncodedValueLookup lookup, WeightingFactory weightingFactory, BaseGraph graph, LocationIndex locationIndex) {
+<span class="fc" id="L510">            super(request, profilesByName, routerConfig, lookup);</span>
+<span class="fc" id="L511">            this.routerConfig = routerConfig;</span>
+<span class="fc" id="L512">            this.weightingFactory = weightingFactory;</span>
+<span class="fc" id="L513">            this.baseGraph = graph;</span>
+<span class="fc" id="L514">            this.locationIndex = locationIndex;</span>
+<span class="fc" id="L515">        }</span>
+
+        @Override
+        protected void checkRequest() {
+<span class="fc" id="L519">            super.checkRequest();</span>
+<span class="fc" id="L520">            checkNonChMaxWaypointDistance(request.getPoints());</span>
+<span class="fc" id="L521">        }</span>
+
+        @Override
+        protected Weighting createWeighting() {
+<span class="fc" id="L525">            PMap requestHints = new PMap(request.getHints());</span>
+<span class="fc" id="L526">            requestHints.putObject(CustomModel.KEY, request.getCustomModel());</span>
+<span class="fc" id="L527">            return weightingFactory.createWeighting(profile, requestHints, false);</span>
+        }
+
+        @Override
+        protected FlexiblePathCalculator createPathCalculator(QueryGraph queryGraph) {
+<span class="fc" id="L532">            RoutingAlgorithmFactory algorithmFactory = new RoutingAlgorithmFactorySimple();</span>
+<span class="fc" id="L533">            return new FlexiblePathCalculator(queryGraph, algorithmFactory, weighting, getAlgoOpts());</span>
+        }
+
+        protected AlgorithmOptions getAlgoOpts() {
+<span class="fc" id="L537">            AlgorithmOptions algoOpts = new AlgorithmOptions().</span>
+<span class="fc" id="L538">                    setAlgorithm(request.getAlgorithm()).</span>
+<span class="fc bfc" id="L539" title="All 2 branches covered.">                    setTraversalMode(profile.hasTurnCosts() ? TraversalMode.EDGE_BASED : TraversalMode.NODE_BASED).</span>
+<span class="fc" id="L540">                    setMaxVisitedNodes(getMaxVisitedNodes(request.getHints())).</span>
+<span class="fc" id="L541">                    setTimeoutMillis(getTimeoutMillis(request.getHints())).</span>
+<span class="fc" id="L542">                    setHints(request.getHints());</span>
+
+            // use A* for round trips
+<span class="fc bfc" id="L545" title="All 2 branches covered.">            if (ROUND_TRIP.equalsIgnoreCase(request.getAlgorithm())) {</span>
+<span class="fc" id="L546">                algoOpts.setAlgorithm(Parameters.Algorithms.ASTAR_BI);</span>
+<span class="fc" id="L547">                algoOpts.getHints().putObject(Parameters.Algorithms.AStarBi.EPSILON, 2);</span>
+            }
+<span class="fc" id="L549">            return algoOpts;</span>
+        }
+
+        private void checkNonChMaxWaypointDistance(List&lt;GHPoint&gt; points) {
+<span class="fc bfc" id="L553" title="All 2 branches covered.">            if (routerConfig.getNonChMaxWaypointDistance() == Integer.MAX_VALUE) {</span>
+<span class="fc" id="L554">                return;</span>
+            }
+<span class="fc" id="L556">            GHPoint lastPoint = points.get(0);</span>
+            GHPoint point;
+            double dist;
+<span class="pc bpc" id="L559" title="1 of 2 branches missed.">            for (int i = 1; i &lt; points.size(); i++) {</span>
+<span class="fc" id="L560">                point = points.get(i);</span>
+<span class="fc" id="L561">                dist = DIST_EARTH.calcDist(lastPoint.getLat(), lastPoint.getLon(), point.getLat(), point.getLon());</span>
+<span class="fc bfc" id="L562" title="All 2 branches covered.">                if (dist &gt; routerConfig.getNonChMaxWaypointDistance()) {</span>
+<span class="fc" id="L563">                    Map&lt;String, Object&gt; detailMap = new HashMap&lt;&gt;(2);</span>
+<span class="fc" id="L564">                    detailMap.put(&quot;from&quot;, i - 1);</span>
+<span class="fc" id="L565">                    detailMap.put(&quot;to&quot;, i);</span>
+<span class="fc" id="L566">                    throw new PointDistanceExceededException(&quot;Point &quot; + i + &quot; is too far from Point &quot; + (i - 1) + &quot;: &quot; + point, detailMap);</span>
+                }
+<span class="fc" id="L568">                lastPoint = point;</span>
+            }
+<span class="nc" id="L570">        }</span>
+    }
+
+    private static class LMSolver extends FlexSolver {
+        private final Map&lt;String, LandmarkStorage&gt; landmarks;
+
+        LMSolver(GHRequest request, Map&lt;String, Profile&gt; profilesByName, RouterConfig routerConfig, EncodedValueLookup lookup,
+                 WeightingFactory weightingFactory, BaseGraph graph, LocationIndex locationIndex, Map&lt;String, LandmarkStorage&gt; landmarks) {
+<span class="fc" id="L578">            super(request, profilesByName, routerConfig, lookup, weightingFactory, graph, locationIndex);</span>
+<span class="fc" id="L579">            this.landmarks = landmarks;</span>
+<span class="fc" id="L580">        }</span>
+
+        @Override
+        protected FlexiblePathCalculator createPathCalculator(QueryGraph queryGraph) {
+            // for now do not allow mixing CH&amp;LM #1082,#1889
+<span class="fc" id="L585">            LandmarkStorage landmarkStorage = landmarks.get(profile.getName());</span>
+<span class="fc bfc" id="L586" title="All 2 branches covered.">            if (landmarkStorage == null)</span>
+<span class="fc" id="L587">                throw new IllegalArgumentException(&quot;Cannot find LM preparation for the requested profile: '&quot; + profile.getName() + &quot;'&quot; +</span>
+                        &quot;\nYou can try disabling LM using &quot; + Parameters.Landmark.DISABLE + &quot;=true&quot; +
+<span class="fc" id="L589">                        &quot;\navailable LM profiles: &quot; + landmarks.keySet());</span>
+<span class="fc bfc" id="L590" title="All 2 branches covered.">            if (request.getCustomModel() != null)</span>
+<span class="nc" id="L591">                FindMinMax.checkLMConstraints(profile.getCustomModel(), request.getCustomModel(), lookup);</span>
+<span class="fc" id="L592">            RoutingAlgorithmFactory routingAlgorithmFactory = new LMRoutingAlgorithmFactory(landmarkStorage).setDefaultActiveLandmarks(routerConfig.getActiveLandmarkCount());</span>
+<span class="fc" id="L593">            return new FlexiblePathCalculator(queryGraph, routingAlgorithmFactory, weighting, getAlgoOpts());</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AStarBidirectionCH.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AStarBidirectionCH.java</span></div><h1>AStarBidirectionCH.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.BalancedWeightApproximator;
+import com.graphhopper.routing.weighting.BeelineWeightApproximator;
+import com.graphhopper.routing.weighting.WeightApproximator;
+import com.graphhopper.storage.RoutingCHEdgeIteratorState;
+import com.graphhopper.storage.RoutingCHGraph;
+import com.graphhopper.util.DistancePlaneProjection;
+import com.graphhopper.util.EdgeIterator;
+
+/**
+ * @see AStarBidirection
+ */
+public class AStarBidirectionCH extends AbstractBidirCHAlgo {
+    private BalancedWeightApproximator weightApprox;
+
+    public AStarBidirectionCH(RoutingCHGraph graph) {
+<span class="fc" id="L36">        super(graph, TraversalMode.NODE_BASED);</span>
+<span class="fc" id="L37">        BeelineWeightApproximator defaultApprox = new BeelineWeightApproximator(nodeAccess, graph.getWeighting());</span>
+<span class="fc" id="L38">        defaultApprox.setDistanceCalc(DistancePlaneProjection.DIST_PLANE);</span>
+<span class="fc" id="L39">        setApproximation(defaultApprox);</span>
+<span class="fc" id="L40">    }</span>
+
+    @Override
+    void init(int from, double fromWeight, int to, double toWeight) {
+<span class="fc" id="L44">        weightApprox.setFromTo(from, to);</span>
+<span class="fc" id="L45">        super.init(from, fromWeight, to, toWeight);</span>
+<span class="fc" id="L46">    }</span>
+
+    @Override
+    protected SPTEntry createStartEntry(int node, double weight, boolean reverse) {
+<span class="fc" id="L50">        double heapWeight = weight + weightApprox.approximate(node, reverse);</span>
+<span class="fc" id="L51">        return new AStar.AStarEntry(EdgeIterator.NO_EDGE, node, heapWeight, weight);</span>
+    }
+
+    @Override
+    protected SPTEntry createEntry(int edge, int adjNode, int incEdge, double weight, SPTEntry parent, boolean reverse) {
+<span class="fc" id="L56">        double heapWeight = weight + weightApprox.approximate(adjNode, reverse);</span>
+<span class="fc" id="L57">        return new AStar.AStarEntry(edge, adjNode, heapWeight, weight, parent);</span>
+    }
+
+    @Override
+    protected void updateEntry(SPTEntry entry, int edge, int adjNode, int incEdge, double weight, SPTEntry parent, boolean reverse) {
+<span class="nc" id="L62">        entry.edge = edge;</span>
+<span class="nc" id="L63">        entry.weight = weight + weightApprox.approximate(adjNode, reverse);</span>
+<span class="nc" id="L64">        ((AStar.AStarEntry) entry).weightOfVisitedPath = weight;</span>
+<span class="nc" id="L65">        entry.parent = parent;</span>
+<span class="nc" id="L66">    }</span>
+
+    @Override
+    protected double calcWeight(RoutingCHEdgeIteratorState iter, SPTEntry currEdge, boolean reverse) {
+        // TODO performance: check if the node is already existent in the opposite direction
+        // then we could avoid the approximation as we already know the exact complete path!
+<span class="fc" id="L72">        return super.calcWeight(iter, currEdge, reverse);</span>
+    }
+
+    public WeightApproximator getApproximation() {
+<span class="nc" id="L76">        return weightApprox.getApproximation();</span>
+    }
+
+    /**
+     * @param approx if true it enables approximate distance calculation from lat,lon values
+     */
+    public AStarBidirectionCH setApproximation(WeightApproximator approx) {
+<span class="fc" id="L83">        weightApprox = new BalancedWeightApproximator(approx);</span>
+<span class="fc" id="L84">        return this;</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="fc" id="L89">        return &quot;astarbi|ch&quot;;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

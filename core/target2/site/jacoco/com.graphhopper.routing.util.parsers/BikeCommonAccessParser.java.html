@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BikeCommonAccessParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.util.parsers</a> &gt; <span class="el_source">BikeCommonAccessParser.java</span></div><h1>BikeCommonAccessParser.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.routing.util.FerrySpeedCalculator;
+import com.graphhopper.routing.util.WayAccess;
+
+import java.util.*;
+
+import static com.graphhopper.routing.util.parsers.OSMTemporalAccessParser.hasPermissiveTemporalRestriction;
+
+public abstract class BikeCommonAccessParser extends AbstractAccessParser implements TagParser {
+
+<span class="fc" id="L15">    private static final Set&lt;String&gt; OPP_LANES = new HashSet&lt;&gt;(Arrays.asList(&quot;opposite&quot;, &quot;opposite_lane&quot;, &quot;opposite_track&quot;));</span>
+<span class="fc" id="L16">    private final Set&lt;String&gt; allowedHighways = new HashSet&lt;&gt;();</span>
+    private final BooleanEncodedValue roundaboutEnc;
+
+    /**
+     * The access restriction list returned from OSMRoadAccessParser.toOSMRestrictions(TransportationMode.Bike)
+     * contains &quot;vehicle&quot;. But here we want to allow walking via dismount.
+     */
+<span class="fc" id="L23">    private static final List&lt;String&gt; RESTRICTIONS = Arrays.asList(&quot;bicycle&quot;, &quot;access&quot;);</span>
+<span class="fc" id="L24">    private static final Collection&lt;String&gt; FWDONEWAYS = Arrays.asList(&quot;yes&quot;, &quot;true&quot;, &quot;1&quot;);</span>
+
+    protected BikeCommonAccessParser(BooleanEncodedValue accessEnc, BooleanEncodedValue roundaboutEnc) {
+<span class="fc" id="L27">        super(accessEnc, RESTRICTIONS);</span>
+
+<span class="fc" id="L29">        this.roundaboutEnc = roundaboutEnc;</span>
+
+<span class="fc" id="L31">        restrictedValues.add(&quot;agricultural&quot;);</span>
+<span class="fc" id="L32">        restrictedValues.add(&quot;forestry&quot;);</span>
+<span class="fc" id="L33">        restrictedValues.add(&quot;delivery&quot;);</span>
+
+<span class="fc" id="L35">        barriers.add(&quot;fence&quot;);</span>
+
+<span class="fc" id="L37">        allowedHighways.addAll(Arrays.asList(&quot;living_street&quot;, &quot;steps&quot;, &quot;cycleway&quot;, &quot;path&quot;, &quot;footway&quot;, &quot;platform&quot;,</span>
+                &quot;pedestrian&quot;, &quot;track&quot;, &quot;service&quot;, &quot;residential&quot;, &quot;unclassified&quot;, &quot;road&quot;, &quot;bridleway&quot;,
+                &quot;motorway&quot;, &quot;motorway_link&quot;, &quot;trunk&quot;, &quot;trunk_link&quot;,
+                &quot;primary&quot;, &quot;primary_link&quot;, &quot;secondary&quot;, &quot;secondary_link&quot;, &quot;tertiary&quot;, &quot;tertiary_link&quot;));
+<span class="fc" id="L41">    }</span>
+
+    public WayAccess getAccess(ReaderWay way) {
+<span class="fc" id="L44">        String highwayValue = way.getTag(&quot;highway&quot;);</span>
+<span class="fc bfc" id="L45" title="All 2 branches covered.">        if (highwayValue == null) {</span>
+<span class="fc" id="L46">            WayAccess access = WayAccess.CAN_SKIP;</span>
+
+<span class="fc bfc" id="L48" title="All 2 branches covered.">            if (FerrySpeedCalculator.isFerry(way)) {</span>
+                // if bike is NOT explicitly tagged allow bike but only if foot is not specified either
+<span class="fc" id="L50">                String bikeTag = way.getTag(&quot;bicycle&quot;);</span>
+<span class="fc bfc" id="L51" title="All 6 branches covered.">                if (bikeTag == null &amp;&amp; !way.hasTag(&quot;foot&quot;) || allowedValues.contains(bikeTag))</span>
+<span class="fc" id="L52">                    access = WayAccess.FERRY;</span>
+            }
+
+            // special case not for all acceptedRailways, only platform
+<span class="fc bfc" id="L56" title="All 2 branches covered.">            if (way.hasTag(&quot;railway&quot;, &quot;platform&quot;))</span>
+<span class="fc" id="L57">                access = WayAccess.WAY;</span>
+
+<span class="fc bfc" id="L59" title="All 2 branches covered.">            if (way.hasTag(&quot;man_made&quot;, &quot;pier&quot;))</span>
+<span class="fc" id="L60">                access = WayAccess.WAY;</span>
+
+<span class="fc bfc" id="L62" title="All 2 branches covered.">            if (!access.canSkip()) {</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">                if (way.hasTag(restrictionKeys, restrictedValues))</span>
+<span class="fc" id="L64">                    return WayAccess.CAN_SKIP;</span>
+<span class="fc" id="L65">                return access;</span>
+            }
+
+<span class="fc" id="L68">            return WayAccess.CAN_SKIP;</span>
+        }
+
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        if (!allowedHighways.contains(highwayValue))</span>
+<span class="fc" id="L72">            return WayAccess.CAN_SKIP;</span>
+
+        // use the way for pushing
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (way.hasTag(&quot;bicycle&quot;, &quot;dismount&quot;))</span>
+<span class="fc" id="L76">            return WayAccess.WAY;</span>
+
+<span class="fc" id="L78">        int firstIndex = way.getFirstIndex(restrictionKeys);</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (firstIndex &gt;= 0) {</span>
+<span class="fc" id="L80">            String firstValue = way.getTag(restrictionKeys.get(firstIndex), &quot;&quot;);</span>
+<span class="fc" id="L81">            String[] restrict = firstValue.split(&quot;;&quot;);</span>
+            // if any of the values allows access then return early (regardless of the order)
+<span class="fc bfc" id="L83" title="All 2 branches covered.">            for (String value : restrict) {</span>
+<span class="fc bfc" id="L84" title="All 2 branches covered.">                if (allowedValues.contains(value))</span>
+<span class="fc" id="L85">                    return WayAccess.WAY;</span>
+            }
+<span class="fc bfc" id="L87" title="All 2 branches covered.">            for (String value : restrict) {</span>
+<span class="fc bfc" id="L88" title="All 4 branches covered.">                if (restrictedValues.contains(value) &amp;&amp; !hasPermissiveTemporalRestriction(way, firstIndex, restrictionKeys, allowedValues))</span>
+<span class="fc" id="L89">                    return WayAccess.CAN_SKIP;</span>
+            }
+        }
+
+        // accept only if explicitly tagged for bike usage
+<span class="fc bfc" id="L94" title="All 4 branches covered.">        if (&quot;motorway&quot;.equals(highwayValue) || &quot;motorway_link&quot;.equals(highwayValue))</span>
+<span class="fc" id="L95">            return WayAccess.CAN_SKIP;</span>
+
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (way.hasTag(&quot;motorroad&quot;, &quot;yes&quot;))</span>
+<span class="fc" id="L98">            return WayAccess.CAN_SKIP;</span>
+
+<span class="pc bpc" id="L100" title="1 of 6 branches missed.">        if (isBlockFords() &amp;&amp; (&quot;ford&quot;.equals(highwayValue) || way.hasTag(&quot;ford&quot;)))</span>
+<span class="fc" id="L101">            return WayAccess.CAN_SKIP;</span>
+
+<span class="fc" id="L103">        return WayAccess.WAY;</span>
+    }
+
+    @Override
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way) {
+<span class="fc" id="L108">        WayAccess access = getAccess(way);</span>
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        if (access.canSkip())</span>
+<span class="fc" id="L110">            return;</span>
+
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        if (access.isFerry()) {</span>
+<span class="fc" id="L113">            accessEnc.setBool(false, edgeId, edgeIntAccess, true);</span>
+<span class="fc" id="L114">            accessEnc.setBool(true, edgeId, edgeIntAccess, true);</span>
+        } else {
+<span class="fc" id="L116">            handleAccess(edgeId, edgeIntAccess, way);</span>
+        }
+
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        if (way.hasTag(&quot;gh:barrier_edge&quot;)) {</span>
+<span class="fc" id="L120">            List&lt;Map&lt;String, Object&gt;&gt; nodeTags = way.getTag(&quot;node_tags&quot;, Collections.emptyList());</span>
+<span class="fc" id="L121">            handleBarrierEdge(edgeId, edgeIntAccess, nodeTags.get(0));</span>
+        }
+<span class="fc" id="L123">    }</span>
+
+    protected void handleAccess(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way) {
+        // handle oneways. The value -1 means it is a oneway but for reverse direction of stored geometry.
+        // The tagging oneway:bicycle=no or cycleway:right:oneway=no or cycleway:left:oneway=no lifts the generic oneway restriction of the way for bike
+<span class="fc bfc" id="L128" title="All 6 branches covered.">        boolean isOneway = way.hasTag(&quot;oneway&quot;, ONEWAYS) &amp;&amp; !way.hasTag(&quot;oneway&quot;, &quot;-1&quot;) &amp;&amp; !way.hasTag(&quot;bicycle:backward&quot;, allowedValues)</span>
+<span class="fc bfc" id="L129" title="All 4 branches covered.">                || way.hasTag(&quot;oneway&quot;, &quot;-1&quot;) &amp;&amp; !way.hasTag(&quot;bicycle:forward&quot;, allowedValues)</span>
+<span class="fc bfc" id="L130" title="All 2 branches covered.">                || way.hasTag(&quot;oneway:bicycle&quot;, ONEWAYS)</span>
+<span class="fc bfc" id="L131" title="All 4 branches covered.">                || way.hasTag(&quot;cycleway:left:oneway&quot;, FWDONEWAYS) &amp;&amp; !way.hasTag(&quot;cycleway:right:oneway&quot;, &quot;-1&quot;)</span>
+<span class="fc bfc" id="L132" title="All 4 branches covered.">                || way.hasTag(&quot;cycleway:right:oneway&quot;, FWDONEWAYS) &amp;&amp; !way.hasTag(&quot;cycleway:left:oneway&quot;, &quot;-1&quot;)</span>
+<span class="pc bpc" id="L133" title="1 of 4 branches missed.">                || way.hasTag(&quot;vehicle:backward&quot;, restrictedValues) &amp;&amp; !way.hasTag(&quot;bicycle:forward&quot;, allowedValues)</span>
+<span class="pc bpc" id="L134" title="1 of 4 branches missed.">                || way.hasTag(&quot;vehicle:forward&quot;, restrictedValues) &amp;&amp; !way.hasTag(&quot;bicycle:backward&quot;, allowedValues)</span>
+<span class="fc bfc" id="L135" title="All 2 branches covered.">                || way.hasTag(&quot;bicycle:forward&quot;, restrictedValues)</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">                || way.hasTag(&quot;bicycle:backward&quot;, restrictedValues);</span>
+
+<span class="fc bfc" id="L138" title="All 4 branches covered.">        if ((isOneway || roundaboutEnc.getBool(false, edgeId, edgeIntAccess))</span>
+<span class="fc bfc" id="L139" title="All 2 branches covered.">                &amp;&amp; !way.hasTag(&quot;oneway:bicycle&quot;, &quot;no&quot;)</span>
+<span class="pc bpc" id="L140" title="1 of 4 branches missed.">                &amp;&amp; !(way.hasTag(&quot;cycleway:both&quot;) &amp;&amp; !way.hasTag(&quot;cycleway:both&quot;, &quot;no&quot;))</span>
+<span class="fc bfc" id="L141" title="All 2 branches covered.">                &amp;&amp; !way.hasTag(&quot;cycleway&quot;, OPP_LANES)</span>
+<span class="fc bfc" id="L142" title="All 2 branches covered.">                &amp;&amp; !way.hasTag(&quot;cycleway:left&quot;, OPP_LANES)</span>
+<span class="pc bpc" id="L143" title="1 of 2 branches missed.">                &amp;&amp; !way.hasTag(&quot;cycleway:right&quot;, OPP_LANES)</span>
+<span class="fc bfc" id="L144" title="All 2 branches covered.">                &amp;&amp; !way.hasTag(&quot;cycleway:left:oneway&quot;, &quot;no&quot;)</span>
+<span class="fc bfc" id="L145" title="All 2 branches covered.">                &amp;&amp; !way.hasTag(&quot;cycleway:right:oneway&quot;, &quot;no&quot;)) {</span>
+<span class="fc bfc" id="L146" title="All 2 branches covered.">            boolean isBackward = way.hasTag(&quot;oneway&quot;, &quot;-1&quot;)</span>
+<span class="fc bfc" id="L147" title="All 2 branches covered.">                    || way.hasTag(&quot;oneway:bicycle&quot;, &quot;-1&quot;)</span>
+<span class="pc bpc" id="L148" title="1 of 2 branches missed.">                    || way.hasTag(&quot;cycleway:left:oneway&quot;, &quot;-1&quot;)</span>
+<span class="fc bfc" id="L149" title="All 2 branches covered.">                    || way.hasTag(&quot;cycleway:right:oneway&quot;, &quot;-1&quot;)</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">                    || way.hasTag(&quot;vehicle:forward&quot;, restrictedValues)</span>
+<span class="fc bfc" id="L151" title="All 2 branches covered.">                    || way.hasTag(&quot;bicycle:forward&quot;, restrictedValues);</span>
+<span class="fc" id="L152">            accessEnc.setBool(isBackward, edgeId, edgeIntAccess, true);</span>
+
+<span class="fc" id="L154">        } else {</span>
+<span class="fc" id="L155">            accessEnc.setBool(true, edgeId, edgeIntAccess, true);</span>
+<span class="fc" id="L156">            accessEnc.setBool(false, edgeId, edgeIntAccess, true);</span>
+        }
+<span class="fc" id="L158">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

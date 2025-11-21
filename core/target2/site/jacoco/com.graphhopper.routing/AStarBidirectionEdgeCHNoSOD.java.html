@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AStarBidirectionEdgeCHNoSOD.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AStarBidirectionEdgeCHNoSOD.java</span></div><h1>AStarBidirectionEdgeCHNoSOD.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.routing.ch.AStarCHEntry;
+import com.graphhopper.routing.weighting.BalancedWeightApproximator;
+import com.graphhopper.routing.weighting.BeelineWeightApproximator;
+import com.graphhopper.routing.weighting.WeightApproximator;
+import com.graphhopper.storage.RoutingCHGraph;
+import com.graphhopper.util.DistancePlaneProjection;
+
+/**
+ * @author easbar
+ */
+public class AStarBidirectionEdgeCHNoSOD extends AbstractBidirectionEdgeCHNoSOD {
+<span class="fc" id="L31">    private final boolean useHeuristicForNodeOrder = false;</span>
+    private BalancedWeightApproximator weightApprox;
+
+    public AStarBidirectionEdgeCHNoSOD(RoutingCHGraph graph) {
+<span class="fc" id="L35">        super(graph);</span>
+<span class="fc" id="L36">        setApproximation(new BeelineWeightApproximator(nodeAccess, graph.getWeighting()).setDistanceCalc(DistancePlaneProjection.DIST_PLANE));</span>
+<span class="fc" id="L37">    }</span>
+
+    @Override
+    public void init(int from, double fromWeight, int to, double toWeight) {
+<span class="fc" id="L41">        weightApprox.setFromTo(from, to);</span>
+<span class="fc" id="L42">        super.init(from, fromWeight, to, toWeight);</span>
+<span class="fc" id="L43">    }</span>
+
+    @Override
+    protected boolean fromEntryCanBeSkipped() {
+<span class="fc bfc" id="L47" title="All 2 branches covered.">        return getMinCurrFromPathWeight() &gt; bestWeight;</span>
+    }
+
+    @Override
+    protected boolean toEntryCanBeSkipped() {
+<span class="fc bfc" id="L52" title="All 2 branches covered.">        return getMinCurrToPathWeight() &gt; bestWeight;</span>
+    }
+
+    @Override
+    protected boolean fwdSearchCanBeStopped() {
+<span class="fc" id="L57">        return useHeuristicForNodeOrder &amp;&amp; currFrom.weight &gt; bestWeight;</span>
+    }
+
+    @Override
+    protected boolean bwdSearchCanBeStopped() {
+<span class="fc" id="L62">        return useHeuristicForNodeOrder &amp;&amp; currTo.weight &gt; bestWeight;</span>
+    }
+
+    @Override
+    protected AStarCHEntry createStartEntry(int node, double weight, boolean reverse) {
+<span class="fc" id="L67">        final double heapWeight = getHeapWeight(node, reverse, weight);</span>
+<span class="fc" id="L68">        return new AStarCHEntry(node, heapWeight, weight);</span>
+    }
+
+    @Override
+    protected SPTEntry createEntry(int edge, int adjNode, int incEdge, double weight, SPTEntry parent, boolean reverse) {
+<span class="fc" id="L73">        double heapWeight = getHeapWeight(adjNode, reverse, weight);</span>
+<span class="fc" id="L74">        return new AStarCHEntry(edge, incEdge, adjNode, heapWeight, weight, parent);</span>
+    }
+
+    @Override
+    protected void updateEntry(SPTEntry entry, int edge, int adjNode, int incEdge, double weight, SPTEntry parent, boolean reverse) {
+<span class="nc" id="L79">        entry.edge = edge;</span>
+<span class="nc" id="L80">        ((AStarCHEntry) entry).incEdge = incEdge;</span>
+<span class="nc" id="L81">        entry.weight = getHeapWeight(adjNode, reverse, weight);</span>
+<span class="nc" id="L82">        ((AStarCHEntry) entry).weightOfVisitedPath = weight;</span>
+<span class="nc" id="L83">        entry.parent = parent;</span>
+<span class="nc" id="L84">    }</span>
+
+    public WeightApproximator getApproximation() {
+<span class="nc" id="L87">        return weightApprox.getApproximation();</span>
+    }
+
+    public AStarBidirectionEdgeCHNoSOD setApproximation(WeightApproximator weightApproximator) {
+<span class="fc" id="L91">        weightApprox = new BalancedWeightApproximator(weightApproximator);</span>
+<span class="fc" id="L92">        return this;</span>
+    }
+
+    private double getHeapWeight(int node, boolean reverse, double weightOfVisitedPath) {
+        if (useHeuristicForNodeOrder) {
+            return weightOfVisitedPath + weightApprox.approximate(node, reverse);
+        }
+<span class="fc" id="L99">        return weightOfVisitedPath;</span>
+    }
+
+    private double getMinCurrFromPathWeight() {
+        if (useHeuristicForNodeOrder) {
+            return currFrom.weight;
+        }
+<span class="fc" id="L106">        return currFrom.weight + weightApprox.approximate(currFrom.adjNode, false);</span>
+    }
+
+    private double getMinCurrToPathWeight() {
+        if (useHeuristicForNodeOrder) {
+            return currTo.weight;
+        }
+<span class="fc" id="L113">        return currTo.weight + weightApprox.approximate(currTo.adjNode, true);</span>
+    }
+
+    @Override
+    public String getName() {
+<span class="fc" id="L118">        return &quot;astarbi|ch|edge_based|no_sod&quot;;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

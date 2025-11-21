@@ -1,0 +1,1094 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BaseGraph.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.storage</a> &gt; <span class="el_source">BaseGraph.java</span></div><h1>BaseGraph.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.storage;
+
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.util.AllEdgesIterator;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.search.KVStorage;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.BBox;
+
+import java.io.Closeable;
+import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
+import java.util.function.IntUnaryOperator;
+
+import static com.graphhopper.util.Helper.nf;
+import static com.graphhopper.util.Parameters.Details.STREET_NAME;
+
+/**
+ * The base graph handles nodes and edges file format. It can be used with different Directory
+ * implementations like RAMDirectory for fast access or via MMapDirectory for virtual-memory and not
+ * thread safe usage.
+ * &lt;p&gt;
+ * Note: A RAM DataAccess Object is thread-safe in itself but if used in this Graph implementation
+ * it is not write thread safe.
+ * &lt;p&gt;
+ * Life cycle: (1) object creation, (2) configuration via setters &amp;amp; getters, (3) create or
+ * loadExisting, (4) usage, (5) flush, (6) close
+ */
+<span class="fc" id="L49">public class BaseGraph implements Graph, Closeable {</span>
+    final static long MAX_UNSIGNED_INT = 0xFFFF_FFFFL;
+    final BaseGraphNodesAndEdges store;
+    final NodeAccess nodeAccess;
+    final KVStorage edgeKVStorage;
+    // can be null if turn costs are not supported
+    final TurnCostStorage turnCostStorage;
+    final BitUtil bitUtil;
+    // length | nodeA | nextNode | ... | nodeB
+    private final DataAccess wayGeometry;
+    private final Directory dir;
+    private final int segmentSize;
+<span class="fc" id="L61">    private boolean initialized = false;</span>
+    private long minGeoRef;
+    private long maxGeoRef;
+    private final int eleBytesPerCoord;
+
+<span class="fc" id="L66">    public BaseGraph(Directory dir, boolean withElevation, boolean withTurnCosts, int segmentSize, int bytesForFlags) {</span>
+<span class="fc" id="L67">        this.dir = dir;</span>
+<span class="fc" id="L68">        this.bitUtil = BitUtil.LITTLE;</span>
+<span class="fc" id="L69">        this.wayGeometry = dir.create(&quot;geometry&quot;, segmentSize);</span>
+<span class="fc" id="L70">        this.edgeKVStorage = new KVStorage(dir, true);</span>
+<span class="fc" id="L71">        this.store = new BaseGraphNodesAndEdges(dir, withElevation, withTurnCosts, segmentSize, bytesForFlags);</span>
+<span class="fc" id="L72">        this.nodeAccess = new GHNodeAccess(store);</span>
+<span class="fc" id="L73">        this.segmentSize = segmentSize;</span>
+<span class="fc bfc" id="L74" title="All 2 branches covered.">        this.turnCostStorage = withTurnCosts ? new TurnCostStorage(this, dir.create(&quot;turn_costs&quot;, dir.getDefaultType(&quot;turn_costs&quot;, true), segmentSize)) : null;</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        this.eleBytesPerCoord = (nodeAccess.getDimension() == 3 ? 3 : 0);</span>
+<span class="fc" id="L76">    }</span>
+
+    BaseGraphNodesAndEdges getStore() {
+<span class="fc" id="L79">        return store;</span>
+    }
+
+    private int getOtherNode(int nodeThis, long edgePointer) {
+<span class="fc" id="L83">        int nodeA = store.getNodeA(edgePointer);</span>
+<span class="fc bfc" id="L84" title="All 2 branches covered.">        return nodeThis == nodeA ? store.getNodeB(edgePointer) : nodeA;</span>
+    }
+
+    private boolean isAdjacentToNode(int node, long edgePointer) {
+<span class="fc bfc" id="L88" title="All 4 branches covered.">        return store.getNodeA(edgePointer) == node || store.getNodeB(edgePointer) == node;</span>
+    }
+
+    private static boolean isTestingEnabled() {
+<span class="nc" id="L92">        boolean enableIfAssert = false;</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        assert (enableIfAssert = true) : true;</span>
+<span class="nc" id="L94">        return enableIfAssert;</span>
+    }
+
+    public void debugPrint() {
+<span class="nc" id="L98">        store.debugPrint();</span>
+<span class="nc" id="L99">    }</span>
+
+    @Override
+    public BaseGraph getBaseGraph() {
+<span class="fc" id="L103">        return this;</span>
+    }
+
+    public boolean isInitialized() {
+<span class="fc" id="L107">        return initialized;</span>
+    }
+
+    void checkNotInitialized() {
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">        if (initialized)</span>
+<span class="nc" id="L112">            throw new IllegalStateException(&quot;You cannot configure this BaseGraph &quot;</span>
+                    + &quot;after calling create or loadExisting. Calling one of the methods twice is also not allowed.&quot;);
+<span class="fc" id="L114">    }</span>
+
+    private void loadWayGeometryHeader() {
+<span class="fc" id="L117">        int geometryVersion = wayGeometry.getHeader(0);</span>
+<span class="fc" id="L118">        GHUtility.checkDAVersion(wayGeometry.getName(), Constants.VERSION_GEOMETRY, geometryVersion);</span>
+<span class="fc" id="L119">        minGeoRef = bitUtil.toLong(</span>
+<span class="fc" id="L120">                wayGeometry.getHeader(4),</span>
+<span class="fc" id="L121">                wayGeometry.getHeader(8)</span>
+        );
+<span class="fc" id="L123">        maxGeoRef = bitUtil.toLong(</span>
+<span class="fc" id="L124">                wayGeometry.getHeader(12),</span>
+<span class="fc" id="L125">                wayGeometry.getHeader(16)</span>
+        );
+<span class="fc" id="L127">    }</span>
+
+    private void setWayGeometryHeader() {
+<span class="fc" id="L130">        wayGeometry.setHeader(0, Constants.VERSION_GEOMETRY);</span>
+<span class="fc" id="L131">        wayGeometry.setHeader(4, bitUtil.getIntLow(minGeoRef));</span>
+<span class="fc" id="L132">        wayGeometry.setHeader(8, bitUtil.getIntHigh(minGeoRef));</span>
+<span class="fc" id="L133">        wayGeometry.setHeader(12, bitUtil.getIntLow(maxGeoRef));</span>
+<span class="fc" id="L134">        wayGeometry.setHeader(16, bitUtil.getIntHigh(maxGeoRef));</span>
+<span class="fc" id="L135">    }</span>
+
+    private void setInitialized() {
+<span class="fc" id="L138">        initialized = true;</span>
+<span class="fc" id="L139">    }</span>
+
+    boolean supportsTurnCosts() {
+<span class="fc bfc" id="L142" title="All 2 branches covered.">        return turnCostStorage != null;</span>
+    }
+
+    @Override
+    public int getNodes() {
+<span class="fc" id="L147">        return store.getNodes();</span>
+    }
+
+    @Override
+    public int getEdges() {
+<span class="fc" id="L152">        return store.getEdges();</span>
+    }
+
+    @Override
+    public NodeAccess getNodeAccess() {
+<span class="fc" id="L157">        return nodeAccess;</span>
+    }
+
+    @Override
+    public BBox getBounds() {
+<span class="fc" id="L162">        return store.getBounds();</span>
+    }
+
+    public synchronized void freeze() {
+<span class="pc bpc" id="L166" title="1 of 2 branches missed.">        if (isFrozen())</span>
+<span class="nc" id="L167">            throw new IllegalStateException(&quot;base graph already frozen&quot;);</span>
+<span class="fc" id="L168">        store.setFrozen(true);</span>
+<span class="fc" id="L169">    }</span>
+
+    public synchronized boolean isFrozen() {
+<span class="fc" id="L172">        return store.getFrozen();</span>
+    }
+
+    public BaseGraph create(long initSize) {
+<span class="fc" id="L176">        checkNotInitialized();</span>
+<span class="fc" id="L177">        dir.create();</span>
+<span class="fc" id="L178">        store.create(initSize);</span>
+
+<span class="fc" id="L180">        initSize = Math.min(initSize, 2000);</span>
+<span class="fc" id="L181">        wayGeometry.create(initSize);</span>
+<span class="fc" id="L182">        edgeKVStorage.create(initSize);</span>
+<span class="fc bfc" id="L183" title="All 2 branches covered.">        if (supportsTurnCosts()) {</span>
+<span class="fc" id="L184">            turnCostStorage.create(initSize);</span>
+        }
+<span class="fc" id="L186">        setInitialized();</span>
+        // 0 stands for no separate geoRef, &lt;0 stands for no separate geoRef but existing edge copies
+<span class="fc" id="L188">        minGeoRef = -1;</span>
+<span class="fc" id="L189">        maxGeoRef = 1;</span>
+<span class="fc" id="L190">        return this;</span>
+    }
+
+    public String toDetailsString() {
+<span class="fc" id="L194">        return store.toDetailsString() + &quot;, &quot;</span>
+<span class="fc" id="L195">                + &quot;name:(&quot; + edgeKVStorage.getCapacity() / Helper.MB + &quot;MB), &quot;</span>
+<span class="fc" id="L196">                + &quot;geo:&quot; + nf(maxGeoRef) + &quot;/&quot; + nf(minGeoRef) + &quot;(&quot; + wayGeometry.getCapacity() / Helper.MB + &quot;MB)&quot;;</span>
+    }
+
+    /**
+     * Flush and free resources that are not needed for post-processing (way geometries and KVStorage for edges).
+     */
+    public void flushAndCloseGeometryAndNameStorage() {
+<span class="nc" id="L203">        setWayGeometryHeader();</span>
+
+<span class="nc" id="L205">        wayGeometry.flush();</span>
+<span class="nc" id="L206">        wayGeometry.close();</span>
+
+<span class="nc" id="L208">        edgeKVStorage.flush();</span>
+<span class="nc" id="L209">        edgeKVStorage.close();</span>
+<span class="nc" id="L210">    }</span>
+
+    public void flush() {
+<span class="pc bpc" id="L213" title="1 of 2 branches missed.">        if (!wayGeometry.isClosed()) {</span>
+<span class="fc" id="L214">            setWayGeometryHeader();</span>
+<span class="fc" id="L215">            wayGeometry.flush();</span>
+        }
+
+<span class="pc bpc" id="L218" title="1 of 2 branches missed.">        if (!edgeKVStorage.isClosed())</span>
+<span class="fc" id="L219">            edgeKVStorage.flush();</span>
+
+<span class="fc" id="L221">        store.flush();</span>
+<span class="fc bfc" id="L222" title="All 2 branches covered.">        if (supportsTurnCosts()) {</span>
+<span class="fc" id="L223">            turnCostStorage.flush();</span>
+        }
+<span class="fc" id="L225">    }</span>
+
+    @Override
+    public void close() {
+<span class="pc bpc" id="L229" title="1 of 2 branches missed.">        if (!wayGeometry.isClosed())</span>
+<span class="fc" id="L230">            wayGeometry.close();</span>
+<span class="pc bpc" id="L231" title="1 of 2 branches missed.">        if (!edgeKVStorage.isClosed())</span>
+<span class="fc" id="L232">            edgeKVStorage.close();</span>
+<span class="fc" id="L233">        store.close();</span>
+<span class="fc bfc" id="L234" title="All 2 branches covered.">        if (supportsTurnCosts()) {</span>
+<span class="fc" id="L235">            turnCostStorage.close();</span>
+        }
+<span class="fc" id="L237">    }</span>
+
+    public long getCapacity() {
+<span class="nc" id="L240">        return store.getCapacity() + edgeKVStorage.getCapacity()</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">                + wayGeometry.getCapacity() + (supportsTurnCosts() ? turnCostStorage.getCapacity() : 0);</span>
+    }
+
+    long getMaxGeoRef() {
+<span class="fc" id="L245">        return maxGeoRef;</span>
+    }
+
+    public boolean loadExisting() {
+<span class="fc" id="L249">        checkNotInitialized();</span>
+
+<span class="pc bpc" id="L251" title="1 of 2 branches missed.">        if (!store.loadExisting())</span>
+<span class="nc" id="L252">            return false;</span>
+
+<span class="pc bpc" id="L254" title="1 of 2 branches missed.">        if (!wayGeometry.loadExisting())</span>
+<span class="nc" id="L255">            return false;</span>
+
+<span class="pc bpc" id="L257" title="1 of 2 branches missed.">        if (!edgeKVStorage.loadExisting())</span>
+<span class="nc" id="L258">            return false;</span>
+
+<span class="pc bpc" id="L260" title="1 of 4 branches missed.">        if (supportsTurnCosts() &amp;&amp; !turnCostStorage.loadExisting())</span>
+<span class="nc" id="L261">            return false;</span>
+
+<span class="fc" id="L263">        setInitialized();</span>
+<span class="fc" id="L264">        loadWayGeometryHeader();</span>
+<span class="fc" id="L265">        return true;</span>
+    }
+
+    /**
+     * This method copies the properties of one {@link EdgeIteratorState} to another.
+     *
+     * @return the updated iterator the properties where copied to.
+     */
+    EdgeIteratorState copyProperties(EdgeIteratorState from, EdgeIteratorStateImpl to) {
+<span class="fc" id="L274">        long edgePointer = store.toEdgePointer(to.getEdge());</span>
+<span class="fc" id="L275">        store.writeFlags(edgePointer, from.getFlags());</span>
+
+        // copy the rest with higher level API
+<span class="fc" id="L278">        to.setDistance(from.getDistance()).</span>
+<span class="fc" id="L279">                setKeyValues(from.getKeyValues()).</span>
+<span class="fc" id="L280">                setWayGeometry(from.fetchWayGeometry(FetchMode.PILLAR_ONLY));</span>
+
+<span class="fc" id="L282">        return to;</span>
+    }
+
+    /**
+     * Create edge between nodes a and b
+     *
+     * @return EdgeIteratorState of newly created edge
+     */
+    @Override
+    public EdgeIteratorState edge(int nodeA, int nodeB) {
+<span class="pc bpc" id="L292" title="1 of 2 branches missed.">        if (isFrozen())</span>
+<span class="nc" id="L293">            throw new IllegalStateException(&quot;Cannot create edge if graph is already frozen&quot;);</span>
+<span class="pc bpc" id="L294" title="1 of 2 branches missed.">        if (nodeA == nodeB)</span>
+            // Loop edges would only make sense if their attributes were the same for both 'directions',
+            // because for routing algorithms (which ignore the way geometry) loop edges do not even
+            // have a well-defined 'direction'. So we either need to make sure the attributes
+            // are the same for both directions, or reject loop edges altogether. Since we currently
+            // don't know any use-case for loop edges in road networks (there is one for PT),
+            // we reject them here.
+<span class="nc" id="L301">            throw new IllegalArgumentException(&quot;Loop edges are not supported, got: &quot; + nodeA + &quot; - &quot; + nodeB);</span>
+<span class="fc" id="L302">        int edgeId = store.edge(nodeA, nodeB);</span>
+<span class="fc" id="L303">        EdgeIteratorStateImpl edge = new EdgeIteratorStateImpl(this);</span>
+<span class="fc" id="L304">        boolean valid = edge.init(edgeId, nodeB);</span>
+<span class="pc bpc" id="L305" title="1 of 2 branches missed.">        assert valid;</span>
+<span class="fc" id="L306">        return edge;</span>
+    }
+
+    /**
+     * Creates a copy of a given edge with the same properties.
+     *
+     * @param reuseGeometry If true the copy uses the same pointer to the geometry,
+     *                      so changing the geometry would alter the geometry for both edges!
+     */
+    public EdgeIteratorState copyEdge(int edge, boolean reuseGeometry) {
+<span class="fc" id="L316">        EdgeIteratorStateImpl edgeState = (EdgeIteratorStateImpl) getEdgeIteratorState(edge, Integer.MIN_VALUE);</span>
+<span class="fc" id="L317">        EdgeIteratorStateImpl newEdge = (EdgeIteratorStateImpl) edge(edgeState.getBaseNode(), edgeState.getAdjNode())</span>
+<span class="fc" id="L318">                .setFlags(edgeState.getFlags())</span>
+<span class="fc" id="L319">                .setDistance(edgeState.getDistance())</span>
+<span class="fc" id="L320">                .setKeyValues(edgeState.getKeyValues());</span>
+<span class="fc bfc" id="L321" title="All 2 branches covered.">        if (reuseGeometry) {</span>
+            // We use the same geo ref for the copied edge. This saves memory because we are not duplicating
+            // the geometry, and it allows to identify the copies of a given edge.
+<span class="fc" id="L324">            long edgePointer = edgeState.edgePointer;</span>
+<span class="fc" id="L325">            long geoRef = store.getGeoRef(edgePointer);</span>
+<span class="fc bfc" id="L326" title="All 2 branches covered.">            if (geoRef == 0) {</span>
+                // No geometry for this edge, but we need to be able to identify the copied edges later, so
+                // we use a dedicated negative value for the geo ref.
+<span class="fc" id="L329">                geoRef = minGeoRef;</span>
+<span class="fc" id="L330">                store.setGeoRef(edgePointer, geoRef);</span>
+<span class="fc" id="L331">                minGeoRef--;</span>
+            }
+<span class="fc" id="L333">            store.setGeoRef(newEdge.edgePointer, geoRef);</span>
+<span class="fc" id="L334">        } else {</span>
+<span class="fc" id="L335">            newEdge.setWayGeometry(edgeState.fetchWayGeometry(FetchMode.PILLAR_ONLY));</span>
+        }
+<span class="fc" id="L337">        return newEdge;</span>
+    }
+
+    /**
+     * Runs the given action on the given edge and all its copies that were created with 'reuseGeometry=true'.
+     */
+    public void forEdgeAndCopiesOfEdge(EdgeExplorer explorer, EdgeIteratorState edge, Consumer&lt;EdgeIteratorState&gt; consumer) {
+<span class="fc" id="L344">        final long geoRef = store.getGeoRef(((EdgeIteratorStateImpl) edge).edgePointer);</span>
+<span class="fc bfc" id="L345" title="All 2 branches covered.">        if (geoRef == 0) {</span>
+            // 0 means there is no geometry (and no copy of this edge), but of course not all edges
+            // without geometry are copies of each other, so we need to return early
+<span class="fc" id="L348">            consumer.accept(edge);</span>
+<span class="fc" id="L349">            return;</span>
+        }
+<span class="fc" id="L351">        EdgeIterator iter = explorer.setBaseNode(edge.getBaseNode());</span>
+<span class="fc bfc" id="L352" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L353">            long geoRefBefore = store.getGeoRef(((EdgeIteratorStateImpl) iter).edgePointer);</span>
+<span class="fc bfc" id="L354" title="All 2 branches covered.">            if (geoRefBefore == geoRef)</span>
+<span class="fc" id="L355">                consumer.accept(iter);</span>
+<span class="pc bpc" id="L356" title="1 of 2 branches missed.">            if (store.getGeoRef(((EdgeIteratorStateImpl) iter).edgePointer) != geoRefBefore)</span>
+<span class="nc" id="L357">                throw new IllegalStateException(&quot;The consumer must not change the geo ref&quot;);</span>
+<span class="fc" id="L358">        }</span>
+<span class="fc" id="L359">    }</span>
+
+    public void forEdgeAndCopiesOfEdge(EdgeExplorer explorer, int node, int edge, IntConsumer consumer) {
+<span class="fc" id="L362">        final long geoRef = store.getGeoRef(store.toEdgePointer(edge));</span>
+<span class="fc bfc" id="L363" title="All 2 branches covered.">        if (geoRef == 0) {</span>
+            // 0 means there is no geometry (and no copy of this edge), but of course not all edges
+            // without geometry are copies of each other, so we need to return early
+<span class="fc" id="L366">            consumer.accept(edge);</span>
+<span class="fc" id="L367">            return;</span>
+        }
+<span class="fc" id="L369">        EdgeIterator iter = explorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L370" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L371">            long geoRefBefore = store.getGeoRef(((EdgeIteratorStateImpl) iter).edgePointer);</span>
+<span class="fc bfc" id="L372" title="All 2 branches covered.">            if (geoRefBefore == geoRef)</span>
+<span class="fc" id="L373">                consumer.accept(iter.getEdge());</span>
+<span class="fc" id="L374">        }</span>
+<span class="fc" id="L375">    }</span>
+
+    public void sortEdges(IntUnaryOperator getNewEdgeForOldEdge) {
+<span class="pc bpc" id="L378" title="1 of 2 branches missed.">        if (isFrozen())</span>
+<span class="nc" id="L379">            throw new IllegalStateException(&quot;Cannot sort edges if graph is already frozen&quot;);</span>
+<span class="fc" id="L380">        store.sortEdges(getNewEdgeForOldEdge);</span>
+<span class="fc bfc" id="L381" title="All 2 branches covered.">        if (supportsTurnCosts())</span>
+<span class="fc" id="L382">            turnCostStorage.sortEdges(getNewEdgeForOldEdge);</span>
+<span class="fc" id="L383">    }</span>
+
+    public void relabelNodes(IntUnaryOperator getNewNodeForOldNode) {
+<span class="pc bpc" id="L386" title="1 of 2 branches missed.">        if (isFrozen())</span>
+<span class="nc" id="L387">            throw new IllegalStateException(&quot;Cannot relabel nodes if graph is already frozen&quot;);</span>
+<span class="fc" id="L388">        store.relabelNodes(getNewNodeForOldNode);</span>
+<span class="fc bfc" id="L389" title="All 2 branches covered.">        if (supportsTurnCosts())</span>
+<span class="fc" id="L390">            turnCostStorage.sortNodes();</span>
+<span class="fc" id="L391">    }</span>
+
+    @Override
+    public EdgeIteratorState getEdgeIteratorState(int edgeId, int adjNode) {
+<span class="fc" id="L395">        EdgeIteratorStateImpl edge = new EdgeIteratorStateImpl(this);</span>
+<span class="fc bfc" id="L396" title="All 2 branches covered.">        if (edge.init(edgeId, adjNode))</span>
+<span class="fc" id="L397">            return edge;</span>
+        // if edgeId exists but adjacent nodes do not match
+<span class="fc" id="L399">        return null;</span>
+    }
+
+    @Override
+    public EdgeIteratorState getEdgeIteratorStateForKey(int edgeKey) {
+<span class="fc" id="L404">        EdgeIteratorStateImpl edge = new EdgeIteratorStateImpl(this);</span>
+<span class="fc" id="L405">        edge.init(edgeKey);</span>
+<span class="fc" id="L406">        return edge;</span>
+    }
+
+    @Override
+    public EdgeExplorer createEdgeExplorer(EdgeFilter filter) {
+<span class="fc" id="L411">        return new EdgeIteratorImpl(this, filter);</span>
+    }
+
+    @Override
+    public EdgeExplorer createEdgeExplorer() {
+<span class="fc" id="L416">        return createEdgeExplorer(EdgeFilter.ALL_EDGES);</span>
+    }
+
+    @Override
+    public AllEdgesIterator getAllEdges() {
+<span class="fc" id="L421">        return new AllEdgeIterator(this);</span>
+    }
+
+    @Override
+    public TurnCostStorage getTurnCostStorage() {
+<span class="fc" id="L426">        return turnCostStorage;</span>
+    }
+
+    @Override
+    public Weighting wrapWeighting(Weighting weighting) {
+<span class="fc" id="L431">        return weighting;</span>
+    }
+
+    @Override
+    public int getOtherNode(int edge, int node) {
+<span class="fc" id="L436">        long edgePointer = store.toEdgePointer(edge);</span>
+<span class="fc" id="L437">        return getOtherNode(node, edgePointer);</span>
+    }
+
+    @Override
+    public boolean isAdjacentToNode(int edge, int node) {
+<span class="fc" id="L442">        long edgePointer = store.toEdgePointer(edge);</span>
+<span class="fc" id="L443">        return isAdjacentToNode(node, edgePointer);</span>
+    }
+
+    /**
+     * @return true if the specified node is the adjacent node of the specified edge
+     * (relative to the direction in which the edge is stored).
+     */
+    public boolean isAdjNode(int edge, int node) {
+<span class="fc" id="L451">        long edgePointer = store.toEdgePointer(edge);</span>
+<span class="fc bfc" id="L452" title="All 2 branches covered.">        return node == store.getNodeB(edgePointer);</span>
+    }
+
+    private void setWayGeometry_(PointList pillarNodes, long edgePointer, boolean reverse) {
+<span class="pc bpc" id="L456" title="1 of 4 branches missed.">        if (pillarNodes != null &amp;&amp; !pillarNodes.isEmpty()) {</span>
+<span class="pc bpc" id="L457" title="1 of 2 branches missed.">            if (pillarNodes.getDimension() != nodeAccess.getDimension())</span>
+<span class="nc" id="L458">                throw new IllegalArgumentException(&quot;Cannot use pointlist which is &quot; + pillarNodes.getDimension()</span>
+<span class="nc" id="L459">                        + &quot;D for graph which is &quot; + nodeAccess.getDimension() + &quot;D&quot;);</span>
+
+<span class="fc" id="L461">            long existingGeoRef = store.getGeoRef(edgePointer);</span>
+<span class="fc bfc" id="L462" title="All 2 branches covered.">            if (existingGeoRef &lt; 0)</span>
+                // users of this method might not be aware that after changing the geo ref it is no
+                // longer possible to find the copies corresponding to an edge, so we deny this
+<span class="fc" id="L465">                throw new IllegalStateException(&quot;This edge has already been copied so we can no longer change the geometry, pointer=&quot; + edgePointer);</span>
+
+<span class="fc" id="L467">            int len = pillarNodes.size();</span>
+<span class="fc bfc" id="L468" title="All 2 branches covered.">            if (existingGeoRef &gt; 0) {</span>
+<span class="fc" id="L469">                final int count = getPillarCount(existingGeoRef);</span>
+<span class="fc bfc" id="L470" title="All 2 branches covered.">                if (len &lt;= count) {</span>
+<span class="fc" id="L471">                    setWayGeometryAtGeoRef(pillarNodes, edgePointer, reverse, existingGeoRef);</span>
+<span class="fc" id="L472">                    return;</span>
+                } else {
+<span class="fc" id="L474">                    throw new IllegalStateException(&quot;This edge already has a way geometry so it cannot be changed to a bigger geometry, pointer=&quot; + edgePointer);</span>
+                }
+            }
+<span class="fc" id="L477">            long nextGeoRef = nextGeoRef(3 + len * (8 + eleBytesPerCoord));</span>
+<span class="fc" id="L478">            setWayGeometryAtGeoRef(pillarNodes, edgePointer, reverse, nextGeoRef);</span>
+<span class="fc" id="L479">        } else {</span>
+<span class="fc" id="L480">            store.setGeoRef(edgePointer, 0L);</span>
+        }
+<span class="fc" id="L482">    }</span>
+
+    public EdgeIntAccess getEdgeAccess() {
+<span class="fc" id="L485">        return store;</span>
+    }
+
+    private void setWayGeometryAtGeoRef(PointList pillarNodes, long edgePointer, boolean reverse, long geoRef) {
+<span class="fc" id="L489">        byte[] wayGeometryBytes = createWayGeometryBytes(pillarNodes, reverse);</span>
+<span class="fc" id="L490">        wayGeometry.ensureCapacity(geoRef + wayGeometryBytes.length);</span>
+<span class="fc" id="L491">        wayGeometry.setBytes(geoRef, wayGeometryBytes, wayGeometryBytes.length);</span>
+<span class="fc" id="L492">        store.setGeoRef(edgePointer, geoRef);</span>
+<span class="fc" id="L493">    }</span>
+
+    private byte[] createWayGeometryBytes(PointList pillarNodes, boolean reverse) {
+<span class="fc" id="L496">        int len = pillarNodes.size();</span>
+<span class="fc" id="L497">        int totalLen = 3 + len * (8 + eleBytesPerCoord);</span>
+<span class="pc bpc" id="L498" title="1 of 2 branches missed.">        if ((totalLen &amp; 0xFF00_0000) != 0)</span>
+<span class="nc" id="L499">            throw new IllegalArgumentException(&quot;too long way geometry &quot; + totalLen + &quot;, &quot; + len);</span>
+
+<span class="fc" id="L501">        byte[] bytes = new byte[totalLen];</span>
+<span class="fc" id="L502">        bitUtil.fromUInt3(bytes, len, 0);</span>
+<span class="pc bpc" id="L503" title="1 of 2 branches missed.">        if (reverse)</span>
+<span class="nc" id="L504">            pillarNodes.reverse();</span>
+
+<span class="fc" id="L506">        int tmpOffset = 3;</span>
+<span class="fc" id="L507">        boolean is3D = nodeAccess.is3D();</span>
+<span class="fc bfc" id="L508" title="All 2 branches covered.">        for (int i = 0; i &lt; len; i++) {</span>
+<span class="fc" id="L509">            double lat = pillarNodes.getLat(i);</span>
+<span class="fc" id="L510">            bitUtil.fromInt(bytes, Helper.degreeToInt(lat), tmpOffset);</span>
+<span class="fc" id="L511">            tmpOffset += 4;</span>
+<span class="fc" id="L512">            bitUtil.fromInt(bytes, Helper.degreeToInt(pillarNodes.getLon(i)), tmpOffset);</span>
+<span class="fc" id="L513">            tmpOffset += 4;</span>
+
+<span class="fc bfc" id="L515" title="All 2 branches covered.">            if (is3D) {</span>
+<span class="fc" id="L516">                bitUtil.fromUInt3(bytes, Helper.eleToUInt(pillarNodes.getEle(i)), tmpOffset);</span>
+<span class="fc" id="L517">                tmpOffset += 3;</span>
+            }
+        }
+<span class="fc" id="L520">        return bytes;</span>
+    }
+
+    private int getPillarCount(long geoRef) {
+<span class="fc" id="L524">        return (wayGeometry.getByte(geoRef + 2) &amp; 0xFF &lt;&lt; 16) | wayGeometry.getShort(geoRef);</span>
+    }
+
+    private PointList fetchWayGeometry_(long edgePointer, boolean reverse, FetchMode mode, int baseNode, int adjNode) {
+<span class="fc bfc" id="L528" title="All 2 branches covered.">        if (mode == FetchMode.TOWER_ONLY) {</span>
+            // no reverse handling required as adjNode and baseNode is already properly switched
+<span class="fc" id="L530">            PointList pillarNodes = new PointList(2, nodeAccess.is3D());</span>
+<span class="fc" id="L531">            pillarNodes.add(nodeAccess, baseNode);</span>
+<span class="fc" id="L532">            pillarNodes.add(nodeAccess, adjNode);</span>
+<span class="fc" id="L533">            return pillarNodes;</span>
+        }
+<span class="fc" id="L535">        long geoRef = store.getGeoRef(edgePointer);</span>
+<span class="fc" id="L536">        int count = 0;</span>
+<span class="fc" id="L537">        byte[] bytes = null;</span>
+<span class="fc bfc" id="L538" title="All 2 branches covered.">        if (geoRef &gt; 0) {</span>
+<span class="fc" id="L539">            count = getPillarCount(geoRef);</span>
+<span class="fc" id="L540">            geoRef += 3L;</span>
+<span class="fc" id="L541">            bytes = new byte[count * (8 + eleBytesPerCoord)];</span>
+<span class="fc" id="L542">            wayGeometry.getBytes(geoRef, bytes, bytes.length);</span>
+<span class="fc bfc" id="L543" title="All 2 branches covered.">        } else if (mode == FetchMode.PILLAR_ONLY)</span>
+<span class="fc" id="L544">            return PointList.EMPTY;</span>
+
+<span class="fc" id="L546">        PointList pillarNodes = new PointList(getPointListLength(count, mode), nodeAccess.is3D());</span>
+<span class="fc bfc" id="L547" title="All 2 branches covered.">        if (reverse) {</span>
+<span class="fc bfc" id="L548" title="All 4 branches covered.">            if (mode == FetchMode.ALL || mode == FetchMode.PILLAR_AND_ADJ)</span>
+<span class="fc" id="L549">                pillarNodes.add(nodeAccess, adjNode);</span>
+<span class="fc bfc" id="L550" title="All 4 branches covered.">        } else if (mode == FetchMode.ALL || mode == FetchMode.BASE_AND_PILLAR)</span>
+<span class="fc" id="L551">            pillarNodes.add(nodeAccess, baseNode);</span>
+
+<span class="fc" id="L553">        int index = 0;</span>
+<span class="fc bfc" id="L554" title="All 2 branches covered.">        for (int i = 0; i &lt; count; i++) {</span>
+<span class="fc" id="L555">            double lat = Helper.intToDegree(bitUtil.toInt(bytes, index));</span>
+<span class="fc" id="L556">            index += 4;</span>
+<span class="fc" id="L557">            double lon = Helper.intToDegree(bitUtil.toInt(bytes, index));</span>
+<span class="fc" id="L558">            index += 4;</span>
+<span class="fc bfc" id="L559" title="All 2 branches covered.">            if (nodeAccess.is3D()) {</span>
+<span class="fc" id="L560">                pillarNodes.add(lat, lon, Helper.uIntToEle(bitUtil.toUInt3(bytes, index)));</span>
+<span class="fc" id="L561">                index += 3;</span>
+            } else {
+<span class="fc" id="L563">                pillarNodes.add(lat, lon);</span>
+            }
+        }
+
+<span class="fc bfc" id="L567" title="All 2 branches covered.">        if (reverse) {</span>
+<span class="fc bfc" id="L568" title="All 4 branches covered.">            if (mode == FetchMode.ALL || mode == FetchMode.BASE_AND_PILLAR)</span>
+<span class="fc" id="L569">                pillarNodes.add(nodeAccess, baseNode);</span>
+
+<span class="fc" id="L571">            pillarNodes.reverse();</span>
+<span class="fc bfc" id="L572" title="All 4 branches covered.">        } else if (mode == FetchMode.ALL || mode == FetchMode.PILLAR_AND_ADJ)</span>
+<span class="fc" id="L573">            pillarNodes.add(nodeAccess, adjNode);</span>
+
+<span class="fc" id="L575">        return pillarNodes;</span>
+    }
+
+    static int getPointListLength(int pillarNodes, FetchMode mode) {
+<span class="pc bpc" id="L579" title="2 of 5 branches missed.">        switch (mode) {</span>
+            case TOWER_ONLY:
+<span class="nc" id="L581">                return 2;</span>
+            case PILLAR_ONLY:
+<span class="fc" id="L583">                return pillarNodes;</span>
+            case BASE_AND_PILLAR:
+            case PILLAR_AND_ADJ:
+<span class="fc" id="L586">                return pillarNodes + 1;</span>
+            case ALL:
+<span class="fc" id="L588">                return pillarNodes + 2;</span>
+        }
+<span class="nc" id="L590">        throw new IllegalArgumentException(&quot;Mode isn't handled &quot; + mode);</span>
+    }
+
+    private long nextGeoRef(int bytes) {
+<span class="fc" id="L594">        long tmp = maxGeoRef;</span>
+<span class="fc" id="L595">        maxGeoRef += bytes;</span>
+<span class="fc" id="L596">        return tmp;</span>
+    }
+
+    public boolean isClosed() {
+<span class="fc" id="L600">        return store.isClosed();</span>
+    }
+
+    public Directory getDirectory() {
+<span class="fc" id="L604">        return dir;</span>
+    }
+
+    public int getSegmentSize() {
+<span class="fc" id="L608">        return segmentSize;</span>
+    }
+
+    public static class Builder {
+        private final int bytesForFlags;
+<span class="fc" id="L613">        private Directory directory = new RAMDirectory();</span>
+<span class="fc" id="L614">        private boolean withElevation = false;</span>
+<span class="fc" id="L615">        private boolean withTurnCosts = false;</span>
+<span class="fc" id="L616">        private long bytes = 100;</span>
+<span class="fc" id="L617">        private int segmentSize = -1;</span>
+
+        public Builder(EncodingManager em) {
+<span class="fc" id="L620">            this(em.getBytesForFlags());</span>
+<span class="fc" id="L621">            withTurnCosts(em.needsTurnCostsSupport());</span>
+<span class="fc" id="L622">        }</span>
+
+<span class="fc" id="L624">        public Builder(int bytesForFlags) {</span>
+<span class="fc" id="L625">            this.bytesForFlags = bytesForFlags;</span>
+<span class="fc" id="L626">        }</span>
+
+        // todo: maybe rename later, but for now this makes it easier to replace GraphBuilder
+        public Builder setDir(Directory directory) {
+<span class="fc" id="L630">            this.directory = directory;</span>
+<span class="fc" id="L631">            return this;</span>
+        }
+
+        // todo: maybe rename later, but for now this makes it easier to replace GraphBuilder
+        public Builder set3D(boolean withElevation) {
+<span class="fc" id="L636">            this.withElevation = withElevation;</span>
+<span class="fc" id="L637">            return this;</span>
+        }
+
+        // todo: maybe rename later, but for now this makes it easier to replace GraphBuilder
+        public Builder withTurnCosts(boolean withTurnCosts) {
+<span class="fc" id="L642">            this.withTurnCosts = withTurnCosts;</span>
+<span class="fc" id="L643">            return this;</span>
+        }
+
+        public Builder setSegmentSize(int segmentSize) {
+<span class="fc" id="L647">            this.segmentSize = segmentSize;</span>
+<span class="fc" id="L648">            return this;</span>
+        }
+
+        public Builder setBytes(long bytes) {
+<span class="nc" id="L652">            this.bytes = bytes;</span>
+<span class="nc" id="L653">            return this;</span>
+        }
+
+        public BaseGraph build() {
+<span class="fc" id="L657">            return new BaseGraph(directory, withElevation, withTurnCosts, segmentSize, bytesForFlags);</span>
+        }
+
+        public BaseGraph create() {
+<span class="fc" id="L661">            BaseGraph baseGraph = build();</span>
+<span class="fc" id="L662">            baseGraph.create(bytes);</span>
+<span class="fc" id="L663">            return baseGraph;</span>
+        }
+    }
+
+<span class="fc" id="L667">    protected static class EdgeIteratorImpl extends EdgeIteratorStateImpl implements EdgeExplorer, EdgeIterator {</span>
+        final EdgeFilter filter;
+        int nextEdgeId;
+
+        public EdgeIteratorImpl(BaseGraph baseGraph, EdgeFilter filter) {
+<span class="fc" id="L672">            super(baseGraph);</span>
+<span class="pc bpc" id="L673" title="1 of 2 branches missed.">            if (filter == null)</span>
+<span class="nc" id="L674">                throw new IllegalArgumentException(&quot;Instead null filter use EdgeFilter.ALL_EDGES&quot;);</span>
+<span class="fc" id="L675">            this.filter = filter;</span>
+<span class="fc" id="L676">        }</span>
+
+        @Override
+        public EdgeIterator setBaseNode(int baseNode) {
+<span class="fc" id="L680">            nextEdgeId = edgeId = store.getEdgeRef(store.toNodePointer(baseNode));</span>
+<span class="fc" id="L681">            this.baseNode = baseNode;</span>
+<span class="fc" id="L682">            return this;</span>
+        }
+
+        @Override
+        public final boolean next() {
+<span class="fc bfc" id="L687" title="All 2 branches covered.">            while (EdgeIterator.Edge.isValid(nextEdgeId)) {</span>
+<span class="fc" id="L688">                goToNext();</span>
+<span class="fc bfc" id="L689" title="All 2 branches covered.">                if (filter.accept(this))</span>
+<span class="fc" id="L690">                    return true;</span>
+            }
+<span class="fc" id="L692">            return false;</span>
+        }
+
+        void goToNext() {
+<span class="fc" id="L696">            edgePointer = store.toEdgePointer(nextEdgeId);</span>
+<span class="fc" id="L697">            edgeId = nextEdgeId;</span>
+<span class="fc" id="L698">            int nodeA = store.getNodeA(edgePointer);</span>
+<span class="fc bfc" id="L699" title="All 2 branches covered.">            boolean baseNodeIsNodeA = baseNode == nodeA;</span>
+<span class="fc bfc" id="L700" title="All 2 branches covered.">            adjNode = baseNodeIsNodeA ? store.getNodeB(edgePointer) : nodeA;</span>
+<span class="fc bfc" id="L701" title="All 2 branches covered.">            reverse = !baseNodeIsNodeA;</span>
+
+            // position to next edge
+<span class="fc bfc" id="L704" title="All 2 branches covered.">            nextEdgeId = baseNodeIsNodeA ? store.getLinkA(edgePointer) : store.getLinkB(edgePointer);</span>
+<span class="pc bpc" id="L705" title="1 of 2 branches missed.">            assert nextEdgeId != edgeId : (&quot;endless loop detected for base node: &quot; + baseNode + &quot;, adj node: &quot; + adjNode</span>
+                    + &quot;, edge pointer: &quot; + edgePointer + &quot;, edge: &quot; + edgeId);
+<span class="fc" id="L707">        }</span>
+
+        @Override
+        public EdgeIteratorState detach(boolean reverseArg) {
+<span class="fc bfc" id="L711" title="All 2 branches covered.">            if (edgeId == nextEdgeId)</span>
+<span class="fc" id="L712">                throw new IllegalStateException(&quot;call next before detaching (edgeId:&quot; + edgeId + &quot; vs. next &quot; + nextEdgeId + &quot;)&quot;);</span>
+<span class="fc" id="L713">            return super.detach(reverseArg);</span>
+        }
+    }
+
+    /**
+     * Include all edges of this storage in the iterator.
+     */
+    protected static class AllEdgeIterator extends EdgeIteratorStateImpl implements AllEdgesIterator {
+        public AllEdgeIterator(BaseGraph baseGraph) {
+<span class="fc" id="L722">            super(baseGraph);</span>
+<span class="fc" id="L723">        }</span>
+
+        @Override
+        public int length() {
+<span class="fc" id="L727">            return store.getEdges();</span>
+        }
+
+        @Override
+        public boolean next() {
+<span class="fc" id="L732">            edgeId++;</span>
+<span class="fc bfc" id="L733" title="All 2 branches covered.">            if (edgeId &gt;= store.getEdges())</span>
+<span class="fc" id="L734">                return false;</span>
+<span class="fc" id="L735">            edgePointer = store.toEdgePointer(edgeId);</span>
+<span class="fc" id="L736">            baseNode = store.getNodeA(edgePointer);</span>
+<span class="fc" id="L737">            adjNode = store.getNodeB(edgePointer);</span>
+<span class="fc" id="L738">            reverse = false;</span>
+<span class="fc" id="L739">            return true;</span>
+        }
+
+        @Override
+        public final EdgeIteratorState detach(boolean reverseArg) {
+<span class="nc bnc" id="L744" title="All 2 branches missed.">            if (edgePointer &lt; 0)</span>
+<span class="nc" id="L745">                throw new IllegalStateException(&quot;call next before detaching&quot;);</span>
+
+<span class="nc" id="L747">            AllEdgeIterator iter = new AllEdgeIterator(baseGraph);</span>
+<span class="nc" id="L748">            iter.edgeId = edgeId;</span>
+<span class="nc" id="L749">            iter.edgePointer = edgePointer;</span>
+<span class="nc bnc" id="L750" title="All 2 branches missed.">            if (reverseArg) {</span>
+<span class="nc bnc" id="L751" title="All 2 branches missed.">                iter.reverse = !this.reverse;</span>
+<span class="nc" id="L752">                iter.baseNode = adjNode;</span>
+<span class="nc" id="L753">                iter.adjNode = baseNode;</span>
+            } else {
+<span class="nc" id="L755">                iter.reverse = this.reverse;</span>
+<span class="nc" id="L756">                iter.baseNode = baseNode;</span>
+<span class="nc" id="L757">                iter.adjNode = adjNode;</span>
+            }
+<span class="nc" id="L759">            return iter;</span>
+        }
+    }
+
+<span class="fc" id="L763">    static class EdgeIteratorStateImpl implements EdgeIteratorState {</span>
+        final BaseGraph baseGraph;
+        final BaseGraphNodesAndEdges store;
+<span class="fc" id="L766">        long edgePointer = -1;</span>
+        int baseNode;
+        int adjNode;
+        // we need reverse if detach is called
+<span class="fc" id="L770">        boolean reverse = false;</span>
+<span class="fc" id="L771">        int edgeId = -1;</span>
+        private final EdgeIntAccess edgeIntAccess;
+
+<span class="fc" id="L774">        public EdgeIteratorStateImpl(BaseGraph baseGraph) {</span>
+<span class="fc" id="L775">            this.baseGraph = baseGraph;</span>
+<span class="fc" id="L776">            edgeIntAccess = baseGraph.getEdgeAccess();</span>
+<span class="fc" id="L777">            store = baseGraph.store;</span>
+<span class="fc" id="L778">        }</span>
+
+        /**
+         * @return false if the edge has not a node equal to expectedAdjNode
+         */
+        final boolean init(int edgeId, int expectedAdjNode) {
+<span class="fc bfc" id="L784" title="All 4 branches covered.">            if (edgeId &lt; 0 || edgeId &gt;= store.getEdges())</span>
+<span class="fc" id="L785">                throw new IllegalArgumentException(&quot;edge: &quot; + edgeId + &quot; out of bounds: [0,&quot; + store.getEdges() + &quot;[&quot;);</span>
+<span class="fc" id="L786">            this.edgeId = edgeId;</span>
+<span class="fc" id="L787">            edgePointer = store.toEdgePointer(edgeId);</span>
+<span class="fc" id="L788">            baseNode = store.getNodeA(edgePointer);</span>
+<span class="fc" id="L789">            adjNode = store.getNodeB(edgePointer);</span>
+
+<span class="fc bfc" id="L791" title="All 4 branches covered.">            if (expectedAdjNode == adjNode || expectedAdjNode == Integer.MIN_VALUE) {</span>
+<span class="fc" id="L792">                reverse = false;</span>
+<span class="fc" id="L793">                return true;</span>
+<span class="fc bfc" id="L794" title="All 2 branches covered.">            } else if (expectedAdjNode == baseNode) {</span>
+<span class="fc" id="L795">                reverse = true;</span>
+<span class="fc" id="L796">                baseNode = adjNode;</span>
+<span class="fc" id="L797">                adjNode = expectedAdjNode;</span>
+<span class="fc" id="L798">                return true;</span>
+            }
+<span class="fc" id="L800">            return false;</span>
+        }
+
+        /**
+         * Similar to {@link #init(int edgeId, int adjNode)}, but here we retrieve the edge in a certain direction
+         * directly using an edge key.
+         */
+        final void init(int edgeKey) {
+<span class="pc bpc" id="L808" title="1 of 2 branches missed.">            if (edgeKey &lt; 0)</span>
+<span class="nc" id="L809">                throw new IllegalArgumentException(&quot;edge keys must not be negative, given: &quot; + edgeKey);</span>
+<span class="fc" id="L810">            this.edgeId = GHUtility.getEdgeFromEdgeKey(edgeKey);</span>
+<span class="fc" id="L811">            edgePointer = store.toEdgePointer(edgeId);</span>
+<span class="fc" id="L812">            baseNode = store.getNodeA(edgePointer);</span>
+<span class="fc" id="L813">            adjNode = store.getNodeB(edgePointer);</span>
+
+<span class="fc bfc" id="L815" title="All 2 branches covered.">            if (edgeKey % 2 == 0) {</span>
+<span class="fc" id="L816">                reverse = false;</span>
+            } else {
+<span class="fc" id="L818">                reverse = true;</span>
+<span class="fc" id="L819">                int tmp = baseNode;</span>
+<span class="fc" id="L820">                baseNode = adjNode;</span>
+<span class="fc" id="L821">                adjNode = tmp;</span>
+            }
+<span class="fc" id="L823">        }</span>
+
+        @Override
+        public final int getBaseNode() {
+<span class="fc" id="L827">            return baseNode;</span>
+        }
+
+        @Override
+        public final int getAdjNode() {
+<span class="fc" id="L832">            return adjNode;</span>
+        }
+
+        @Override
+        public double getDistance() {
+<span class="fc" id="L837">            return store.getDist(edgePointer);</span>
+        }
+
+        @Override
+        public EdgeIteratorState setDistance(double dist) {
+<span class="fc" id="L842">            store.setDist(edgePointer, dist);</span>
+<span class="fc" id="L843">            return this;</span>
+        }
+
+        @Override
+        public IntsRef getFlags() {
+<span class="fc" id="L848">            IntsRef edgeFlags = store.createEdgeFlags();</span>
+<span class="fc" id="L849">            store.readFlags(edgePointer, edgeFlags);</span>
+<span class="fc" id="L850">            return edgeFlags;</span>
+        }
+
+        @Override
+        public final EdgeIteratorState setFlags(IntsRef edgeFlags) {
+<span class="pc bpc" id="L855" title="1 of 2 branches missed.">            assert edgeId &lt; store.getEdges() : &quot;must be edge but was shortcut: &quot; + edgeId + &quot; &gt;= &quot; + store.getEdges() + &quot;. Use setFlagsAndWeight&quot;;</span>
+<span class="fc" id="L856">            store.writeFlags(edgePointer, edgeFlags);</span>
+<span class="fc" id="L857">            return this;</span>
+        }
+
+        @Override
+        public boolean get(BooleanEncodedValue property) {
+<span class="fc" id="L862">            return property.getBool(reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public EdgeIteratorState set(BooleanEncodedValue property, boolean value) {
+<span class="fc" id="L867">            property.setBool(reverse, edgeId, edgeIntAccess, value);</span>
+<span class="fc" id="L868">            return this;</span>
+        }
+
+        @Override
+        public boolean getReverse(BooleanEncodedValue property) {
+<span class="fc bfc" id="L873" title="All 2 branches covered.">            return property.getBool(!reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public EdgeIteratorState setReverse(BooleanEncodedValue property, boolean value) {
+<span class="pc bpc" id="L878" title="1 of 2 branches missed.">            property.setBool(!reverse, edgeId, edgeIntAccess, value);</span>
+<span class="fc" id="L879">            return this;</span>
+        }
+
+        @Override
+        public EdgeIteratorState set(BooleanEncodedValue property, boolean fwd, boolean bwd) {
+<span class="pc bpc" id="L884" title="1 of 2 branches missed.">            if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L885">                throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="fc" id="L886">            property.setBool(reverse, edgeId, edgeIntAccess, fwd);</span>
+<span class="fc bfc" id="L887" title="All 2 branches covered.">            property.setBool(!reverse, edgeId, edgeIntAccess, bwd);</span>
+<span class="fc" id="L888">            return this;</span>
+        }
+
+        @Override
+        public int get(IntEncodedValue property) {
+<span class="fc" id="L893">            return property.getInt(reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public EdgeIteratorState set(IntEncodedValue property, int value) {
+<span class="fc" id="L898">            property.setInt(reverse, edgeId, edgeIntAccess, value);</span>
+<span class="fc" id="L899">            return this;</span>
+        }
+
+        @Override
+        public int getReverse(IntEncodedValue property) {
+<span class="fc bfc" id="L904" title="All 2 branches covered.">            return property.getInt(!reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public EdgeIteratorState setReverse(IntEncodedValue property, int value) {
+<span class="nc bnc" id="L909" title="All 2 branches missed.">            property.setInt(!reverse, edgeId, edgeIntAccess, value);</span>
+<span class="nc" id="L910">            return this;</span>
+        }
+
+        @Override
+        public EdgeIteratorState set(IntEncodedValue property, int fwd, int bwd) {
+<span class="nc bnc" id="L915" title="All 2 branches missed.">            if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L916">                throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="nc" id="L917">            property.setInt(reverse, edgeId, edgeIntAccess, fwd);</span>
+<span class="nc bnc" id="L918" title="All 2 branches missed.">            property.setInt(!reverse, edgeId, edgeIntAccess, bwd);</span>
+<span class="nc" id="L919">            return this;</span>
+        }
+
+        @Override
+        public double get(DecimalEncodedValue property) {
+<span class="fc" id="L924">            return property.getDecimal(reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public EdgeIteratorState set(DecimalEncodedValue property, double value) {
+<span class="fc" id="L929">            property.setDecimal(reverse, edgeId, edgeIntAccess, value);</span>
+<span class="fc" id="L930">            return this;</span>
+        }
+
+        @Override
+        public double getReverse(DecimalEncodedValue property) {
+<span class="fc bfc" id="L935" title="All 2 branches covered.">            return property.getDecimal(!reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public EdgeIteratorState setReverse(DecimalEncodedValue property, double value) {
+<span class="pc bpc" id="L940" title="1 of 2 branches missed.">            property.setDecimal(!reverse, edgeId, edgeIntAccess, value);</span>
+<span class="fc" id="L941">            return this;</span>
+        }
+
+        @Override
+        public EdgeIteratorState set(DecimalEncodedValue property, double fwd, double bwd) {
+<span class="pc bpc" id="L946" title="1 of 2 branches missed.">            if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L947">                throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="fc" id="L948">            property.setDecimal(reverse, edgeId, edgeIntAccess, fwd);</span>
+<span class="pc bpc" id="L949" title="1 of 2 branches missed.">            property.setDecimal(!reverse, edgeId, edgeIntAccess, bwd);</span>
+<span class="fc" id="L950">            return this;</span>
+        }
+
+        @Override
+        public &lt;T extends Enum&lt;?&gt;&gt; T get(EnumEncodedValue&lt;T&gt; property) {
+<span class="fc" id="L955">            return property.getEnum(reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public &lt;T extends Enum&lt;?&gt;&gt; EdgeIteratorState set(EnumEncodedValue&lt;T&gt; property, T value) {
+<span class="fc" id="L960">            property.setEnum(reverse, edgeId, edgeIntAccess, value);</span>
+<span class="fc" id="L961">            return this;</span>
+        }
+
+        @Override
+        public &lt;T extends Enum&lt;?&gt;&gt; T getReverse(EnumEncodedValue&lt;T&gt; property) {
+<span class="fc bfc" id="L966" title="All 2 branches covered.">            return property.getEnum(!reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public &lt;T extends Enum&lt;?&gt;&gt; EdgeIteratorState setReverse(EnumEncodedValue&lt;T&gt; property, T value) {
+<span class="nc bnc" id="L971" title="All 2 branches missed.">            property.setEnum(!reverse, edgeId, edgeIntAccess, value);</span>
+<span class="nc" id="L972">            return this;</span>
+        }
+
+        @Override
+        public &lt;T extends Enum&lt;?&gt;&gt; EdgeIteratorState set(EnumEncodedValue&lt;T&gt; property, T fwd, T bwd) {
+<span class="nc bnc" id="L977" title="All 2 branches missed.">            if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L978">                throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="nc" id="L979">            property.setEnum(reverse, edgeId, edgeIntAccess, fwd);</span>
+<span class="nc bnc" id="L980" title="All 2 branches missed.">            property.setEnum(!reverse, edgeId, edgeIntAccess, bwd);</span>
+<span class="nc" id="L981">            return this;</span>
+        }
+
+        @Override
+        public String get(StringEncodedValue property) {
+<span class="nc" id="L986">            return property.getString(reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public EdgeIteratorState set(StringEncodedValue property, String value) {
+<span class="nc" id="L991">            property.setString(reverse, edgeId, edgeIntAccess, value);</span>
+<span class="nc" id="L992">            return this;</span>
+        }
+
+        @Override
+        public String getReverse(StringEncodedValue property) {
+<span class="nc bnc" id="L997" title="All 2 branches missed.">            return property.getString(!reverse, edgeId, edgeIntAccess);</span>
+        }
+
+        @Override
+        public EdgeIteratorState setReverse(StringEncodedValue property, String value) {
+<span class="nc bnc" id="L1002" title="All 2 branches missed.">            property.setString(!reverse, edgeId, edgeIntAccess, value);</span>
+<span class="nc" id="L1003">            return this;</span>
+        }
+
+        @Override
+        public EdgeIteratorState set(StringEncodedValue property, String fwd, String bwd) {
+<span class="nc bnc" id="L1008" title="All 2 branches missed.">            if (!property.isStoreTwoDirections())</span>
+<span class="nc" id="L1009">                throw new IllegalArgumentException(&quot;EncodedValue &quot; + property.getName() + &quot; supports only one direction&quot;);</span>
+<span class="nc" id="L1010">            property.setString(reverse, edgeId, edgeIntAccess, fwd);</span>
+<span class="nc bnc" id="L1011" title="All 2 branches missed.">            property.setString(!reverse, edgeId, edgeIntAccess, bwd);</span>
+<span class="nc" id="L1012">            return this;</span>
+        }
+
+        @Override
+        public final EdgeIteratorState copyPropertiesFrom(EdgeIteratorState edge) {
+<span class="fc" id="L1017">            return baseGraph.copyProperties(edge, this);</span>
+        }
+
+        @Override
+        public EdgeIteratorState setWayGeometry(PointList pillarNodes) {
+<span class="fc" id="L1022">            baseGraph.setWayGeometry_(pillarNodes, edgePointer, reverse);</span>
+<span class="fc" id="L1023">            return this;</span>
+        }
+
+        @Override
+        public PointList fetchWayGeometry(FetchMode mode) {
+<span class="fc" id="L1028">            return baseGraph.fetchWayGeometry_(edgePointer, reverse, mode, getBaseNode(), getAdjNode());</span>
+        }
+
+        @Override
+        public int getEdge() {
+<span class="fc" id="L1033">            return edgeId;</span>
+        }
+
+        @Override
+        public int getEdgeKey() {
+<span class="fc" id="L1038">            return GHUtility.createEdgeKey(edgeId, reverse);</span>
+        }
+
+        @Override
+        public int getReverseEdgeKey() {
+<span class="fc" id="L1043">            return GHUtility.reverseEdgeKey(getEdgeKey());</span>
+        }
+
+        @Override
+        public EdgeIteratorState setKeyValues(Map&lt;String, KVStorage.KValue&gt; entries) {
+<span class="fc" id="L1048">            long pointer = baseGraph.edgeKVStorage.add(entries);</span>
+<span class="pc bpc" id="L1049" title="1 of 2 branches missed.">            if (pointer &gt; MAX_UNSIGNED_INT)</span>
+<span class="nc" id="L1050">                throw new IllegalStateException(&quot;Too many key value pairs are stored, currently limited to &quot; + MAX_UNSIGNED_INT + &quot; was &quot; + pointer);</span>
+<span class="fc" id="L1051">            store.setKeyValuesRef(edgePointer, BitUtil.toSignedInt(pointer));</span>
+<span class="fc" id="L1052">            return this;</span>
+        }
+
+        @Override
+        public Map&lt;String, KVStorage.KValue&gt; getKeyValues() {
+<span class="fc" id="L1057">            long kvEntryRef = Integer.toUnsignedLong(store.getKeyValuesRef(edgePointer));</span>
+<span class="fc" id="L1058">            return baseGraph.edgeKVStorage.getAll(kvEntryRef);</span>
+        }
+
+        @Override
+        public Object getValue(String key) {
+<span class="fc" id="L1063">            long kvEntryRef = Integer.toUnsignedLong(store.getKeyValuesRef(edgePointer));</span>
+<span class="fc" id="L1064">            return baseGraph.edgeKVStorage.get(kvEntryRef, key, reverse);</span>
+        }
+
+        @Override
+        public String getName() {
+<span class="fc" id="L1069">            String name = (String) getValue(STREET_NAME);</span>
+            // preserve backward compatibility (returns empty string if name tag missing)
+<span class="fc bfc" id="L1071" title="All 2 branches covered.">            return name == null ? &quot;&quot; : name;</span>
+        }
+
+        @Override
+        public EdgeIteratorState detach(boolean reverseArg) {
+<span class="pc bpc" id="L1076" title="1 of 2 branches missed.">            if (!EdgeIterator.Edge.isValid(edgeId))</span>
+<span class="nc" id="L1077">                throw new IllegalStateException(&quot;call setEdgeId before detaching (edgeId:&quot; + edgeId + &quot;)&quot;);</span>
+<span class="fc" id="L1078">            EdgeIteratorStateImpl edge = new EdgeIteratorStateImpl(baseGraph);</span>
+<span class="fc bfc" id="L1079" title="All 2 branches covered.">            boolean valid = edge.init(edgeId, reverseArg ? baseNode : adjNode);</span>
+<span class="pc bpc" id="L1080" title="1 of 2 branches missed.">            assert valid;</span>
+<span class="fc bfc" id="L1081" title="All 2 branches covered.">            if (reverseArg) {</span>
+                // for #162
+<span class="fc bfc" id="L1083" title="All 2 branches covered.">                edge.reverse = !reverse;</span>
+            }
+<span class="fc" id="L1085">            return edge;</span>
+        }
+
+        @Override
+        public final String toString() {
+<span class="fc" id="L1090">            return getEdge() + &quot; &quot; + getBaseNode() + &quot;-&quot; + getAdjNode();</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

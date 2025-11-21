@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SPTEntry.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">SPTEntry.java</span></div><h1>SPTEntry.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.graphhopper.util.EdgeIterator;
+
+/**
+ * This class is used to create the shortest-path-tree from linked entities.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class SPTEntry implements Comparable&lt;SPTEntry&gt; {
+    public int edge;
+    public int adjNode;
+    public double weight;
+    public SPTEntry parent;
+    public boolean deleted;
+
+    public SPTEntry(int node, double weight) {
+<span class="fc" id="L36">        this(EdgeIterator.NO_EDGE, node, weight, null);</span>
+<span class="fc" id="L37">    }</span>
+
+<span class="fc" id="L39">    public SPTEntry(int edgeId, int adjNode, double weight, SPTEntry parent) {</span>
+<span class="fc" id="L40">        this.edge = edgeId;</span>
+<span class="fc" id="L41">        this.adjNode = adjNode;</span>
+<span class="fc" id="L42">        this.weight = weight;</span>
+<span class="fc" id="L43">        this.parent = parent;</span>
+<span class="fc" id="L44">    }</span>
+
+    public void setDeleted() {
+<span class="fc" id="L47">        deleted = true;</span>
+<span class="fc" id="L48">    }</span>
+
+    public boolean isDeleted() {
+<span class="fc" id="L51">        return deleted;</span>
+    }
+
+    /**
+     * This method returns the weight to the origin e.g. to the start for the forward SPT and to the
+     * destination for the backward SPT. Where the variable 'weight' is used to let heap select
+     * smallest *full* weight (from start to destination).
+     */
+    public double getWeightOfVisitedPath() {
+<span class="fc" id="L60">        return weight;</span>
+    }
+
+    public SPTEntry getParent() {
+<span class="fc" id="L64">        return parent;</span>
+    }
+
+    @Override
+    public int compareTo(SPTEntry o) {
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        if (weight &lt; o.weight)</span>
+<span class="fc" id="L70">            return -1;</span>
+
+        // assumption no NaN and no -0        
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        return weight &gt; o.weight ? 1 : 0;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L78">        return adjNode + &quot; (&quot; + edge + &quot;) weight: &quot; + weight;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

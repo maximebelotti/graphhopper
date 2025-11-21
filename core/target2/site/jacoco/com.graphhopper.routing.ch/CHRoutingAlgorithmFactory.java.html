@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CHRoutingAlgorithmFactory.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ch</a> &gt; <span class="el_source">CHRoutingAlgorithmFactory.java</span></div><h1>CHRoutingAlgorithmFactory.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.ch;
+
+import com.graphhopper.routing.*;
+import com.graphhopper.routing.querygraph.QueryGraph;
+import com.graphhopper.routing.querygraph.QueryRoutingCHGraph;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.RoutingCHGraph;
+import com.graphhopper.util.Helper;
+import com.graphhopper.util.PMap;
+
+import static com.graphhopper.util.Parameters.Algorithms.*;
+import static com.graphhopper.util.Parameters.Routing.*;
+
+/**
+ * Given a {@link RoutingCHGraph} and possibly a {@link QueryGraph} this class sets up and creates routing
+ * algorithm instances used for CH.
+ */
+public class CHRoutingAlgorithmFactory {
+    private final RoutingCHGraph routingCHGraph;
+
+    public CHRoutingAlgorithmFactory(RoutingCHGraph routingCHGraph, QueryGraph queryGraph) {
+<span class="fc" id="L40">        this(new QueryRoutingCHGraph(routingCHGraph, queryGraph));</span>
+<span class="fc" id="L41">    }</span>
+
+<span class="fc" id="L43">    public CHRoutingAlgorithmFactory(RoutingCHGraph routingCHGraph) {</span>
+<span class="fc" id="L44">        this.routingCHGraph = routingCHGraph;</span>
+<span class="fc" id="L45">    }</span>
+
+    public EdgeToEdgeRoutingAlgorithm createAlgo(PMap opts) {
+<span class="fc bfc" id="L48" title="All 2 branches covered.">        EdgeToEdgeRoutingAlgorithm algo = routingCHGraph.isEdgeBased()</span>
+<span class="fc" id="L49">                ? createAlgoEdgeBased(routingCHGraph, opts)</span>
+<span class="fc" id="L50">                : createAlgoNodeBased(routingCHGraph, opts);</span>
+<span class="fc bfc" id="L51" title="All 2 branches covered.">        if (opts.has(MAX_VISITED_NODES))</span>
+<span class="fc" id="L52">            algo.setMaxVisitedNodes(opts.getInt(MAX_VISITED_NODES, Integer.MAX_VALUE));</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        if (opts.has(TIMEOUT_MS))</span>
+<span class="fc" id="L54">            algo.setTimeoutMillis(opts.getLong(TIMEOUT_MS, Long.MAX_VALUE));</span>
+<span class="fc" id="L55">        return algo;</span>
+    }
+
+    private EdgeToEdgeRoutingAlgorithm createAlgoEdgeBased(RoutingCHGraph g, PMap opts) {
+<span class="fc" id="L59">        String defaultAlgo = ASTAR_BI;</span>
+<span class="fc" id="L60">        String algo = opts.getString(ALGORITHM, defaultAlgo);</span>
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        if (Helper.isEmpty(algo))</span>
+<span class="fc" id="L62">            algo = defaultAlgo;</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        if (ASTAR_BI.equals(algo)) {</span>
+<span class="fc" id="L64">            return new AStarBidirectionEdgeCHNoSOD(g)</span>
+<span class="fc" id="L65">                    .setApproximation(RoutingAlgorithmFactorySimple.getApproximation(ASTAR_BI, opts, getWeighting(), g.getBaseGraph().getNodeAccess()));</span>
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">        } else if (DIJKSTRA_BI.equals(algo)) {</span>
+<span class="fc" id="L67">            return new DijkstraBidirectionEdgeCHNoSOD(g);</span>
+<span class="nc bnc" id="L68" title="All 2 branches missed.">        } else if (ALT_ROUTE.equalsIgnoreCase(algo)) {</span>
+<span class="nc" id="L69">            return new AlternativeRouteEdgeCH(g, opts);</span>
+        } else {
+<span class="nc" id="L71">            throw new IllegalArgumentException(&quot;Algorithm &quot; + algo + &quot; not supported for edge-based Contraction Hierarchies. Try with ch.disable=true&quot;);</span>
+        }
+    }
+
+    private EdgeToEdgeRoutingAlgorithm createAlgoNodeBased(RoutingCHGraph g, PMap opts) {
+        // use dijkstra by default for node-based (its faster)
+<span class="fc" id="L77">        String defaultAlgo = DIJKSTRA_BI;</span>
+<span class="fc" id="L78">        String algo = opts.getString(ALGORITHM, defaultAlgo);</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (Helper.isEmpty(algo))</span>
+<span class="fc" id="L80">            algo = defaultAlgo;</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        if (ASTAR_BI.equals(algo)) {</span>
+<span class="fc" id="L82">            return new AStarBidirectionCH(g)</span>
+<span class="fc" id="L83">                    .setApproximation(RoutingAlgorithmFactorySimple.getApproximation(ASTAR_BI, opts, getWeighting(), g.getBaseGraph().getNodeAccess()));</span>
+<span class="pc bpc" id="L84" title="3 of 4 branches missed.">        } else if (DIJKSTRA_BI.equals(algo) || Helper.isEmpty(algo)) {</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">            if (opts.getBool(&quot;stall_on_demand&quot;, true)) {</span>
+<span class="fc" id="L86">                return new DijkstraBidirectionCH(g);</span>
+            } else {
+<span class="fc" id="L88">                return new DijkstraBidirectionCHNoSOD(g);</span>
+            }
+<span class="nc bnc" id="L90" title="All 2 branches missed.">        } else if (ALT_ROUTE.equalsIgnoreCase(algo)) {</span>
+<span class="nc" id="L91">            return new AlternativeRouteCH(g, opts);</span>
+        } else {
+<span class="nc" id="L93">            throw new IllegalArgumentException(&quot;Algorithm &quot; + algo + &quot; not supported for node-based Contraction Hierarchies. Try with ch.disable=true&quot;);</span>
+        }
+    }
+
+    private Weighting getWeighting() {
+<span class="fc" id="L98">        return routingCHGraph.getWeighting();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

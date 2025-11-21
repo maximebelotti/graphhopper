@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TestProfiles.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">TestProfiles.java</span></div><h1>TestProfiles.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing;
+
+import com.graphhopper.config.Profile;
+import com.graphhopper.json.Statement;
+import com.graphhopper.util.CustomModel;
+
+import static com.graphhopper.json.Statement.Else;
+import static com.graphhopper.json.Statement.If;
+import static com.graphhopper.json.Statement.Op.LIMIT;
+import static com.graphhopper.json.Statement.Op.MULTIPLY;
+
+<span class="nc" id="L30">public class TestProfiles {</span>
+    public static Profile constantSpeed(String name) {
+<span class="fc" id="L32">        return constantSpeed(name, 60);</span>
+    }
+
+    public static Profile constantSpeed(String name, double speed) {
+<span class="fc" id="L36">        Profile profile = new Profile(name);</span>
+<span class="fc" id="L37">        CustomModel customModel = new CustomModel();</span>
+<span class="fc" id="L38">        customModel.addToSpeed(If(&quot;true&quot;, Statement.Op.LIMIT, String.valueOf(speed)));</span>
+<span class="fc" id="L39">        profile.setCustomModel(customModel);</span>
+<span class="fc" id="L40">        return profile;</span>
+    }
+
+    public static Profile accessAndSpeed(String vehicle) {
+<span class="fc" id="L44">        return accessAndSpeed(vehicle, vehicle);</span>
+    }
+
+    public static Profile accessAndSpeed(String name, String vehicle) {
+<span class="fc" id="L48">        Profile profile = new Profile(name);</span>
+<span class="fc" id="L49">        CustomModel customModel = new CustomModel().</span>
+<span class="fc" id="L50">                addToPriority(If(&quot;!&quot; + vehicle + &quot;_access&quot;, MULTIPLY, &quot;0&quot;)).</span>
+<span class="fc" id="L51">                addToSpeed(If(&quot;true&quot;, LIMIT, vehicle + &quot;_average_speed&quot;));</span>
+<span class="fc" id="L52">        profile.setCustomModel(customModel);</span>
+<span class="fc" id="L53">        return profile;</span>
+    }
+
+    public static Profile accessSpeedAndPriority(String vehicle) {
+<span class="fc" id="L57">        return accessSpeedAndPriority(vehicle, vehicle);</span>
+    }
+
+    public static Profile accessSpeedAndPriority(String name, String vehicle) {
+<span class="fc" id="L61">        Profile profile = new Profile(name);</span>
+<span class="fc" id="L62">        CustomModel customModel = new CustomModel().</span>
+<span class="fc" id="L63">                addToPriority(If(vehicle + &quot;_access&quot;, MULTIPLY, vehicle + &quot;_priority&quot;)).</span>
+<span class="fc" id="L64">                addToPriority(Else(MULTIPLY, &quot;0&quot;)).</span>
+<span class="fc" id="L65">                addToSpeed(If(&quot;true&quot;, LIMIT, vehicle + &quot;_average_speed&quot;));</span>
+<span class="fc" id="L66">        profile.setCustomModel(customModel);</span>
+<span class="fc" id="L67">        return profile;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

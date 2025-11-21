@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EnumEncodedValue.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">EnumEncodedValue.java</span></div><h1>EnumEncodedValue.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.ev;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+/**
+ * This class allows to store distinct values via an enum. I.e. it stores just the indices
+ */
+public final class EnumEncodedValue&lt;E extends Enum&gt; extends IntEncodedValueImpl {
+    @JsonIgnore
+    private final E[] arr;
+    // needed for Jackson
+    private final Class&lt;E&gt; enumType;
+
+    public EnumEncodedValue(String name, Class&lt;E&gt; enumType) {
+<span class="fc" id="L34">        this(name, enumType, false);</span>
+<span class="fc" id="L35">    }</span>
+
+    public EnumEncodedValue(String name, Class&lt;E&gt; enumType, boolean storeTwoDirections) {
+<span class="fc" id="L38">        super(name, 32 - Integer.numberOfLeadingZeros(enumType.getEnumConstants().length - 1), storeTwoDirections);</span>
+<span class="fc" id="L39">        this.enumType = enumType;</span>
+<span class="fc" id="L40">        arr = enumType.getEnumConstants();</span>
+<span class="fc" id="L41">    }</span>
+
+    @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
+    EnumEncodedValue(@JsonProperty(&quot;name&quot;) String name,
+                     @JsonProperty(&quot;bits&quot;) int bits,
+                     @JsonProperty(&quot;min_storable_value&quot;) int minStorableValue,
+                     @JsonProperty(&quot;max_storable_value&quot;) int maxStorableValue,
+                     @JsonProperty(&quot;max_value&quot;) int maxValue,
+                     @JsonProperty(&quot;negate_reverse_direction&quot;) boolean negateReverseDirection,
+                     @JsonProperty(&quot;store_two_directions&quot;) boolean storeTwoDirections,
+                     @JsonProperty(&quot;fwd_data_index&quot;) int fwdDataIndex,
+                     @JsonProperty(&quot;bwd_data_index&quot;) int bwdDataIndex,
+                     @JsonProperty(&quot;fwd_shift&quot;) int fwdShift,
+                     @JsonProperty(&quot;bwd_shift&quot;) int bwdShift,
+                     @JsonProperty(&quot;fwd_mask&quot;) int fwdMask,
+                     @JsonProperty(&quot;bwd_mask&quot;) int bwdMask,
+                     @JsonProperty(&quot;enum_type&quot;) Class&lt;E&gt; enumType) {
+        // we need this constructor for Jackson
+<span class="fc" id="L59">        super(name, bits, minStorableValue, maxStorableValue, maxValue, negateReverseDirection, storeTwoDirections, fwdDataIndex, bwdDataIndex, fwdShift, bwdShift, fwdMask, bwdMask);</span>
+<span class="fc" id="L60">        this.enumType = enumType;</span>
+<span class="fc" id="L61">        arr = enumType.getEnumConstants();</span>
+<span class="fc" id="L62">    }</span>
+
+    public Class&lt;E&gt; getEnumType() {
+<span class="fc" id="L65">        return enumType;</span>
+    }
+
+    public E[] getValues() {
+<span class="fc" id="L69">        return arr;</span>
+    }
+
+    public final void setEnum(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess, E value) {
+<span class="fc" id="L73">        int intValue = value.ordinal();</span>
+<span class="fc" id="L74">        super.setInt(reverse, edgeId, edgeIntAccess, intValue);</span>
+<span class="fc" id="L75">    }</span>
+
+    public final E getEnum(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess) {
+<span class="fc" id="L78">        int value = super.getInt(reverse, edgeId, edgeIntAccess);</span>
+<span class="fc" id="L79">        return arr[value];</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

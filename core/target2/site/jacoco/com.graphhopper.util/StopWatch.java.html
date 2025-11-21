@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StopWatch.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">StopWatch.java</span></div><h1>StopWatch.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+/**
+ * Make simple speed measurements possible.
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class StopWatch {
+    private long lastTime;
+    private long elapsedNanos;
+<span class="fc" id="L29">    private String name = &quot;&quot;;</span>
+
+<span class="fc" id="L31">    public StopWatch(String name) {</span>
+<span class="fc" id="L32">        this.name = name;</span>
+<span class="fc" id="L33">    }</span>
+
+<span class="fc" id="L35">    public StopWatch() {</span>
+<span class="fc" id="L36">    }</span>
+
+    public static StopWatch started() {
+<span class="fc" id="L39">        return started(&quot;&quot;);</span>
+    }
+
+    public static StopWatch started(String name) {
+<span class="fc" id="L43">        return new StopWatch(name).start();</span>
+    }
+
+    public StopWatch setName(String name) {
+<span class="nc" id="L47">        this.name = name;</span>
+<span class="nc" id="L48">        return this;</span>
+    }
+
+    public StopWatch start() {
+<span class="fc" id="L52">        lastTime = System.nanoTime();</span>
+<span class="fc" id="L53">        return this;</span>
+    }
+
+    public StopWatch stop() {
+<span class="pc bpc" id="L57" title="1 of 2 branches missed.">        if (lastTime &lt; 0)</span>
+<span class="nc" id="L58">            return this;</span>
+
+<span class="fc" id="L60">        elapsedNanos += System.nanoTime() - lastTime;</span>
+<span class="fc" id="L61">        lastTime = -1;</span>
+<span class="fc" id="L62">        return this;</span>
+    }
+
+    public float getSeconds() {
+<span class="fc" id="L66">        return elapsedNanos / 1e9f;</span>
+    }
+
+    /**
+     * returns the total elapsed time on this stopwatch without the need of stopping it
+     */
+    public float getCurrentSeconds() {
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        if (notStarted()) {</span>
+<span class="fc" id="L74">            return 0;</span>
+        }
+<span class="fc bfc" id="L76" title="All 2 branches covered.">        long lastNanos = lastTime &lt; 0 ? 0 : System.nanoTime() - lastTime;</span>
+<span class="fc" id="L77">        return (elapsedNanos + lastNanos) / 1e9f;</span>
+    }
+
+    public long getMillis() {
+<span class="fc" id="L81">        return elapsedNanos / 1_000_000;</span>
+    }
+
+    /**
+     * returns the elapsed time in ms but includes the fraction as well to get a precise value
+     */
+    public double getMillisDouble() {
+<span class="nc" id="L88">        return elapsedNanos / 1_000_000.0;</span>
+    }
+
+    public long getNanos() {
+<span class="fc" id="L92">        return elapsedNanos;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L97">        String str = &quot;&quot;;</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">        if (!Helper.isEmpty(name)) {</span>
+<span class="nc" id="L99">            str += name + &quot; &quot;;</span>
+        }
+
+<span class="nc" id="L102">        return str + &quot;time:&quot; + getSeconds() + &quot;s&quot;;</span>
+    }
+
+    public String getTimeString() {
+<span class="pc bpc" id="L106" title="1 of 2 branches missed.">        if (elapsedNanos &lt; 1e3) {</span>
+<span class="nc" id="L107">            return elapsedNanos + &quot;ns&quot;;</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        } else if (elapsedNanos &lt; 1e6) {</span>
+<span class="fc" id="L109">            return String.format(&quot;%.2fµs&quot;, elapsedNanos / 1.e3);</span>
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        } else if (elapsedNanos &lt; 1e9) {</span>
+<span class="fc" id="L111">            return String.format(&quot;%.2fms&quot;, elapsedNanos / 1.e6);</span>
+        } else {
+<span class="fc" id="L113">            double seconds = elapsedNanos / 1.e9;</span>
+<span class="pc bpc" id="L114" title="1 of 2 branches missed.">            if (seconds &lt; 60) {</span>
+<span class="fc" id="L115">                return String.format(&quot;%.2fs&quot;, elapsedNanos / 1e9);</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">            } else if (seconds &lt; 60 * 60) {</span>
+<span class="nc" id="L117">                return String.format(&quot;%dmin %ds&quot;, ((int) seconds / 60), (((int) seconds) % 60));</span>
+            } else {
+<span class="nc" id="L119">                return String.format(&quot;%dh %dmin&quot;, ((int) seconds / (60 * 60)), ((int) seconds) % (60 * 60) / 60);</span>
+            }
+        }
+    }
+
+    private boolean notStarted() {
+<span class="pc bpc" id="L125" title="1 of 4 branches missed.">        return lastTime == 0 &amp;&amp; elapsedNanos == 0;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BBox.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util.shapes</a> &gt; <span class="el_source">BBox.java</span></div><h1>BBox.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util.shapes;
+
+import com.graphhopper.util.Helper;
+import com.graphhopper.util.NumHelper;
+import com.graphhopper.util.PointList;
+import org.locationtech.jts.algorithm.RectangleLineIntersector;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Envelope;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * A simple bounding box defined as follows: minLon, maxLon followed by minLat which is south(!) and
+ * maxLat. Equally to EX_GeographicBoundingBox in the ISO 19115 standard see
+ * http://osgeo-org.1560.n6.nabble.com/Boundingbox-issue-for-discussion-td3875533.html
+ * &lt;p&gt;
+ * Nice German overview:
+ * http://www.geoinf.uni-jena.de/fileadmin/Geoinformatik/Lehre/Diplomarbeiten/DA_Andres.pdf
+ * &lt;p&gt;
+ *
+ * @author Peter Karich
+ */
+public class BBox implements Shape, Cloneable {
+
+    private final boolean elevation;
+    // longitude (theta) = x, latitude (phi) = y, elevation = z
+    public double minLon;
+    public double maxLon;
+    public double minLat;
+    public double maxLat;
+    public double minEle;
+    public double maxEle;
+
+    public BBox(double[] coords) {
+<span class="nc" id="L53">        this(coords[0], coords[2], coords[1], coords[3]);</span>
+<span class="nc" id="L54">    }</span>
+
+    public BBox(double minLon, double maxLon, double minLat, double maxLat) {
+<span class="fc" id="L57">        this(minLon, maxLon, minLat, maxLat, Double.NaN, Double.NaN, false);</span>
+<span class="fc" id="L58">    }</span>
+
+    public BBox(double minLon, double maxLon, double minLat, double maxLat, double minEle, double maxEle) {
+<span class="fc" id="L61">        this(minLon, maxLon, minLat, maxLat, minEle, maxEle, true);</span>
+<span class="fc" id="L62">    }</span>
+
+<span class="fc" id="L64">    public BBox(double minLon, double maxLon, double minLat, double maxLat, double minEle, double maxEle, boolean elevation) {</span>
+<span class="fc" id="L65">        this.elevation = elevation;</span>
+<span class="fc" id="L66">        this.maxLat = maxLat;</span>
+<span class="fc" id="L67">        this.minLon = minLon;</span>
+<span class="fc" id="L68">        this.minLat = minLat;</span>
+<span class="fc" id="L69">        this.maxLon = maxLon;</span>
+<span class="fc" id="L70">        this.minEle = minEle;</span>
+<span class="fc" id="L71">        this.maxEle = maxEle;</span>
+<span class="fc" id="L72">    }</span>
+
+    /**
+     * Prefills BBox with minimum values so that it can increase.
+     */
+    public static BBox createInverse(boolean elevation) {
+<span class="fc bfc" id="L78" title="All 2 branches covered.">        if (elevation) {</span>
+<span class="fc" id="L79">            return new BBox(Double.MAX_VALUE, -Double.MAX_VALUE, Double.MAX_VALUE, -Double.MAX_VALUE,</span>
+                    Double.MAX_VALUE, -Double.MAX_VALUE, true);
+        } else {
+<span class="fc" id="L82">            return new BBox(Double.MAX_VALUE, -Double.MAX_VALUE, Double.MAX_VALUE, -Double.MAX_VALUE,</span>
+                    Double.NaN, Double.NaN, false);
+        }
+    }
+
+    public boolean hasElevation() {
+<span class="fc" id="L88">        return elevation;</span>
+    }
+
+    public void update(double lat, double lon) {
+<span class="fc bfc" id="L92" title="All 2 branches covered.">        if (lat &gt; maxLat) {</span>
+<span class="fc" id="L93">            maxLat = lat;</span>
+        }
+
+<span class="fc bfc" id="L96" title="All 2 branches covered.">        if (lat &lt; minLat) {</span>
+<span class="fc" id="L97">            minLat = lat;</span>
+        }
+
+<span class="fc bfc" id="L100" title="All 2 branches covered.">        if (lon &gt; maxLon) {</span>
+<span class="fc" id="L101">            maxLon = lon;</span>
+        }
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        if (lon &lt; minLon) {</span>
+<span class="fc" id="L104">            minLon = lon;</span>
+        }
+<span class="fc" id="L106">    }</span>
+
+    public void update(double lat, double lon, double elev) {
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        if (elevation) {</span>
+<span class="fc bfc" id="L110" title="All 2 branches covered.">            if (elev &gt; maxEle) {</span>
+<span class="fc" id="L111">                maxEle = elev;</span>
+            }
+<span class="fc bfc" id="L113" title="All 2 branches covered.">            if (elev &lt; minEle) {</span>
+<span class="fc" id="L114">                minEle = elev;</span>
+            }
+        } else {
+<span class="fc" id="L117">            throw new IllegalStateException(&quot;No BBox with elevation to update&quot;);</span>
+        }
+<span class="fc" id="L119">        update(lat, lon);</span>
+
+<span class="fc" id="L121">    }</span>
+
+    /**
+     * Calculates the intersecting BBox between this and the specified BBox
+     *
+     * @return the intersecting BBox or null if not intersecting
+     */
+    public BBox calculateIntersection(BBox bBox) {
+<span class="fc bfc" id="L129" title="All 2 branches covered.">        if (!this.intersects(bBox))</span>
+<span class="fc" id="L130">            return null;</span>
+
+<span class="fc" id="L132">        double minLon = Math.max(this.minLon, bBox.minLon);</span>
+<span class="fc" id="L133">        double maxLon = Math.min(this.maxLon, bBox.maxLon);</span>
+<span class="fc" id="L134">        double minLat = Math.max(this.minLat, bBox.minLat);</span>
+<span class="fc" id="L135">        double maxLat = Math.min(this.maxLat, bBox.maxLat);</span>
+
+<span class="fc" id="L137">        return new BBox(minLon, maxLon, minLat, maxLat);</span>
+    }
+
+    @Override
+    public BBox clone() {
+<span class="fc" id="L142">        return new BBox(minLon, maxLon, minLat, maxLat, minEle, maxEle, elevation);</span>
+    }
+
+    public static boolean intersects(RectangleLineIntersector intersector, PointList pointList) {
+<span class="fc" id="L146">        int len = pointList.size();</span>
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">        if (len == 0)</span>
+<span class="nc" id="L148">            throw new IllegalArgumentException(&quot;PointList must not be empty&quot;);</span>
+
+<span class="fc" id="L150">        Coordinate coords = new Coordinate(pointList.getLon(0), pointList.getLat(0));</span>
+<span class="pc bpc" id="L151" title="1 of 2 branches missed.">        if (len == 1)</span>
+<span class="nc" id="L152">            return intersector.intersects(coords, coords);</span>
+
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        for (int pointIndex = 1; pointIndex &lt; len; pointIndex++) {</span>
+<span class="fc" id="L155">            Coordinate nextCoords = new Coordinate(pointList.getLon(pointIndex), pointList.getLat(pointIndex));</span>
+<span class="fc bfc" id="L156" title="All 2 branches covered.">            if (intersector.intersects(coords, nextCoords))</span>
+<span class="fc" id="L157">                return true;</span>
+<span class="fc" id="L158">            coords = nextCoords;</span>
+        }
+<span class="fc" id="L160">        return false;</span>
+    }
+
+    @Override
+    public boolean intersects(PointList pointList) {
+<span class="fc" id="L165">        return intersects(new RectangleLineIntersector(toEnvelope(this)), pointList);</span>
+    }
+
+    /**
+     * This method calculates if this BBox intersects with the specified BBox
+     */
+    public boolean intersects(double minLon, double maxLon, double minLat, double maxLat) {
+<span class="nc bnc" id="L172" title="All 8 branches missed.">        return this.minLon &lt; maxLon &amp;&amp; this.minLat &lt; maxLat &amp;&amp; minLon &lt; this.maxLon &amp;&amp; minLat &lt; this.maxLat;</span>
+    }
+
+    /**
+     * This method calculates if this BBox intersects with the specified BBox
+     */
+    public boolean intersects(BBox o) {
+        // return (o.minLon &lt; minLon &amp;&amp; o.maxLon &gt; minLon || o.minLon &lt; maxLon &amp;&amp; o.minLon &gt;= minLon)
+        //  &amp;&amp; (o.maxLat &lt; maxLat &amp;&amp; o.maxLat &gt;= minLat || o.maxLat &gt;= maxLat &amp;&amp; o.minLat &lt; maxLat);
+<span class="fc bfc" id="L181" title="All 8 branches covered.">        return this.minLon &lt; o.maxLon &amp;&amp; this.minLat &lt; o.maxLat &amp;&amp; o.minLon &lt; this.maxLon &amp;&amp; o.minLat &lt; this.maxLat;</span>
+    }
+
+    @Override
+    public boolean contains(double lat, double lon) {
+<span class="fc bfc" id="L186" title="All 8 branches covered.">        return lat &lt;= maxLat &amp;&amp; lat &gt;= minLat &amp;&amp; lon &lt;= maxLon &amp;&amp; lon &gt;= minLon;</span>
+    }
+
+    public boolean contains(BBox b) {
+<span class="fc bfc" id="L190" title="All 8 branches covered.">        return maxLat &gt;= b.maxLat &amp;&amp; minLat &lt;= b.minLat &amp;&amp; maxLon &gt;= b.maxLon &amp;&amp; minLon &lt;= b.minLon;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L195">        String str = minLon + &quot;,&quot; + maxLon + &quot;,&quot; + minLat + &quot;,&quot; + maxLat;</span>
+<span class="fc bfc" id="L196" title="All 2 branches covered.">        if (elevation)</span>
+<span class="fc" id="L197">            str += &quot;,&quot; + minEle + &quot;,&quot; + maxEle;</span>
+
+<span class="fc" id="L199">        return str;</span>
+    }
+
+    public String toLessPrecisionString() {
+<span class="nc" id="L203">        return (float) minLon + &quot;,&quot; + (float) maxLon + &quot;,&quot; + (float) minLat + &quot;,&quot; + (float) maxLat;</span>
+    }
+
+    @Override
+    public BBox getBounds() {
+<span class="nc" id="L208">        return this;</span>
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+<span class="fc bfc" id="L213" title="All 2 branches covered.">        if (obj == null)</span>
+<span class="fc" id="L214">            return false;</span>
+
+<span class="fc" id="L216">        BBox b = (BBox) obj;</span>
+        // equals within a very small range
+<span class="pc bpc" id="L218" title="1 of 4 branches missed.">        return NumHelper.equalsEps(minLat, b.minLat) &amp;&amp; NumHelper.equalsEps(maxLat, b.maxLat)</span>
+<span class="pc bpc" id="L219" title="1 of 4 branches missed.">                &amp;&amp; NumHelper.equalsEps(minLon, b.minLon) &amp;&amp; NumHelper.equalsEps(maxLon, b.maxLon);</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc" id="L224">        int hash = 3;</span>
+<span class="nc" id="L225">        hash = 17 * hash + (int) (Double.doubleToLongBits(this.minLon) ^ (Double.doubleToLongBits(this.minLon) &gt;&gt;&gt; 32));</span>
+<span class="nc" id="L226">        hash = 17 * hash + (int) (Double.doubleToLongBits(this.maxLon) ^ (Double.doubleToLongBits(this.maxLon) &gt;&gt;&gt; 32));</span>
+<span class="nc" id="L227">        hash = 17 * hash + (int) (Double.doubleToLongBits(this.minLat) ^ (Double.doubleToLongBits(this.minLat) &gt;&gt;&gt; 32));</span>
+<span class="nc" id="L228">        hash = 17 * hash + (int) (Double.doubleToLongBits(this.maxLat) ^ (Double.doubleToLongBits(this.maxLat) &gt;&gt;&gt; 32));</span>
+<span class="nc" id="L229">        return hash;</span>
+    }
+
+    public boolean isValid() {
+        // second longitude should be bigger than the first
+<span class="fc bfc" id="L234" title="All 2 branches covered.">        if (minLon &gt;= maxLon)</span>
+<span class="fc" id="L235">            return false;</span>
+
+        // second latitude should be smaller than the first
+<span class="fc bfc" id="L238" title="All 2 branches covered.">        if (minLat &gt;= maxLat)</span>
+<span class="fc" id="L239">            return false;</span>
+
+<span class="fc bfc" id="L241" title="All 2 branches covered.">        if (elevation) {</span>
+            // equal elevation is okay
+<span class="fc bfc" id="L243" title="All 2 branches covered.">            if (minEle &gt; maxEle)</span>
+<span class="fc" id="L244">                return false;</span>
+
+<span class="pc bpc" id="L246" title="1 of 2 branches missed.">            if (Double.compare(maxEle, -Double.MAX_VALUE) == 0</span>
+<span class="fc bfc" id="L247" title="All 2 branches covered.">                    || Double.compare(minEle, Double.MAX_VALUE) == 0)</span>
+<span class="fc" id="L248">                return false;</span>
+        }
+
+<span class="pc bpc" id="L251" title="1 of 2 branches missed.">        return Double.compare(maxLat, -Double.MAX_VALUE) != 0</span>
+<span class="pc bpc" id="L252" title="1 of 2 branches missed.">                &amp;&amp; Double.compare(minLat, Double.MAX_VALUE) != 0</span>
+<span class="pc bpc" id="L253" title="1 of 2 branches missed.">                &amp;&amp; Double.compare(maxLon, -Double.MAX_VALUE) != 0</span>
+<span class="pc bpc" id="L254" title="1 of 2 branches missed.">                &amp;&amp; Double.compare(minLon, Double.MAX_VALUE) != 0;</span>
+    }
+
+    /**
+     * @return array containing this bounding box. Attention: GeoJson is lon,lat! If 3D is gets even
+     * worse: lon,lat,ele
+     */
+    public List&lt;Double&gt; toGeoJson() {
+<span class="nc" id="L262">        List&lt;Double&gt; list = new ArrayList&lt;&gt;(4);</span>
+<span class="nc" id="L263">        list.add(Helper.round6(minLon));</span>
+<span class="nc" id="L264">        list.add(Helper.round6(minLat));</span>
+        // hmh
+<span class="nc bnc" id="L266" title="All 2 branches missed.">        if (elevation)</span>
+<span class="nc" id="L267">            list.add(Helper.round2(minEle));</span>
+
+<span class="nc" id="L269">        list.add(Helper.round6(maxLon));</span>
+<span class="nc" id="L270">        list.add(Helper.round6(maxLat));</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">        if (elevation)</span>
+<span class="nc" id="L272">            list.add(Helper.round2(maxEle));</span>
+
+<span class="nc" id="L274">        return list;</span>
+    }
+
+    public static BBox fromEnvelope(Envelope envelope) {
+<span class="fc" id="L278">        return new BBox(envelope.getMinX(), envelope.getMaxX(), envelope.getMinY(), envelope.getMaxY());</span>
+    }
+
+    public static Envelope toEnvelope(BBox bbox) {
+<span class="fc" id="L282">        return new Envelope(bbox.minLon, bbox.maxLon, bbox.minLat, bbox.maxLat);</span>
+    }
+
+    /**
+     * This method creates a BBox out of a string in format lat1,lon1,lat2,lon2
+     */
+    public static BBox parseTwoPoints(String objectAsString) {
+<span class="fc" id="L289">        String[] splittedObject = objectAsString.split(&quot;,&quot;);</span>
+
+<span class="pc bpc" id="L291" title="1 of 2 branches missed.">        if (splittedObject.length != 4)</span>
+<span class="nc" id="L292">            throw new IllegalArgumentException(&quot;BBox should have 4 parts but was &quot; + objectAsString);</span>
+
+<span class="fc" id="L294">        double minLat = Double.parseDouble(splittedObject[0]);</span>
+<span class="fc" id="L295">        double minLon = Double.parseDouble(splittedObject[1]);</span>
+
+<span class="fc" id="L297">        double maxLat = Double.parseDouble(splittedObject[2]);</span>
+<span class="fc" id="L298">        double maxLon = Double.parseDouble(splittedObject[3]);</span>
+<span class="fc" id="L299">        return BBox.fromPoints(minLat, minLon, maxLat, maxLon);</span>
+    }
+
+    public static BBox fromPoints(double lat1, double lon1, double lat2, double lon2) {
+<span class="fc bfc" id="L303" title="All 2 branches covered.">        if (lat1 &gt; lat2) {</span>
+<span class="fc" id="L304">            double tmp = lat1;</span>
+<span class="fc" id="L305">            lat1 = lat2;</span>
+<span class="fc" id="L306">            lat2 = tmp;</span>
+        }
+
+<span class="fc bfc" id="L309" title="All 2 branches covered.">        if (lon1 &gt; lon2) {</span>
+<span class="fc" id="L310">            double tmp = lon1;</span>
+<span class="fc" id="L311">            lon1 = lon2;</span>
+<span class="fc" id="L312">            lon2 = tmp;</span>
+        }
+
+<span class="fc" id="L315">        return new BBox(lon1, lon2, lat1, lat2);</span>
+    }
+
+    /**
+     * This method creates a BBox out of a string in format lon1,lon2,lat1,lat2
+     */
+    public static BBox parseBBoxString(String objectAsString) {
+<span class="fc" id="L322">        String[] splittedObject = objectAsString.split(&quot;,&quot;);</span>
+
+<span class="pc bpc" id="L324" title="1 of 2 branches missed.">        if (splittedObject.length != 4)</span>
+<span class="nc" id="L325">            throw new IllegalArgumentException(&quot;BBox should have 4 parts but was &quot; + objectAsString);</span>
+
+<span class="fc" id="L327">        double minLon = Double.parseDouble(splittedObject[0]);</span>
+<span class="fc" id="L328">        double maxLon = Double.parseDouble(splittedObject[1]);</span>
+
+<span class="fc" id="L330">        double minLat = Double.parseDouble(splittedObject[2]);</span>
+<span class="fc" id="L331">        double maxLat = Double.parseDouble(splittedObject[3]);</span>
+
+<span class="fc" id="L333">        return new BBox(minLon, maxLon, minLat, maxLat);</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

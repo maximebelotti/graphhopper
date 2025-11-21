@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BridgePathFinder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ch</a> &gt; <span class="el_source">BridgePathFinder.java</span></div><h1>BridgePathFinder.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.ch;
+
+import com.carrotsearch.hppc.HashOrderMixing;
+import com.carrotsearch.hppc.IntObjectHashMap;
+import com.carrotsearch.hppc.IntObjectMap;
+import com.carrotsearch.hppc.IntObjectScatterMap;
+
+import java.util.PriorityQueue;
+
+import static com.graphhopper.util.EdgeIterator.NO_EDGE;
+
+/**
+ * Used to find 'bridge-paths' during edge-based CH preparation. Bridge-paths are paths that start and end at neighbor
+ * nodes of the node we like to contract without visiting any nodes other than that node. They can include loops at the
+ * node to be contracted. These are the paths that we might have to replace with shortcuts if no witness paths exist.
+ *
+ * @author easbar
+ * @see EdgeBasedNodeContractor
+ */
+public class BridgePathFinder {
+    private final CHPreparationGraph graph;
+    private final PrepareGraphEdgeExplorer outExplorer;
+    private final PrepareGraphOrigEdgeExplorer origOutExplorer;
+    private final PriorityQueue&lt;PrepareCHEntry&gt; queue;
+    private final IntObjectMap&lt;PrepareCHEntry&gt; map;
+
+<span class="fc" id="L45">    public BridgePathFinder(CHPreparationGraph graph) {</span>
+<span class="fc" id="L46">        this.graph = graph;</span>
+<span class="fc" id="L47">        outExplorer = graph.createOutEdgeExplorer();</span>
+<span class="fc" id="L48">        origOutExplorer = graph.createOutOrigEdgeExplorer();</span>
+<span class="fc" id="L49">        queue = new PriorityQueue&lt;&gt;();</span>
+<span class="fc" id="L50">        map = new IntObjectScatterMap&lt;&gt;();</span>
+<span class="fc" id="L51">    }</span>
+
+    /**
+     * Finds all bridge paths starting at a given node and starting edge key.
+     *
+     * @return a mapping between the target edge keys we can reach via bridge paths and information about the
+     * corresponding bridge path
+     */
+    public IntObjectMap&lt;BridePathEntry&gt; find(int startInEdgeKey, int startNode, int centerNode) {
+<span class="fc" id="L60">        queue.clear();</span>
+<span class="fc" id="L61">        map.clear();</span>
+<span class="fc" id="L62">        IntObjectMap&lt;BridePathEntry&gt; result = new IntObjectHashMap&lt;&gt;(16, 0.5, HashOrderMixing.constant(123));</span>
+<span class="fc" id="L63">        PrepareCHEntry startEntry = new PrepareCHEntry(NO_EDGE, startInEdgeKey, startInEdgeKey, startNode, 0, 0);</span>
+<span class="fc" id="L64">        map.put(startInEdgeKey, startEntry);</span>
+<span class="fc" id="L65">        queue.add(startEntry);</span>
+<span class="fc bfc" id="L66" title="All 2 branches covered.">        while (!queue.isEmpty()) {</span>
+<span class="fc" id="L67">            PrepareCHEntry currEntry = queue.poll();</span>
+<span class="fc" id="L68">            PrepareGraphEdgeIterator iter = outExplorer.setBaseNode(currEntry.adjNode);</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">            while (iter.next()) {</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">                if (iter.getAdjNode() == centerNode) {</span>
+                    // We arrived at the center node, so we keep expanding the search
+<span class="fc" id="L72">                    double weight = currEntry.weight +</span>
+<span class="fc" id="L73">                            graph.getTurnWeight(currEntry.incEdgeKey, currEntry.adjNode, iter.getOrigEdgeKeyFirst()) +</span>
+<span class="fc" id="L74">                            iter.getWeight();</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">                    if (Double.isInfinite(weight))</span>
+<span class="fc" id="L76">                        continue;</span>
+<span class="fc" id="L77">                    PrepareCHEntry entry = map.get(iter.getOrigEdgeKeyLast());</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">                    if (entry == null) {</span>
+<span class="fc" id="L79">                        entry = new PrepareCHEntry(iter.getPrepareEdge(), iter.getOrigEdgeKeyFirst(), iter.getOrigEdgeKeyLast(), iter.getAdjNode(), weight, currEntry.origEdges + iter.getOrigEdgeCount());</span>
+<span class="fc" id="L80">                        entry.parent = currEntry;</span>
+<span class="fc" id="L81">                        map.put(iter.getOrigEdgeKeyLast(), entry);</span>
+<span class="fc" id="L82">                        queue.add(entry);</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">                    } else if (weight &lt; entry.weight) {</span>
+<span class="fc" id="L84">                        queue.remove(entry);</span>
+<span class="fc" id="L85">                        entry.prepareEdge = iter.getPrepareEdge();</span>
+<span class="fc" id="L86">                        entry.origEdges = currEntry.origEdges + iter.getOrigEdgeCount();</span>
+<span class="fc" id="L87">                        entry.firstEdgeKey = iter.getOrigEdgeKeyFirst();</span>
+<span class="fc" id="L88">                        entry.weight = weight;</span>
+<span class="fc" id="L89">                        entry.parent = currEntry;</span>
+<span class="fc" id="L90">                        queue.add(entry);</span>
+                    }
+<span class="fc bfc" id="L92" title="All 2 branches covered.">                } else if (currEntry.adjNode == centerNode) {</span>
+                    // We just left the center node, so we arrived at some neighbor node. Every edge we can reach from
+                    // there is a target edge, so we add a bridge path entry for it. We do not continue the search from the
+                    // neighbor node anymore
+<span class="fc" id="L96">                    double weight = currEntry.weight +</span>
+<span class="fc" id="L97">                            graph.getTurnWeight(currEntry.incEdgeKey, currEntry.adjNode, iter.getOrigEdgeKeyFirst()) +</span>
+<span class="fc" id="L98">                            iter.getWeight();</span>
+<span class="fc bfc" id="L99" title="All 2 branches covered.">                    if (Double.isInfinite(weight))</span>
+<span class="fc" id="L100">                        continue;</span>
+<span class="fc" id="L101">                    PrepareGraphOrigEdgeIterator origOutIter = origOutExplorer.setBaseNode(iter.getAdjNode());</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">                    while (origOutIter.next()) {</span>
+<span class="fc" id="L103">                        double totalWeight = weight + graph.getTurnWeight(</span>
+<span class="fc" id="L104">                                iter.getOrigEdgeKeyLast(), iter.getAdjNode(), origOutIter.getOrigEdgeKeyFirst());</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">                        if (Double.isInfinite(totalWeight))</span>
+<span class="fc" id="L106">                            continue;</span>
+<span class="fc" id="L107">                        BridePathEntry resEntry = result.get(origOutIter.getOrigEdgeKeyFirst());</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">                        if (resEntry == null) {</span>
+<span class="fc" id="L109">                            PrepareCHEntry chEntry = new PrepareCHEntry(iter.getPrepareEdge(), iter.getOrigEdgeKeyFirst(), iter.getOrigEdgeKeyLast(), iter.getAdjNode(), weight, currEntry.origEdges + iter.getOrigEdgeCount());</span>
+<span class="fc" id="L110">                            chEntry.parent = currEntry;</span>
+<span class="fc" id="L111">                            resEntry = new BridePathEntry(totalWeight, chEntry);</span>
+<span class="fc" id="L112">                            result.put(origOutIter.getOrigEdgeKeyFirst(), resEntry);</span>
+<span class="fc bfc" id="L113" title="All 2 branches covered.">                        } else if (totalWeight &lt; resEntry.weight) {</span>
+<span class="fc" id="L114">                            resEntry.weight = totalWeight;</span>
+<span class="fc" id="L115">                            resEntry.chEntry.prepareEdge = iter.getPrepareEdge();</span>
+<span class="fc" id="L116">                            resEntry.chEntry.firstEdgeKey = iter.getOrigEdgeKeyFirst();</span>
+<span class="fc" id="L117">                            resEntry.chEntry.origEdges = currEntry.origEdges + iter.getOrigEdgeCount();</span>
+<span class="fc" id="L118">                            resEntry.chEntry.incEdgeKey = iter.getOrigEdgeKeyLast();</span>
+<span class="fc" id="L119">                            resEntry.chEntry.weight = weight;</span>
+<span class="fc" id="L120">                            resEntry.chEntry.parent = currEntry;</span>
+                        }
+<span class="fc" id="L122">                    }</span>
+<span class="fc" id="L123">                }</span>
+                // We arrived at some node that is not the center node. We do not expand the search as we are only
+                // concerned with finding bridge paths.
+            }
+<span class="fc" id="L127">        }</span>
+<span class="fc" id="L128">        return result;</span>
+    }
+
+    public static class BridePathEntry {
+        double weight;
+        PrepareCHEntry chEntry;
+
+<span class="fc" id="L135">        public BridePathEntry(double weight, PrepareCHEntry chEntry) {</span>
+<span class="fc" id="L136">            this.weight = weight;</span>
+<span class="fc" id="L137">            this.chEntry = chEntry;</span>
+<span class="fc" id="L138">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L142">            return &quot;weight: &quot; + weight + &quot;, chEntry: &quot; + chEntry;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

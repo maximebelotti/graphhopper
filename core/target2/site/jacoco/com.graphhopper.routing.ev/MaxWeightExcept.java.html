@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MaxWeightExcept.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.ev</a> &gt; <span class="el_source">MaxWeightExcept.java</span></div><h1>MaxWeightExcept.java</h1><pre class="source lang-java linenums">package com.graphhopper.routing.ev;
+
+import com.graphhopper.util.Helper;
+
+/**
+ * When the max_weight EncodedValue is not legally binding. E.g. if there is a sign that a delivery vehicle can access
+ * the road (even if larger than maxweight tag) then DELIVERY of this enum will be set.
+ */
+<span class="fc" id="L9">public enum MaxWeightExcept {</span>
+
+<span class="fc" id="L11">    MISSING, DELIVERY, DESTINATION, FORESTRY;</span>
+
+    public static final String KEY = &quot;max_weight_except&quot;;
+
+    public static EnumEncodedValue&lt;MaxWeightExcept&gt; create() {
+<span class="fc" id="L16">        return new EnumEncodedValue&lt;&gt;(MaxWeightExcept.KEY, MaxWeightExcept.class);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L21">        return Helper.toLowerCase(super.toString());</span>
+    }
+
+    public static MaxWeightExcept find(String name) {
+<span class="pc bpc" id="L25" title="2 of 4 branches missed.">        if (name == null || name.isEmpty())</span>
+<span class="nc" id="L26">            return MISSING;</span>
+
+        // &quot;maxweight:conditional=none @ private&quot; is rare and seems to be known from a few mappers only
+<span class="pc bpc" id="L29" title="2 of 4 branches missed.">        if (name.equalsIgnoreCase(&quot;permit&quot;) || name.equalsIgnoreCase(&quot;private&quot;))</span>
+<span class="nc" id="L30">            return DELIVERY;</span>
+
+        try {
+<span class="fc" id="L33">            return MaxWeightExcept.valueOf(Helper.toUpperCase(name));</span>
+<span class="nc" id="L34">        } catch (IllegalArgumentException ex) {</span>
+<span class="nc" id="L35">            return MISSING;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

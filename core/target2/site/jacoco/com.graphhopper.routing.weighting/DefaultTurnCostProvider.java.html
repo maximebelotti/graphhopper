@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DefaultTurnCostProvider.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.weighting</a> &gt; <span class="el_source">DefaultTurnCostProvider.java</span></div><h1>DefaultTurnCostProvider.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.routing.weighting;
+
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
+import com.graphhopper.storage.BaseGraph;
+import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.TurnCostStorage;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.TurnCostsConfig;
+
+import static com.graphhopper.util.TurnCostsConfig.INFINITE_U_TURN_COSTS;
+
+public class DefaultTurnCostProvider implements TurnCostProvider {
+    private final BooleanEncodedValue turnRestrictionEnc;
+    private final TurnCostStorage turnCostStorage;
+    private final int uTurnCostsInt;
+    private final double uTurnCosts;
+
+    private final double minTurnAngle;
+    private final double minSharpTurnAngle;
+    private final double minUTurnAngle;
+
+    private final double leftTurnCosts;
+    private final double sharpLeftTurnCosts;
+    private final double straightCosts;
+    private final double rightTurnCosts;
+    private final double sharpRightTurnCosts;
+    private final BaseGraph graph;
+    private final EdgeIntAccess edgeIntAccess;
+    private final DecimalEncodedValue orientationEnc;
+
+    public DefaultTurnCostProvider(BooleanEncodedValue turnRestrictionEnc, DecimalEncodedValue orientationEnc,
+<span class="fc" id="L52">                                   Graph graph, TurnCostsConfig tcConfig) {</span>
+<span class="fc" id="L53">        this.uTurnCostsInt = tcConfig.getUTurnCosts();</span>
+<span class="pc bpc" id="L54" title="1 of 4 branches missed.">        if (uTurnCostsInt &lt; 0 &amp;&amp; uTurnCostsInt != INFINITE_U_TURN_COSTS) {</span>
+<span class="nc" id="L55">            throw new IllegalArgumentException(&quot;u-turn costs must be positive, or equal to &quot; + INFINITE_U_TURN_COSTS + &quot; (=infinite costs)&quot;);</span>
+        }
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        this.uTurnCosts = uTurnCostsInt &lt; 0 ? Double.POSITIVE_INFINITY : uTurnCostsInt;</span>
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">        if (graph.getTurnCostStorage() == null) {</span>
+<span class="nc" id="L59">            throw new IllegalArgumentException(&quot;No storage set to calculate turn weight&quot;);</span>
+        }
+        // if null the TurnCostProvider can be still useful for edge-based routing
+<span class="fc" id="L62">        this.turnRestrictionEnc = turnRestrictionEnc;</span>
+<span class="fc" id="L63">        this.turnCostStorage = graph.getTurnCostStorage();</span>
+
+<span class="fc" id="L65">        this.orientationEnc = orientationEnc;</span>
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">        if (tcConfig.getMinUTurnAngle() &gt; 180)</span>
+<span class="nc" id="L67">            throw new IllegalArgumentException(&quot;Illegal min_u_turn_angle = &quot; + tcConfig.getMinUTurnAngle());</span>
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">        if (tcConfig.getMinSharpTurnAngle() &gt; tcConfig.getMinUTurnAngle())</span>
+<span class="nc" id="L69">            throw new IllegalArgumentException(&quot;Illegal min_sharp_turn_angle = &quot; + tcConfig.getMinSharpTurnAngle());</span>
+<span class="pc bpc" id="L70" title="2 of 4 branches missed.">        if (tcConfig.getMinTurnAngle() &gt; tcConfig.getMinSharpTurnAngle() || tcConfig.getMinTurnAngle() &lt; 0)</span>
+<span class="nc" id="L71">            throw new IllegalArgumentException(&quot;Illegal min_turn_angle = &quot; + tcConfig.getMinTurnAngle());</span>
+<span class="pc bpc" id="L72" title="1 of 2 branches missed.">        if (tcConfig.getLeftTurnCosts() &gt; tcConfig.getSharpLeftTurnCosts())</span>
+<span class="nc" id="L73">            throw new IllegalArgumentException(&quot;The costs for 'left_turn_costs' (&quot; + tcConfig.getLeftTurnCosts()</span>
+<span class="nc" id="L74">                    + &quot;) must be lower than for 'sharp_left_turn_costs' (&quot; + tcConfig.getSharpLeftTurnCosts() + &quot;)&quot;);</span>
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (tcConfig.getRightTurnCosts() &gt; tcConfig.getSharpRightTurnCosts())</span>
+<span class="nc" id="L76">            throw new IllegalArgumentException(&quot;The costs for 'right_turn_costs' (&quot; + tcConfig.getRightTurnCosts()</span>
+<span class="nc" id="L77">                    + &quot;) must be lower than for 'sharp_right_turn_costs' (&quot; + tcConfig.getSharpRightTurnCosts() + &quot;)&quot;);</span>
+
+<span class="fc" id="L79">        this.minTurnAngle = tcConfig.getMinTurnAngle();</span>
+<span class="fc" id="L80">        this.minSharpTurnAngle = tcConfig.getMinSharpTurnAngle();</span>
+<span class="fc" id="L81">        this.minUTurnAngle = tcConfig.getMinUTurnAngle();</span>
+
+<span class="fc" id="L83">        this.leftTurnCosts = tcConfig.getLeftTurnCosts();</span>
+<span class="fc" id="L84">        this.sharpLeftTurnCosts = tcConfig.getSharpLeftTurnCosts();</span>
+<span class="fc" id="L85">        this.straightCosts = tcConfig.getStraightCosts();</span>
+<span class="fc" id="L86">        this.rightTurnCosts = tcConfig.getRightTurnCosts();</span>
+<span class="fc" id="L87">        this.sharpRightTurnCosts = tcConfig.getSharpRightTurnCosts();</span>
+
+<span class="fc" id="L89">        this.graph = graph.getBaseGraph();</span>
+<span class="fc" id="L90">        this.edgeIntAccess = graph.getBaseGraph().getEdgeAccess();</span>
+<span class="fc" id="L91">    }</span>
+
+    @Override
+    public double calcTurnWeight(int inEdge, int viaNode, int outEdge) {
+<span class="pc bpc" id="L95" title="2 of 4 branches missed.">        if (!EdgeIterator.Edge.isValid(inEdge) || !EdgeIterator.Edge.isValid(outEdge)) {</span>
+<span class="nc" id="L96">            return 0;</span>
+        }
+
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        if (inEdge == outEdge) {</span>
+            // note that the u-turn costs overwrite any turn costs set in TurnCostStorage
+<span class="fc" id="L101">            return uTurnCosts;</span>
+        } else {
+<span class="pc bpc" id="L103" title="1 of 4 branches missed.">            if (turnRestrictionEnc != null &amp;&amp; turnCostStorage.get(turnRestrictionEnc, inEdge, viaNode, outEdge))</span>
+<span class="fc" id="L104">                return Double.POSITIVE_INFINITY;</span>
+        }
+
+<span class="fc bfc" id="L107" title="All 2 branches covered.">        if (orientationEnc != null) {</span>
+<span class="fc" id="L108">            double changeAngle = calcChangeAngle(inEdge, viaNode, outEdge);</span>
+<span class="fc bfc" id="L109" title="All 4 branches covered.">            if (changeAngle &gt; -minTurnAngle &amp;&amp; changeAngle &lt; minTurnAngle)</span>
+<span class="fc" id="L110">                return straightCosts;</span>
+<span class="fc bfc" id="L111" title="All 4 branches covered.">            else if (changeAngle &gt;= minTurnAngle &amp;&amp; changeAngle &lt; minSharpTurnAngle)</span>
+<span class="fc" id="L112">                return rightTurnCosts;</span>
+<span class="pc bpc" id="L113" title="1 of 4 branches missed.">            else if (changeAngle &gt;= minSharpTurnAngle &amp;&amp; changeAngle &lt;= minUTurnAngle)</span>
+<span class="fc" id="L114">                return sharpRightTurnCosts;</span>
+<span class="pc bpc" id="L115" title="1 of 4 branches missed.">            else if (changeAngle &lt;= -minTurnAngle &amp;&amp; changeAngle &gt; -minSharpTurnAngle)</span>
+<span class="fc" id="L116">                return leftTurnCosts;</span>
+<span class="pc bpc" id="L117" title="2 of 4 branches missed.">            else if (changeAngle &lt;= -minSharpTurnAngle &amp;&amp; changeAngle &gt;= -minUTurnAngle)</span>
+<span class="fc" id="L118">                return sharpLeftTurnCosts;</span>
+
+            // Too sharp turn is like an u-turn.
+<span class="nc" id="L121">            return uTurnCosts;</span>
+        }
+<span class="fc" id="L123">        return 0;</span>
+    }
+
+    @Override
+    public long calcTurnMillis(int inEdge, int viaNode, int outEdge) {
+        // Making a proper assumption about the turn time is very hard. Assuming zero is the
+        // simplest way to deal with this. This also means the u-turn time is zero. Provided that
+        // the u-turn weight is large enough, u-turns only occur in special situations like curbsides
+        // pointing to the end of dead-end streets where it is unclear if a finite u-turn time would
+        // be a good choice.
+<span class="fc" id="L133">        return 0;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L138">        return &quot;default_tcp_&quot; + uTurnCostsInt;</span>
+    }
+
+    double calcChangeAngle(int inEdge, int viaNode, int outEdge) {
+        // this is slightly faster than calling getEdgeIteratorState as it avoids creating a new
+        // object and accesses only one node but is slightly less safe as it cannot check that at
+        // least one node must be identical (the case where getEdgeIteratorState returns null)
+<span class="fc bfc" id="L145" title="All 2 branches covered.">        boolean inEdgeReverse = !graph.isAdjNode(inEdge, viaNode);</span>
+<span class="fc" id="L146">        double prevAzimuth = orientationEnc.getDecimal(inEdgeReverse, inEdge, edgeIntAccess);</span>
+
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        boolean outEdgeReverse = !graph.isAdjNode(outEdge, viaNode);</span>
+<span class="fc" id="L149">        double azimuth = orientationEnc.getDecimal(outEdgeReverse, outEdge, edgeIntAccess);</span>
+
+        // bring parallel to prevOrientation
+<span class="fc bfc" id="L152" title="All 2 branches covered.">        if (azimuth &gt;= 180) azimuth -= 180;</span>
+<span class="fc" id="L153">        else azimuth += 180;</span>
+
+<span class="fc" id="L155">        double changeAngle = azimuth - prevAzimuth;</span>
+
+        // keep in [-180, 180]
+<span class="fc bfc" id="L158" title="All 2 branches covered.">        if (changeAngle &gt; 180) changeAngle -= 360;</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">        else if (changeAngle &lt; -180) changeAngle += 360;</span>
+<span class="fc" id="L160">        return changeAngle;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

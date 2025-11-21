@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QueryGraph.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing.querygraph</a> &gt; <span class="el_source">QueryGraph.java</span></div><h1>QueryGraph.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing.querygraph;
+
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntObjectMap;
+import com.carrotsearch.hppc.cursors.IntCursor;
+import com.carrotsearch.hppc.procedures.IntObjectProcedure;
+import com.graphhopper.coll.GHIntObjectHashMap;
+import com.graphhopper.routing.util.AllEdgesIterator;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.weighting.QueryGraphWeighting;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.*;
+import com.graphhopper.storage.index.Snap;
+import com.graphhopper.util.EdgeExplorer;
+import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.GHUtility;
+import com.graphhopper.util.shapes.BBox;
+
+import java.util.*;
+
+/**
+ * A class which is used to query the underlying graph with real GPS points. It does so by
+ * introducing virtual nodes and edges. It is lightweight in order to be created every time a new
+ * query comes in, which makes the behaviour thread safe.
+ * &lt;p&gt;
+ * Calling any &lt;code&gt;create&lt;/code&gt; method creates virtual edges between the tower nodes of the existing
+ * graph and new virtual tower nodes. Every virtual node has two adjacent nodes and is connected
+ * to each adjacent nodes via 2 virtual edges with opposite base node / adjacent node encoding.
+ * However, the edge explorer returned by {@link #createEdgeExplorer()} only returns two
+ * virtual edges per virtual node (the ones with correct base node).
+ *
+ * @author Peter Karich
+ */
+public class QueryGraph implements Graph {
+    static final int BASE_SNAP = 0, SNAP_BASE = 1, SNAP_ADJ = 2, ADJ_SNAP = 3;
+    private final BaseGraph baseGraph;
+    private final int baseNodes;
+    private final int baseEdges;
+    private final TurnCostStorage turnCostStorage;
+    private final NodeAccess nodeAccess;
+    private final QueryOverlay queryOverlay;
+
+    // Use LinkedHashSet for predictable iteration order.
+<span class="fc" id="L62">    private final Set&lt;VirtualEdgeIteratorState&gt; unfavoredEdges = new LinkedHashSet&lt;&gt;(5);</span>
+    private final IntObjectMap&lt;List&lt;EdgeIteratorState&gt;&gt; virtualEdgesAtRealNodes;
+    private final List&lt;List&lt;EdgeIteratorState&gt;&gt; virtualEdgesAtVirtualNodes;
+
+    public static QueryGraph create(BaseGraph graph, Snap snap) {
+<span class="fc" id="L67">        return QueryGraph.create(graph, Collections.singletonList(snap));</span>
+    }
+
+    public static QueryGraph create(BaseGraph graph, Snap fromSnap, Snap toSnap) {
+<span class="fc" id="L71">        return QueryGraph.create(graph.getBaseGraph(), Arrays.asList(fromSnap, toSnap));</span>
+    }
+
+    public static QueryGraph create(BaseGraph graph, List&lt;Snap&gt; snaps) {
+<span class="fc" id="L75">        return new QueryGraph(graph, snaps);</span>
+    }
+
+<span class="fc" id="L78">    private QueryGraph(BaseGraph graph, List&lt;Snap&gt; snaps) {</span>
+<span class="fc" id="L79">        baseGraph = graph;</span>
+<span class="fc" id="L80">        baseNodes = graph.getNodes();</span>
+<span class="fc" id="L81">        baseEdges = graph.getEdges();</span>
+
+<span class="fc" id="L83">        queryOverlay = QueryOverlayBuilder.build(graph, snaps);</span>
+<span class="fc" id="L84">        nodeAccess = new ExtendedNodeAccess(graph.getNodeAccess(), queryOverlay.getVirtualNodes(), baseNodes);</span>
+<span class="fc" id="L85">        turnCostStorage = baseGraph.getTurnCostStorage();</span>
+
+        // build data structures holding the virtual edges at all real/virtual nodes that are modified compared to the
+        // mainGraph.
+<span class="fc" id="L89">        final EdgeExplorer mainExplorer = baseGraph.createEdgeExplorer();</span>
+<span class="fc" id="L90">        virtualEdgesAtRealNodes = buildVirtualEdgesAtRealNodes(mainExplorer);</span>
+<span class="fc" id="L91">        virtualEdgesAtVirtualNodes = buildVirtualEdgesAtVirtualNodes();</span>
+<span class="fc" id="L92">    }</span>
+
+    public QueryOverlay getQueryOverlay() {
+<span class="fc" id="L95">        return queryOverlay;</span>
+    }
+
+    @Override
+    public BaseGraph getBaseGraph() {
+<span class="fc" id="L100">        return baseGraph;</span>
+    }
+
+    public boolean isVirtualEdge(int edgeId) {
+<span class="fc bfc" id="L104" title="All 2 branches covered.">        return edgeId &gt;= baseEdges;</span>
+    }
+
+    public boolean isVirtualNode(int nodeId) {
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        return nodeId &gt;= baseNodes;</span>
+    }
+
+    public void unfavorVirtualEdges(IntArrayList edgeIds) {
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        for (IntCursor c : edgeIds) {</span>
+<span class="fc" id="L113">            unfavorVirtualEdge(c.value);</span>
+<span class="fc" id="L114">        }</span>
+<span class="fc" id="L115">    }</span>
+
+    /**
+     * Assigns the 'unfavored' flag to a virtual edge (for both directions)
+     */
+    public void unfavorVirtualEdge(int virtualEdgeId) {
+<span class="fc bfc" id="L121" title="All 2 branches covered.">        if (!isVirtualEdge(virtualEdgeId))</span>
+<span class="fc" id="L122">            return;</span>
+<span class="fc" id="L123">        VirtualEdgeIteratorState edge = getVirtualEdge(getInternalVirtualEdgeId(virtualEdgeId));</span>
+<span class="fc" id="L124">        edge.setUnfavored(true);</span>
+<span class="fc" id="L125">        unfavoredEdges.add(edge);</span>
+        // we have to set the unfavored flag also for the virtual edge state that is used when we discover the same edge
+        // from the adjacent node. note that the unfavored flag will be set for both 'directions' of the same edge state.
+<span class="fc" id="L128">        VirtualEdgeIteratorState reverseEdge = getVirtualEdge(getPosOfReverseEdge(getInternalVirtualEdgeId(virtualEdgeId)));</span>
+<span class="fc" id="L129">        reverseEdge.setUnfavored(true);</span>
+<span class="fc" id="L130">        unfavoredEdges.add(reverseEdge);</span>
+<span class="fc" id="L131">    }</span>
+
+    /**
+     * Returns all virtual edges that have been unfavored via
+     * {@link #unfavorVirtualEdge(int)} or {@link #unfavorVirtualEdges(IntArrayList)}
+     */
+    public Set&lt;EdgeIteratorState&gt; getUnfavoredVirtualEdges() {
+        // Need to create a new set to convert Set&lt;VirtualEdgeIteratorState&gt; to
+        // Set&lt;EdgeIteratorState&gt;.
+<span class="fc" id="L140">        return new LinkedHashSet&lt;&gt;(unfavoredEdges);</span>
+    }
+
+    /**
+     * Removes the 'unfavored' status of all virtual edges.
+     */
+    public void clearUnfavoredStatus() {
+<span class="fc bfc" id="L147" title="All 2 branches covered.">        for (VirtualEdgeIteratorState edge : unfavoredEdges) {</span>
+<span class="fc" id="L148">            edge.setUnfavored(false);</span>
+<span class="fc" id="L149">        }</span>
+<span class="fc" id="L150">        unfavoredEdges.clear();</span>
+<span class="fc" id="L151">    }</span>
+
+    @Override
+    public int getNodes() {
+<span class="fc" id="L155">        return queryOverlay.getVirtualNodes().size() + baseNodes;</span>
+    }
+
+    @Override
+    public int getEdges() {
+<span class="fc" id="L160">        return queryOverlay.getNumVirtualEdges() / 2 + baseEdges;</span>
+    }
+
+    @Override
+    public NodeAccess getNodeAccess() {
+<span class="fc" id="L165">        return nodeAccess;</span>
+    }
+
+    @Override
+    public BBox getBounds() {
+<span class="nc" id="L170">        return baseGraph.getBounds();</span>
+    }
+
+    @Override
+    public EdgeIteratorState getEdgeIteratorState(int origEdgeId, int adjNode) {
+<span class="fc bfc" id="L175" title="All 2 branches covered.">        if (!isVirtualEdge(origEdgeId))</span>
+<span class="fc" id="L176">            return baseGraph.getEdgeIteratorState(origEdgeId, adjNode);</span>
+
+<span class="fc" id="L178">        int edgeId = getInternalVirtualEdgeId(origEdgeId);</span>
+<span class="fc" id="L179">        EdgeIteratorState eis = getVirtualEdge(edgeId);</span>
+<span class="fc bfc" id="L180" title="All 4 branches covered.">        if (eis.getAdjNode() == adjNode || adjNode == Integer.MIN_VALUE)</span>
+<span class="fc" id="L181">            return eis;</span>
+<span class="fc" id="L182">        edgeId = getPosOfReverseEdge(edgeId);</span>
+
+<span class="fc" id="L184">        EdgeIteratorState eis2 = getVirtualEdge(edgeId);</span>
+<span class="pc bpc" id="L185" title="1 of 2 branches missed.">        if (eis2.getAdjNode() == adjNode)</span>
+<span class="fc" id="L186">            return eis2;</span>
+<span class="nc" id="L187">        throw new IllegalStateException(&quot;Edge &quot; + origEdgeId + &quot; not found with adjNode:&quot; + adjNode</span>
+                + &quot;. found edges were:&quot; + eis + &quot;, &quot; + eis2);
+    }
+
+    @Override
+    public EdgeIteratorState getEdgeIteratorStateForKey(int edgeKey) {
+<span class="fc" id="L193">        int edge = GHUtility.getEdgeFromEdgeKey(edgeKey);</span>
+<span class="fc bfc" id="L194" title="All 2 branches covered.">        if (!isVirtualEdge(edge))</span>
+<span class="fc" id="L195">            return baseGraph.getEdgeIteratorStateForKey(edgeKey);</span>
+<span class="fc" id="L196">        return getVirtualEdge(edgeKey - 2 * baseEdges);</span>
+    }
+
+    private VirtualEdgeIteratorState getVirtualEdge(int edgeId) {
+<span class="fc" id="L200">        return queryOverlay.getVirtualEdge(edgeId);</span>
+    }
+
+    static int getPosOfReverseEdge(int edgeId) {
+        // find reverse edge via convention. see virtualEdges comment above
+<span class="pc bpc" id="L205" title="1 of 2 branches missed.">        return edgeId % 2 == 0 ? edgeId + 1 : edgeId - 1;</span>
+    }
+
+    private int getInternalVirtualEdgeId(int origEdgeId) {
+<span class="fc" id="L209">        return 2 * (origEdgeId - baseEdges);</span>
+    }
+
+    @Override
+    public EdgeExplorer createEdgeExplorer(final EdgeFilter edgeFilter) {
+        // re-use these objects between setBaseNode calls to prevent GC
+<span class="fc" id="L215">        final EdgeExplorer mainExplorer = baseGraph.createEdgeExplorer(edgeFilter);</span>
+<span class="fc" id="L216">        final VirtualEdgeIterator virtualEdgeIterator = new VirtualEdgeIterator(edgeFilter, null);</span>
+<span class="fc" id="L217">        return new EdgeExplorer() {</span>
+            @Override
+            public EdgeIterator setBaseNode(int baseNode) {
+<span class="fc bfc" id="L220" title="All 2 branches covered.">                if (isVirtualNode(baseNode)) {</span>
+<span class="fc" id="L221">                    List&lt;EdgeIteratorState&gt; virtualEdges = virtualEdgesAtVirtualNodes.get(baseNode - baseNodes);</span>
+<span class="fc" id="L222">                    return virtualEdgeIterator.reset(virtualEdges);</span>
+                } else {
+<span class="fc" id="L224">                    List&lt;EdgeIteratorState&gt; virtualEdges = virtualEdgesAtRealNodes.get(baseNode);</span>
+<span class="fc bfc" id="L225" title="All 2 branches covered.">                    if (virtualEdges == null) {</span>
+<span class="fc" id="L226">                        return mainExplorer.setBaseNode(baseNode);</span>
+                    } else {
+<span class="fc" id="L228">                        return virtualEdgeIterator.reset(virtualEdges);</span>
+                    }
+                }
+            }
+        };
+    }
+
+    private IntObjectMap&lt;List&lt;EdgeIteratorState&gt;&gt; buildVirtualEdgesAtRealNodes(final EdgeExplorer mainExplorer) {
+<span class="fc" id="L236">        final IntObjectMap&lt;List&lt;EdgeIteratorState&gt;&gt; virtualEdgesAtRealNodes =</span>
+<span class="fc" id="L237">                new GHIntObjectHashMap&lt;&gt;(queryOverlay.getEdgeChangesAtRealNodes().size());</span>
+<span class="fc" id="L238">        queryOverlay.getEdgeChangesAtRealNodes().forEach(new IntObjectProcedure&lt;QueryOverlay.EdgeChanges&gt;() {</span>
+            @Override
+            public void apply(int node, QueryOverlay.EdgeChanges edgeChanges) {
+<span class="fc" id="L241">                List&lt;EdgeIteratorState&gt; virtualEdges = new ArrayList&lt;&gt;(edgeChanges.getAdditionalEdges());</span>
+<span class="fc" id="L242">                EdgeIterator mainIter = mainExplorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L243" title="All 2 branches covered.">                while (mainIter.next()) {</span>
+<span class="fc bfc" id="L244" title="All 2 branches covered.">                    if (!edgeChanges.getRemovedEdges().contains(mainIter.getEdge())) {</span>
+<span class="fc" id="L245">                        virtualEdges.add(mainIter.detach(false));</span>
+                    }
+                }
+<span class="fc" id="L248">                virtualEdgesAtRealNodes.put(node, virtualEdges);</span>
+<span class="fc" id="L249">            }</span>
+        });
+<span class="fc" id="L251">        return virtualEdgesAtRealNodes;</span>
+    }
+
+    private List&lt;List&lt;EdgeIteratorState&gt;&gt; buildVirtualEdgesAtVirtualNodes() {
+<span class="fc" id="L255">        final List&lt;List&lt;EdgeIteratorState&gt;&gt; virtualEdgesAtVirtualNodes = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L256" title="All 2 branches covered.">        for (int i = 0; i &lt; queryOverlay.getVirtualNodes().size(); i++) {</span>
+<span class="fc" id="L257">            List&lt;EdgeIteratorState&gt; virtualEdges = Arrays.&lt;EdgeIteratorState&gt;asList(</span>
+<span class="fc" id="L258">                    queryOverlay.getVirtualEdge(i * 4 + SNAP_BASE),</span>
+<span class="fc" id="L259">                    queryOverlay.getVirtualEdge(i * 4 + SNAP_ADJ)</span>
+            );
+<span class="fc" id="L261">            virtualEdgesAtVirtualNodes.add(virtualEdges);</span>
+        }
+<span class="fc" id="L263">        return virtualEdgesAtVirtualNodes;</span>
+    }
+
+    @Override
+    public AllEdgesIterator getAllEdges() {
+<span class="nc" id="L268">        throw new UnsupportedOperationException(&quot;Not supported yet.&quot;);</span>
+    }
+
+    @Override
+    public EdgeIteratorState edge(int a, int b) {
+<span class="nc" id="L273">        throw exc();</span>
+    }
+
+    @Override
+    public TurnCostStorage getTurnCostStorage() {
+<span class="fc" id="L278">        return turnCostStorage;</span>
+    }
+
+    @Override
+    public Weighting wrapWeighting(Weighting weighting) {
+<span class="fc" id="L283">        return new QueryGraphWeighting(baseGraph, weighting, queryOverlay.getClosestEdges());</span>
+    }
+
+    @Override
+    public int getOtherNode(int edge, int node) {
+<span class="nc bnc" id="L288" title="All 2 branches missed.">        if (isVirtualEdge(edge)) {</span>
+<span class="nc" id="L289">            return getEdgeIteratorState(edge, node).getBaseNode();</span>
+        }
+<span class="nc" id="L291">        return baseGraph.getOtherNode(edge, node);</span>
+    }
+
+    @Override
+    public boolean isAdjacentToNode(int edge, int node) {
+<span class="pc bpc" id="L296" title="1 of 2 branches missed.">        if (isVirtualEdge(edge)) {</span>
+<span class="nc" id="L297">            EdgeIteratorState virtualEdge = getEdgeIteratorState(edge, node);</span>
+<span class="nc bnc" id="L298" title="All 4 branches missed.">            return virtualEdge.getBaseNode() == node || virtualEdge.getAdjNode() == node;</span>
+        }
+<span class="fc" id="L300">        return baseGraph.isAdjacentToNode(edge, node);</span>
+    }
+
+    List&lt;VirtualEdgeIteratorState&gt; getVirtualEdges() {
+<span class="fc" id="L304">        return queryOverlay.getVirtualEdges();</span>
+    }
+
+    private UnsupportedOperationException exc() {
+<span class="nc" id="L308">        return new UnsupportedOperationException(&quot;QueryGraph cannot be modified.&quot;);</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

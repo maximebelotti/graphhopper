@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BitUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">BitUtil.java</span></div><h1>BitUtil.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+/**
+ * LITTLE endianness is default for GraphHopper and most microprocessors.
+ *
+ * @author Peter Karich
+ */
+<span class="fc" id="L25">public class BitUtil {</span>
+<span class="fc" id="L26">    public static final BitUtil LITTLE = new BitUtil();</span>
+
+    public final double toDouble(byte[] bytes) {
+<span class="fc" id="L29">        return toDouble(bytes, 0);</span>
+    }
+
+    public final double toDouble(byte[] bytes, int offset) {
+<span class="fc" id="L33">        return Double.longBitsToDouble(toLong(bytes, offset));</span>
+    }
+
+    public final byte[] fromDouble(double value) {
+<span class="fc" id="L37">        byte[] bytes = new byte[8];</span>
+<span class="fc" id="L38">        fromDouble(bytes, value, 0);</span>
+<span class="fc" id="L39">        return bytes;</span>
+    }
+
+    public final void fromDouble(byte[] bytes, double value) {
+<span class="nc" id="L43">        fromDouble(bytes, value, 0);</span>
+<span class="nc" id="L44">    }</span>
+
+    public final void fromDouble(byte[] bytes, double value, int offset) {
+<span class="fc" id="L47">        fromLong(bytes, Double.doubleToRawLongBits(value), offset);</span>
+<span class="fc" id="L48">    }</span>
+
+    public final float toFloat(byte[] bytes) {
+<span class="fc" id="L51">        return toFloat(bytes, 0);</span>
+    }
+
+    public final float toFloat(byte[] bytes, int offset) {
+<span class="fc" id="L55">        return Float.intBitsToFloat(toInt(bytes, offset));</span>
+    }
+
+    public final byte[] fromFloat(float value) {
+<span class="fc" id="L59">        byte[] bytes = new byte[4];</span>
+<span class="fc" id="L60">        fromFloat(bytes, value, 0);</span>
+<span class="fc" id="L61">        return bytes;</span>
+    }
+
+    public final void fromFloat(byte[] bytes, float value) {
+<span class="nc" id="L65">        fromFloat(bytes, value, 0);</span>
+<span class="nc" id="L66">    }</span>
+
+    public final void fromFloat(byte[] bytes, float value, int offset) {
+<span class="fc" id="L69">        fromInt(bytes, Float.floatToRawIntBits(value), offset);</span>
+<span class="fc" id="L70">    }</span>
+
+    public final short toShort(byte[] b) {
+<span class="fc" id="L73">        return toShort(b, 0);</span>
+    }
+
+    public final short toShort(byte[] b, int offset) {
+<span class="fc" id="L77">        return (short) ((b[offset + 1] &amp; 0xFF) &lt;&lt; 8 | (b[offset] &amp; 0xFF));</span>
+    }
+
+    public final int toInt(byte[] b) {
+<span class="fc" id="L81">        return toInt(b, 0);</span>
+    }
+
+    public final int toInt(byte[] b, int offset) {
+<span class="fc" id="L85">        return (b[offset + 3] &amp; 0xFF) &lt;&lt; 24 | (b[offset + 2] &amp; 0xFF) &lt;&lt; 16</span>
+                | (b[offset + 1] &amp; 0xFF) &lt;&lt; 8 | (b[offset] &amp; 0xFF);
+    }
+
+    public final int toUInt3(byte[] b, int offset) {
+<span class="fc" id="L90">        return (b[offset + 2] &amp; 0xFF) &lt;&lt; 16 | (b[offset + 1] &amp; 0xFF) &lt;&lt; 8 | (b[offset] &amp; 0xFF);</span>
+    }
+
+    public final byte[] fromInt(int value) {
+<span class="fc" id="L94">        byte[] bytes = new byte[4];</span>
+<span class="fc" id="L95">        fromInt(bytes, value, 0);</span>
+<span class="fc" id="L96">        return bytes;</span>
+    }
+
+    public final void fromInt(byte[] bytes, int value) {
+<span class="nc" id="L100">        fromInt(bytes, value, 0);</span>
+<span class="nc" id="L101">    }</span>
+
+    public final byte[] fromShort(short value) {
+<span class="fc" id="L104">        byte[] bytes = new byte[4];</span>
+<span class="fc" id="L105">        fromShort(bytes, value, 0);</span>
+<span class="fc" id="L106">        return bytes;</span>
+    }
+
+    public final void fromShort(byte[] bytes, short value) {
+<span class="nc" id="L110">        fromShort(bytes, value, 0);</span>
+<span class="nc" id="L111">    }</span>
+
+    public void fromShort(byte[] bytes, short value, int offset) {
+<span class="fc" id="L114">        bytes[offset + 1] = (byte) (value &gt;&gt;&gt; 8);</span>
+<span class="fc" id="L115">        bytes[offset] = (byte) (value);</span>
+<span class="fc" id="L116">    }</span>
+
+    public final void fromInt(byte[] bytes, int value, int offset) {
+<span class="fc" id="L119">        bytes[offset + 3] = (byte) (value &gt;&gt;&gt; 24);</span>
+<span class="fc" id="L120">        bytes[offset + 2] = (byte) (value &gt;&gt;&gt; 16);</span>
+<span class="fc" id="L121">        bytes[offset + 1] = (byte) (value &gt;&gt;&gt; 8);</span>
+<span class="fc" id="L122">        bytes[offset] = (byte) (value);</span>
+<span class="fc" id="L123">    }</span>
+
+    /**
+     * Note, currently value with higher bits set (like for a negative value) won't throw an exception at this level.
+     */
+    public final void fromUInt3(byte[] bytes, int value, int offset) {
+<span class="fc" id="L129">        bytes[offset + 2] = (byte) (value &gt;&gt;&gt; 16);</span>
+<span class="fc" id="L130">        bytes[offset + 1] = (byte) (value &gt;&gt;&gt; 8);</span>
+<span class="fc" id="L131">        bytes[offset] = (byte) (value);</span>
+<span class="fc" id="L132">    }</span>
+
+    /**
+     * See the counterpart {@link #fromLong(long)}
+     */
+    public final long toLong(byte[] b) {
+<span class="fc" id="L138">        return toLong(b, 0);</span>
+    }
+
+    public final long toLong(int intLow, int intHigh) {
+<span class="fc" id="L142">        return ((long) intHigh &lt;&lt; 32) | (intLow &amp; 0xFFFF_FFFFL);</span>
+    }
+
+    public final long toLong(byte[] b, int offset) {
+<span class="fc" id="L146">        return ((long) toInt(b, offset + 4) &lt;&lt; 32) | (toInt(b, offset) &amp; 0xFFFF_FFFFL);</span>
+    }
+
+    public final byte[] fromLong(long value) {
+<span class="fc" id="L150">        byte[] bytes = new byte[8];</span>
+<span class="fc" id="L151">        fromLong(bytes, value, 0);</span>
+<span class="fc" id="L152">        return bytes;</span>
+    }
+
+    public final void fromLong(byte[] bytes, long value) {
+<span class="nc" id="L156">        fromLong(bytes, value, 0);</span>
+<span class="nc" id="L157">    }</span>
+
+    public final void fromLong(byte[] bytes, long value, int offset) {
+<span class="fc" id="L160">        bytes[offset + 7] = (byte) (value &gt;&gt; 56);</span>
+<span class="fc" id="L161">        bytes[offset + 6] = (byte) (value &gt;&gt; 48);</span>
+<span class="fc" id="L162">        bytes[offset + 5] = (byte) (value &gt;&gt; 40);</span>
+<span class="fc" id="L163">        bytes[offset + 4] = (byte) (value &gt;&gt; 32);</span>
+<span class="fc" id="L164">        bytes[offset + 3] = (byte) (value &gt;&gt; 24);</span>
+<span class="fc" id="L165">        bytes[offset + 2] = (byte) (value &gt;&gt; 16);</span>
+<span class="fc" id="L166">        bytes[offset + 1] = (byte) (value &gt;&gt; 8);</span>
+<span class="fc" id="L167">        bytes[offset] = (byte) (value);</span>
+<span class="fc" id="L168">    }</span>
+
+    public byte[] fromBitString(String str) {
+        // no need for performance or memory tuning ...
+<span class="fc" id="L172">        int strLen = str.length();</span>
+<span class="fc" id="L173">        int bLen = str.length() / 8;</span>
+<span class="fc bfc" id="L174" title="All 2 branches covered.">        if (strLen % 8 != 0)</span>
+<span class="fc" id="L175">            bLen++;</span>
+
+<span class="fc" id="L177">        byte[] bytes = new byte[bLen];</span>
+<span class="fc" id="L178">        int charI = 0;</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">        for (int b = bLen - 1; b &gt;= 0; b--) {</span>
+<span class="fc" id="L180">            byte res = 0;</span>
+<span class="fc bfc" id="L181" title="All 2 branches covered.">            for (int i = 0; i &lt; 8; i++) {</span>
+<span class="fc" id="L182">                res &lt;&lt;= 1;</span>
+<span class="fc bfc" id="L183" title="All 4 branches covered.">                if (charI &lt; strLen &amp;&amp; str.charAt(charI) != '0')</span>
+<span class="fc" id="L184">                    res |= 1;</span>
+
+<span class="fc" id="L186">                charI++;</span>
+            }
+<span class="fc" id="L188">            bytes[b] = res;</span>
+        }
+<span class="fc" id="L190">        return bytes;</span>
+    }
+
+    /**
+     * Similar to Long.toBinaryString
+     */
+    public final String toBitString(long value) {
+<span class="fc" id="L197">        return toBitString(value, 64);</span>
+    }
+
+    public String toLastBitString(long value, int bits) {
+<span class="fc" id="L201">        StringBuilder sb = new StringBuilder(bits);</span>
+<span class="fc" id="L202">        long lastBit = 1L &lt;&lt; bits - 1;</span>
+<span class="fc bfc" id="L203" title="All 2 branches covered.">        for (int i = 0; i &lt; bits; i++) {</span>
+<span class="fc bfc" id="L204" title="All 2 branches covered.">            if ((value &amp; lastBit) == 0)</span>
+<span class="fc" id="L205">                sb.append('0');</span>
+            else
+<span class="fc" id="L207">                sb.append('1');</span>
+
+<span class="fc" id="L209">            value &lt;&lt;= 1;</span>
+        }
+<span class="fc" id="L211">        return sb.toString();</span>
+    }
+
+    /**
+     * Higher order bits comes first in the returned string.
+     * &lt;p&gt;
+     *
+     * @param bits how many bits should be returned.
+     */
+    public String toBitString(long value, int bits) {
+<span class="fc" id="L221">        StringBuilder sb = new StringBuilder(bits);</span>
+<span class="fc" id="L222">        long lastBit = 1L &lt;&lt; 63;</span>
+<span class="fc bfc" id="L223" title="All 2 branches covered.">        for (int i = 0; i &lt; bits; i++) {</span>
+<span class="fc bfc" id="L224" title="All 2 branches covered.">            if ((value &amp; lastBit) == 0)</span>
+<span class="fc" id="L225">                sb.append('0');</span>
+            else
+<span class="fc" id="L227">                sb.append('1');</span>
+
+<span class="fc" id="L229">            value &lt;&lt;= 1;</span>
+        }
+<span class="fc" id="L231">        return sb.toString();</span>
+    }
+
+    /**
+     * Higher order bits comes first in the returned string.
+     */
+    public String toBitString(byte[] bytes) {
+<span class="fc" id="L238">        StringBuilder sb = new StringBuilder(bytes.length * 8);</span>
+<span class="fc" id="L239">        byte lastBit = (byte) (1 &lt;&lt; 7);</span>
+<span class="fc bfc" id="L240" title="All 2 branches covered.">        for (int bIndex = bytes.length - 1; bIndex &gt;= 0; bIndex--) {</span>
+<span class="fc" id="L241">            byte b = bytes[bIndex];</span>
+<span class="fc bfc" id="L242" title="All 2 branches covered.">            for (int i = 0; i &lt; 8; i++) {</span>
+<span class="fc bfc" id="L243" title="All 2 branches covered.">                if ((b &amp; lastBit) == 0)</span>
+<span class="fc" id="L244">                    sb.append('0');</span>
+                else
+<span class="fc" id="L246">                    sb.append('1');</span>
+
+<span class="fc" id="L248">                b &lt;&lt;= 1;</span>
+            }
+        }
+<span class="fc" id="L251">        return sb.toString();</span>
+    }
+
+    public final int getIntLow(long longValue) {
+<span class="fc" id="L255">        return (int) (longValue &amp; 0xFFFF_FFFFL);</span>
+    }
+
+    public final int getIntHigh(long longValue) {
+<span class="fc" id="L259">        return (int) (longValue &gt;&gt; 32);</span>
+    }
+
+    public static int countBitValue(int maxTurnCosts) {
+<span class="pc bpc" id="L263" title="1 of 2 branches missed.">        if (maxTurnCosts &lt; 0)</span>
+<span class="nc" id="L264">            throw new IllegalArgumentException(&quot;maxTurnCosts cannot be negative &quot; + maxTurnCosts);</span>
+
+<span class="fc" id="L266">        int counter = 0;</span>
+<span class="fc bfc" id="L267" title="All 2 branches covered.">        while (maxTurnCosts &gt; 0) {</span>
+<span class="fc" id="L268">            maxTurnCosts &gt;&gt;= 1;</span>
+<span class="fc" id="L269">            counter++;</span>
+        }
+<span class="fc" id="L271">        return counter;</span>
+    }
+
+    /**
+     * Converts the specified long into a signed int ('reverse' method for Integer.toUnsignedLong).
+     */
+    public static int toSignedInt(long x) {
+<span class="fc" id="L278">        return (int) x;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

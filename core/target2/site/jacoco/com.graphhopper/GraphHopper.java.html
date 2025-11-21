@@ -1,0 +1,1685 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GraphHopper.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper</a> &gt; <span class="el_source">GraphHopper.java</span></div><h1>GraphHopper.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper;
+
+import com.bedatadriven.jackson.datatype.jts.JtsModule;
+import com.carrotsearch.hppc.BitSet;
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.LongArrayList;
+import com.carrotsearch.hppc.sorting.IndirectSort;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.graphhopper.config.CHProfile;
+import com.graphhopper.config.LMProfile;
+import com.graphhopper.config.Profile;
+import com.graphhopper.jackson.Jackson;
+import com.graphhopper.reader.dem.*;
+import com.graphhopper.reader.osm.OSMReader;
+import com.graphhopper.reader.osm.RestrictionTagParser;
+import com.graphhopper.routing.*;
+import com.graphhopper.routing.ch.CHPreparationHandler;
+import com.graphhopper.routing.ch.PrepareContractionHierarchies;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.lm.LMConfig;
+import com.graphhopper.routing.lm.LMPreparationHandler;
+import com.graphhopper.routing.lm.LandmarkStorage;
+import com.graphhopper.routing.lm.PrepareLandmarks;
+import com.graphhopper.routing.subnetwork.PrepareRoutingSubnetworks;
+import com.graphhopper.routing.subnetwork.PrepareRoutingSubnetworks.PrepareJob;
+import com.graphhopper.routing.util.*;
+import com.graphhopper.routing.util.countryrules.CountryRuleFactory;
+import com.graphhopper.routing.util.parsers.OSMBikeNetworkTagParser;
+import com.graphhopper.routing.util.parsers.OSMFootNetworkTagParser;
+import com.graphhopper.routing.util.parsers.OSMMtbNetworkTagParser;
+import com.graphhopper.routing.util.parsers.TagParser;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.routing.weighting.custom.CustomModelParser;
+import com.graphhopper.routing.weighting.custom.CustomWeighting;
+import com.graphhopper.routing.weighting.custom.NameValidator;
+import com.graphhopper.storage.*;
+import com.graphhopper.storage.index.LocationIndex;
+import com.graphhopper.storage.index.LocationIndexTree;
+import com.graphhopper.util.*;
+import com.graphhopper.util.Parameters.Landmark;
+import com.graphhopper.util.Parameters.Routing;
+import com.graphhopper.util.details.PathDetailsBuilderFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.text.DateFormat;
+import java.util.*;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
+import static com.graphhopper.util.GHUtility.readCountries;
+import static com.graphhopper.util.Helper.*;
+import static com.graphhopper.util.Parameters.Algorithms.RoundTrip;
+
+/**
+ * Easy to use access point to configure import and (offline) routing.
+ *
+ * @author Peter Karich
+ */
+<span class="fc" id="L85">public class GraphHopper {</span>
+<span class="fc" id="L86">    private static final Logger logger = LoggerFactory.getLogger(GraphHopper.class);</span>
+    private MaxSpeedCalculator maxSpeedCalculator;
+<span class="fc" id="L88">    private final Map&lt;String, Profile&gt; profilesByName = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L89">    private final String fileLockName = &quot;gh.lock&quot;;</span>
+    // utils
+<span class="fc" id="L91">    private final TranslationMap trMap = new TranslationMap().doImport();</span>
+<span class="fc" id="L92">    boolean removeZipped = true;</span>
+<span class="fc" id="L93">    boolean calcChecksums = false;</span>
+    // for country rules:
+<span class="fc" id="L95">    private CountryRuleFactory countryRuleFactory = null;</span>
+    // for custom areas:
+<span class="fc" id="L97">    private String customAreasDirectory = &quot;&quot;;</span>
+    // for graph:
+    private BaseGraph baseGraph;
+    private StorableProperties properties;
+    protected EncodingManager encodingManager;
+    private OSMParsers osmParsers;
+<span class="fc" id="L103">    private int defaultSegmentSize = -1;</span>
+<span class="fc" id="L104">    private String ghLocation = &quot;&quot;;</span>
+<span class="fc" id="L105">    private DAType dataAccessDefaultType = DAType.RAM_STORE;</span>
+<span class="fc" id="L106">    private final LinkedHashMap&lt;String, String&gt; dataAccessConfig = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L107">    private boolean sortGraph = true;</span>
+<span class="fc" id="L108">    private boolean elevation = false;</span>
+<span class="fc" id="L109">    private LockFactory lockFactory = new NativeFSLockFactory();</span>
+<span class="fc" id="L110">    private boolean allowWrites = true;</span>
+<span class="fc" id="L111">    private boolean fullyLoaded = false;</span>
+<span class="fc" id="L112">    private final OSMReaderConfig osmReaderConfig = new OSMReaderConfig();</span>
+    // for routing
+<span class="fc" id="L114">    private final RouterConfig routerConfig = new RouterConfig();</span>
+    // for index
+    private LocationIndex locationIndex;
+<span class="fc" id="L117">    private int preciseIndexResolution = 300;</span>
+<span class="fc" id="L118">    private int maxRegionSearch = 4;</span>
+    // subnetworks
+<span class="fc" id="L120">    private int minNetworkSize = 200;</span>
+<span class="fc" id="L121">    private int subnetworksThreads = 1;</span>
+    // residential areas
+<span class="fc" id="L123">    private double residentialAreaRadius = 400;</span>
+<span class="fc" id="L124">    private double residentialAreaSensitivity = 6000;</span>
+<span class="fc" id="L125">    private double cityAreaRadius = 1500;</span>
+<span class="fc" id="L126">    private double cityAreaSensitivity = 1000;</span>
+<span class="fc" id="L127">    private int urbanDensityCalculationThreads = 0;</span>
+
+    // preparation handlers
+<span class="fc" id="L130">    private final LMPreparationHandler lmPreparationHandler = new LMPreparationHandler();</span>
+<span class="fc" id="L131">    private final CHPreparationHandler chPreparationHandler = new CHPreparationHandler();</span>
+<span class="fc" id="L132">    private Map&lt;String, RoutingCHGraph&gt; chGraphs = Collections.emptyMap();</span>
+<span class="fc" id="L133">    private Map&lt;String, LandmarkStorage&gt; landmarks = Collections.emptyMap();</span>
+
+    // for data reader
+    private String osmFile;
+<span class="fc" id="L137">    private ElevationProvider eleProvider = ElevationProvider.NOOP;</span>
+<span class="fc" id="L138">    private ImportRegistry importRegistry = new DefaultImportRegistry();</span>
+<span class="fc" id="L139">    private PathDetailsBuilderFactory pathBuilderFactory = new PathDetailsBuilderFactory();</span>
+
+<span class="fc" id="L141">    private String dateRangeParserString = &quot;&quot;;</span>
+<span class="fc" id="L142">    private String encodedValuesString = &quot;&quot;;</span>
+
+    public GraphHopper setEncodedValuesString(String encodedValuesString) {
+<span class="fc" id="L145">        this.encodedValuesString = encodedValuesString;</span>
+<span class="fc" id="L146">        return this;</span>
+    }
+
+    public String getEncodedValuesString() {
+<span class="nc" id="L150">        return encodedValuesString;</span>
+    }
+
+    public EncodingManager getEncodingManager() {
+<span class="pc bpc" id="L154" title="1 of 2 branches missed.">        if (encodingManager == null)</span>
+<span class="nc" id="L155">            throw new IllegalStateException(&quot;EncodingManager not yet built&quot;);</span>
+<span class="fc" id="L156">        return encodingManager;</span>
+    }
+
+    public OSMParsers getOSMParsers() {
+<span class="nc bnc" id="L160" title="All 2 branches missed.">        if (osmParsers == null)</span>
+<span class="nc" id="L161">            throw new IllegalStateException(&quot;OSMParsers not yet built&quot;);</span>
+<span class="nc" id="L162">        return osmParsers;</span>
+    }
+
+    public ElevationProvider getElevationProvider() {
+<span class="nc" id="L166">        return eleProvider;</span>
+    }
+
+    public GraphHopper setElevationProvider(ElevationProvider eleProvider) {
+<span class="pc bpc" id="L170" title="1 of 4 branches missed.">        if (eleProvider == null || eleProvider == ElevationProvider.NOOP)</span>
+<span class="fc" id="L171">            setElevation(false);</span>
+        else
+<span class="fc" id="L173">            setElevation(true);</span>
+<span class="fc" id="L174">        this.eleProvider = eleProvider;</span>
+<span class="fc" id="L175">        return this;</span>
+    }
+
+    public GraphHopper setPathDetailsBuilderFactory(PathDetailsBuilderFactory pathBuilderFactory) {
+<span class="nc" id="L179">        this.pathBuilderFactory = pathBuilderFactory;</span>
+<span class="nc" id="L180">        return this;</span>
+    }
+
+    public PathDetailsBuilderFactory getPathDetailsBuilderFactory() {
+<span class="nc" id="L184">        return pathBuilderFactory;</span>
+    }
+
+    /**
+     * Precise location resolution index means also more space (disc/RAM) could be consumed and
+     * probably slower query times, which would be e.g. not suitable for Android. The resolution
+     * specifies the tile width (in meter).
+     */
+    public GraphHopper setPreciseIndexResolution(int precision) {
+<span class="nc" id="L193">        ensureNotLoaded();</span>
+<span class="nc" id="L194">        preciseIndexResolution = precision;</span>
+<span class="nc" id="L195">        return this;</span>
+    }
+
+    public GraphHopper setMinNetworkSize(int minNetworkSize) {
+<span class="fc" id="L199">        ensureNotLoaded();</span>
+<span class="fc" id="L200">        this.minNetworkSize = minNetworkSize;</span>
+<span class="fc" id="L201">        return this;</span>
+    }
+
+    /**
+     * Configures the urban density classification. Each edge will be classified as 'rural','residential' or 'city', {@link UrbanDensity}
+     *
+     * @param residentialAreaRadius      in meters. The higher this value the longer the calculation will take and the bigger the area for
+     *                                   which the road density used to identify residential areas is calculated.
+     * @param residentialAreaSensitivity Use this to find a trade-off between too many roads being classified as residential (too high
+     *                                   values) and not enough roads being classified as residential (too small values)
+     * @param cityAreaRadius             in meters. The higher this value the longer the calculation will take and the bigger the area for
+     *                                   which the road density used to identify city areas is calculated. Set this to zero
+     *                                   to skip the city classification.
+     * @param cityAreaSensitivity        Use this to find a trade-off between too many roads being classified as city (too high values)
+     *                                   and not enough roads being classified as city (too small values)
+     * @param threads                    the number of threads used for the calculation. If this is zero the urban density
+     *                                   calculation is skipped entirely
+     */
+    public GraphHopper setUrbanDensityCalculation(double residentialAreaRadius, double residentialAreaSensitivity,
+                                                  double cityAreaRadius, double cityAreaSensitivity, int threads) {
+<span class="nc" id="L221">        ensureNotLoaded();</span>
+<span class="nc" id="L222">        this.residentialAreaRadius = residentialAreaRadius;</span>
+<span class="nc" id="L223">        this.residentialAreaSensitivity = residentialAreaSensitivity;</span>
+<span class="nc" id="L224">        this.cityAreaRadius = cityAreaRadius;</span>
+<span class="nc" id="L225">        this.cityAreaSensitivity = cityAreaSensitivity;</span>
+<span class="nc" id="L226">        this.urbanDensityCalculationThreads = threads;</span>
+<span class="nc" id="L227">        return this;</span>
+    }
+
+    /**
+     * Only valid option for in-memory graph and if you e.g. want to disable store on flush for unit
+     * tests. Specify storeOnFlush to true if you want that existing data will be loaded FROM disc
+     * and all in-memory data will be flushed TO disc after flush is called e.g. while OSM import.
+     *
+     * @param storeOnFlush true by default
+     */
+    public GraphHopper setStoreOnFlush(boolean storeOnFlush) {
+<span class="fc" id="L238">        ensureNotLoaded();</span>
+<span class="fc bfc" id="L239" title="All 2 branches covered.">        if (storeOnFlush)</span>
+<span class="fc" id="L240">            dataAccessDefaultType = DAType.RAM_STORE;</span>
+        else
+<span class="fc" id="L242">            dataAccessDefaultType = DAType.RAM;</span>
+<span class="fc" id="L243">        return this;</span>
+    }
+
+    /**
+     * Sets the routing profiles that shall be supported by this GraphHopper instance. The (and only the) given profiles
+     * can be used for routing without preparation and for CH/LM preparation.
+     * &lt;p&gt;
+     * Here is an example how to setup two CH profiles and one LM profile (via the Java API)
+     *
+     * &lt;pre&gt;
+     * {@code
+     *   hopper.setProfiles(
+     *     new Profile(&quot;my_car&quot;),
+     *     new Profile(&quot;your_bike&quot;)
+     *   );
+     *   hopper.getCHPreparationHandler().setCHProfiles(
+     *     new CHProfile(&quot;my_car&quot;),
+     *     new CHProfile(&quot;your_bike&quot;)
+     *   );
+     *   hopper.getLMPreparationHandler().setLMProfiles(
+     *     new LMProfile(&quot;your_bike&quot;)
+     *   );
+     * }
+     * &lt;/pre&gt;
+     * &lt;p&gt;
+     * See also https://github.com/graphhopper/graphhopper/pull/1922.
+     *
+     * @see CHPreparationHandler#setCHProfiles
+     * @see LMPreparationHandler#setLMProfiles
+     */
+    public GraphHopper setProfiles(Profile... profiles) {
+<span class="fc" id="L274">        return setProfiles(Arrays.asList(profiles));</span>
+    }
+
+    public GraphHopper setProfiles(List&lt;Profile&gt; profiles) {
+<span class="pc bpc" id="L278" title="1 of 2 branches missed.">        if (!profilesByName.isEmpty())</span>
+<span class="nc" id="L279">            throw new IllegalArgumentException(&quot;Cannot initialize profiles multiple times&quot;);</span>
+<span class="pc bpc" id="L280" title="1 of 2 branches missed.">        if (encodingManager != null)</span>
+<span class="nc" id="L281">            throw new IllegalArgumentException(&quot;Cannot set profiles after EncodingManager was built&quot;);</span>
+<span class="fc bfc" id="L282" title="All 2 branches covered.">        for (Profile profile : profiles) {</span>
+<span class="fc" id="L283">            Profile previous = this.profilesByName.put(profile.getName(), profile);</span>
+<span class="fc bfc" id="L284" title="All 2 branches covered.">            if (previous != null)</span>
+<span class="fc" id="L285">                throw new IllegalArgumentException(&quot;Profile names must be unique. Duplicate name: '&quot; + profile.getName() + &quot;'&quot;);</span>
+<span class="fc" id="L286">        }</span>
+<span class="fc" id="L287">        return this;</span>
+    }
+
+    public List&lt;Profile&gt; getProfiles() {
+<span class="fc" id="L291">        return new ArrayList&lt;&gt;(profilesByName.values());</span>
+    }
+
+    /**
+     * Returns the profile for the given profile name, or null if it does not exist
+     */
+    public Profile getProfile(String profileName) {
+<span class="fc" id="L298">        return profilesByName.get(profileName);</span>
+    }
+
+    public TransportationMode getNavigationMode(String profileName) {
+<span class="nc" id="L302">        Profile profile = profilesByName.get(profileName);</span>
+<span class="nc bnc" id="L303" title="All 2 branches missed.">        if (profile == null) return TransportationMode.CAR;</span>
+        try {
+<span class="nc" id="L305">            return TransportationMode.valueOf(profile.getHints().getString(&quot;navigation_mode&quot;, profileName).toUpperCase(Locale.ROOT));</span>
+<span class="nc" id="L306">        } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L307">            return TransportationMode.CAR;</span>
+        }
+    }
+
+    /**
+     * @return true if storing and fetching elevation data is enabled. Default is false
+     */
+    public boolean hasElevation() {
+<span class="fc" id="L315">        return elevation;</span>
+    }
+
+    /**
+     * Enable storing and fetching elevation data. Default is false
+     */
+    public GraphHopper setElevation(boolean includeElevation) {
+<span class="fc" id="L322">        this.elevation = includeElevation;</span>
+<span class="fc" id="L323">        return this;</span>
+    }
+
+    public String getGraphHopperLocation() {
+<span class="fc" id="L327">        return ghLocation;</span>
+    }
+
+    /**
+     * Sets the graphhopper folder.
+     */
+    public GraphHopper setGraphHopperLocation(String ghLocation) {
+<span class="fc" id="L334">        ensureNotLoaded();</span>
+<span class="pc bpc" id="L335" title="1 of 2 branches missed.">        if (ghLocation == null)</span>
+<span class="nc" id="L336">            throw new IllegalArgumentException(&quot;graphhopper location cannot be null&quot;);</span>
+
+<span class="fc" id="L338">        this.ghLocation = ghLocation;</span>
+<span class="fc" id="L339">        return this;</span>
+    }
+
+    public String getOSMFile() {
+<span class="fc" id="L343">        return osmFile;</span>
+    }
+
+    /**
+     * This file can be an osm xml (.osm), a compressed xml (.osm.zip or .osm.gz) or a protobuf file
+     * (.pbf).
+     */
+    public GraphHopper setOSMFile(String osmFile) {
+<span class="fc" id="L351">        ensureNotLoaded();</span>
+<span class="pc bpc" id="L352" title="1 of 2 branches missed.">        if (isEmpty(osmFile))</span>
+<span class="nc" id="L353">            throw new IllegalArgumentException(&quot;OSM file cannot be empty.&quot;);</span>
+
+<span class="fc" id="L355">        this.osmFile = osmFile;</span>
+<span class="fc" id="L356">        return this;</span>
+    }
+
+    public GraphHopper setMaxSpeedCalculator(MaxSpeedCalculator maxSpeedCalculator) {
+<span class="nc" id="L360">        this.maxSpeedCalculator = maxSpeedCalculator;</span>
+<span class="nc" id="L361">        return this;</span>
+    }
+
+    public GraphHopper setSortGraph(boolean sortGraph) {
+<span class="fc" id="L365">        this.sortGraph = sortGraph;</span>
+<span class="fc" id="L366">        return this;</span>
+    }
+
+    /**
+     * The underlying graph used in algorithms.
+     *
+     * @throws IllegalStateException if graph is not instantiated.
+     */
+    public BaseGraph getBaseGraph() {
+<span class="pc bpc" id="L375" title="1 of 2 branches missed.">        if (baseGraph == null)</span>
+<span class="nc" id="L376">            throw new IllegalStateException(&quot;GraphHopper storage not initialized&quot;);</span>
+
+<span class="fc" id="L378">        return baseGraph;</span>
+    }
+
+    public void setBaseGraph(BaseGraph baseGraph) {
+<span class="fc" id="L382">        this.baseGraph = baseGraph;</span>
+<span class="fc" id="L383">        setFullyLoaded();</span>
+<span class="fc" id="L384">    }</span>
+
+    public StorableProperties getProperties() {
+<span class="fc" id="L387">        return properties;</span>
+    }
+
+    /**
+     * @return a mapping between profile names and according CH preparations. The map will be empty before loading
+     * or import.
+     */
+    public Map&lt;String, RoutingCHGraph&gt; getCHGraphs() {
+<span class="fc" id="L395">        return chGraphs;</span>
+    }
+
+    /**
+     * @return a mapping between profile names and according landmark preparations. The map will be empty before loading
+     * or import.
+     */
+    public Map&lt;String, LandmarkStorage&gt; getLandmarks() {
+<span class="fc" id="L403">        return landmarks;</span>
+    }
+
+    /**
+     * The location index created from the graph.
+     *
+     * @throws IllegalStateException if index is not initialized
+     */
+    public LocationIndex getLocationIndex() {
+<span class="pc bpc" id="L412" title="1 of 2 branches missed.">        if (locationIndex == null)</span>
+<span class="nc" id="L413">            throw new IllegalStateException(&quot;LocationIndex not initialized&quot;);</span>
+
+<span class="fc" id="L415">        return locationIndex;</span>
+    }
+
+    protected void setLocationIndex(LocationIndex locationIndex) {
+<span class="nc" id="L419">        this.locationIndex = locationIndex;</span>
+<span class="nc" id="L420">    }</span>
+
+    public boolean isAllowWrites() {
+<span class="fc" id="L423">        return allowWrites;</span>
+    }
+
+    /**
+     * Specifies if it is allowed for GraphHopper to write. E.g. for read only filesystems it is not
+     * possible to create a lock file and so we can avoid write locks.
+     */
+    public GraphHopper setAllowWrites(boolean allowWrites) {
+<span class="fc" id="L431">        this.allowWrites = allowWrites;</span>
+<span class="fc" id="L432">        return this;</span>
+    }
+
+    public TranslationMap getTranslationMap() {
+<span class="fc" id="L436">        return trMap;</span>
+    }
+
+    public GraphHopper setImportRegistry(ImportRegistry importRegistry) {
+<span class="fc" id="L440">        this.importRegistry = importRegistry;</span>
+<span class="fc" id="L441">        return this;</span>
+    }
+
+    public ImportRegistry getImportRegistry() {
+<span class="nc" id="L445">        return importRegistry;</span>
+    }
+
+    public GraphHopper setCustomAreasDirectory(String customAreasDirectory) {
+<span class="nc" id="L449">        this.customAreasDirectory = customAreasDirectory;</span>
+<span class="nc" id="L450">        return this;</span>
+    }
+
+    public String getCustomAreasDirectory() {
+<span class="nc" id="L454">        return this.customAreasDirectory;</span>
+    }
+
+    /**
+     * Sets the factory used to create country rules. Use `null` to disable country rules
+     */
+    public GraphHopper setCountryRuleFactory(CountryRuleFactory countryRuleFactory) {
+<span class="fc" id="L461">        this.countryRuleFactory = countryRuleFactory;</span>
+<span class="fc" id="L462">        return this;</span>
+    }
+
+    public CountryRuleFactory getCountryRuleFactory() {
+<span class="nc" id="L466">        return this.countryRuleFactory;</span>
+    }
+
+    /**
+     * Reads the configuration from a {@link GraphHopperConfig} object which can be manually filled, or more typically
+     * is read from `config.yml`.
+     * &lt;p&gt;
+     * Important note: Calling this method overwrites the configuration done in some of the setter methods of this class,
+     * so generally it is advised to either use this method to configure GraphHopper or the different setter methods,
+     * but not both. Unfortunately, this still does not cover all cases and sometimes you have to use both, but then you
+     * should make sure there are no conflicts. If you need both it might also help to call the init before calling the
+     * setters, because this way the init method won't apply defaults to configuration options you already chose using
+     * the setters.
+     */
+    public GraphHopper init(GraphHopperConfig ghConfig) {
+<span class="fc" id="L481">        ensureNotLoaded();</span>
+        // disabling_allowed config options were removed for GH 3.0
+<span class="pc bpc" id="L483" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;routing.ch.disabling_allowed&quot;))</span>
+<span class="nc" id="L484">            throw new IllegalArgumentException(&quot;The 'routing.ch.disabling_allowed' configuration option is no longer supported&quot;);</span>
+<span class="pc bpc" id="L485" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;routing.lm.disabling_allowed&quot;))</span>
+<span class="nc" id="L486">            throw new IllegalArgumentException(&quot;The 'routing.lm.disabling_allowed' configuration option is no longer supported&quot;);</span>
+<span class="pc bpc" id="L487" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;osmreader.osm&quot;))</span>
+<span class="nc" id="L488">            throw new IllegalArgumentException(&quot;Instead of osmreader.osm use datareader.file, for other changes see CHANGELOG.md&quot;);</span>
+
+<span class="fc" id="L490">        String tmpOsmFile = ghConfig.getString(&quot;datareader.file&quot;, &quot;&quot;);</span>
+<span class="pc bpc" id="L491" title="1 of 2 branches missed.">        if (!isEmpty(tmpOsmFile))</span>
+<span class="fc" id="L492">            osmFile = tmpOsmFile;</span>
+
+<span class="fc" id="L494">        String graphHopperFolder = ghConfig.getString(&quot;graph.location&quot;, &quot;&quot;);</span>
+<span class="pc bpc" id="L495" title="1 of 4 branches missed.">        if (isEmpty(graphHopperFolder) &amp;&amp; isEmpty(ghLocation)) {</span>
+<span class="pc bpc" id="L496" title="1 of 2 branches missed.">            if (isEmpty(osmFile))</span>
+<span class="nc" id="L497">                throw new IllegalArgumentException(&quot;If no graph.location is provided you need to specify an OSM file.&quot;);</span>
+
+<span class="fc" id="L499">            graphHopperFolder = pruneFileEnd(osmFile) + &quot;-gh&quot;;</span>
+        }
+<span class="fc" id="L501">        ghLocation = graphHopperFolder;</span>
+
+<span class="pc bpc" id="L503" title="1 of 2 branches missed.">        countryRuleFactory = ghConfig.getBool(&quot;country_rules.enabled&quot;, false) ? new CountryRuleFactory() : null;</span>
+<span class="fc" id="L504">        customAreasDirectory = ghConfig.getString(&quot;custom_areas.directory&quot;, customAreasDirectory);</span>
+
+<span class="fc" id="L506">        defaultSegmentSize = ghConfig.getInt(&quot;graph.dataaccess.segment_size&quot;, defaultSegmentSize);</span>
+
+<span class="fc" id="L508">        String daTypeString = ghConfig.getString(&quot;graph.dataaccess.default_type&quot;, ghConfig.getString(&quot;graph.dataaccess&quot;, &quot;RAM_STORE&quot;));</span>
+<span class="fc" id="L509">        dataAccessDefaultType = DAType.fromString(daTypeString);</span>
+<span class="fc bfc" id="L510" title="All 2 branches covered.">        for (Map.Entry&lt;String, Object&gt; entry : ghConfig.asPMap().toMap().entrySet()) {</span>
+<span class="pc bpc" id="L511" title="1 of 2 branches missed.">            if (entry.getKey().startsWith(&quot;graph.dataaccess.type.&quot;))</span>
+<span class="nc" id="L512">                dataAccessConfig.put(entry.getKey().substring(&quot;graph.dataaccess.type.&quot;.length()), entry.getValue().toString());</span>
+<span class="pc bpc" id="L513" title="1 of 2 branches missed.">            if (entry.getKey().startsWith(&quot;graph.dataaccess.mmap.preload.&quot;))</span>
+<span class="nc" id="L514">                dataAccessConfig.put(entry.getKey().substring(&quot;graph.dataaccess.mmap.&quot;.length()), entry.getValue().toString());</span>
+<span class="fc" id="L515">        }</span>
+
+<span class="fc" id="L517">        sortGraph = ghConfig.getBool(&quot;graph.sort&quot;, sortGraph);</span>
+<span class="pc bpc" id="L518" title="1 of 2 branches missed.">        if (ghConfig.getBool(&quot;max_speed_calculator.enabled&quot;, false))</span>
+<span class="nc" id="L519">            maxSpeedCalculator = new MaxSpeedCalculator(MaxSpeedCalculator.createLegalDefaultSpeeds());</span>
+
+<span class="fc" id="L521">        removeZipped = ghConfig.getBool(&quot;graph.remove_zipped&quot;, removeZipped);</span>
+
+<span class="pc bpc" id="L523" title="1 of 2 branches missed.">        if (!ghConfig.getString(&quot;spatial_rules.location&quot;, &quot;&quot;).isEmpty())</span>
+<span class="nc" id="L524">            throw new IllegalArgumentException(&quot;spatial_rules.location has been deprecated. Please use custom_areas.directory instead and read the documentation for custom areas.&quot;);</span>
+<span class="pc bpc" id="L525" title="1 of 2 branches missed.">        if (!ghConfig.getString(&quot;spatial_rules.borders_directory&quot;, &quot;&quot;).isEmpty())</span>
+<span class="nc" id="L526">            throw new IllegalArgumentException(&quot;spatial_rules.borders_directory has been deprecated. Please use custom_areas.directory instead and read the documentation for custom areas.&quot;);</span>
+        // todo: maybe introduce custom_areas.max_bbox if this is needed later
+<span class="pc bpc" id="L528" title="1 of 2 branches missed.">        if (!ghConfig.getString(&quot;spatial_rules.max_bbox&quot;, &quot;&quot;).isEmpty())</span>
+<span class="nc" id="L529">            throw new IllegalArgumentException(&quot;spatial_rules.max_bbox has been deprecated. There is no replacement, all custom areas will be considered.&quot;);</span>
+
+<span class="fc" id="L531">        String customAreasDirectory = ghConfig.getString(&quot;custom_areas.directory&quot;, &quot;&quot;);</span>
+<span class="fc" id="L532">        JsonFeatureCollection globalAreas = GraphHopper.resolveCustomAreas(customAreasDirectory);</span>
+<span class="fc" id="L533">        String customModelFolder = ghConfig.getString(&quot;custom_models.directory&quot;, ghConfig.getString(&quot;custom_model_folder&quot;, &quot;&quot;));</span>
+<span class="fc" id="L534">        setProfiles(GraphHopper.resolveCustomModelFiles(customModelFolder, ghConfig.getProfiles(), globalAreas));</span>
+
+<span class="pc bpc" id="L536" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;graph.vehicles&quot;))</span>
+<span class="nc" id="L537">            throw new IllegalArgumentException(&quot;The option graph.vehicles is no longer supported. Use the appropriate turn_costs and custom_model instead, see docs/migration/config-migration-08-09.md&quot;);</span>
+<span class="pc bpc" id="L538" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;graph.flag_encoders&quot;))</span>
+<span class="nc" id="L539">            throw new IllegalArgumentException(&quot;The option graph.flag_encoders is no longer supported.&quot;);</span>
+
+<span class="fc" id="L541">        encodedValuesString = ghConfig.getString(&quot;graph.encoded_values&quot;, encodedValuesString);</span>
+<span class="fc" id="L542">        dateRangeParserString = ghConfig.getString(&quot;datareader.date_range_parser_day&quot;, dateRangeParserString);</span>
+
+<span class="pc bpc" id="L544" title="1 of 2 branches missed.">        if (ghConfig.getString(&quot;graph.locktype&quot;, &quot;native&quot;).equals(&quot;simple&quot;))</span>
+<span class="nc" id="L545">            lockFactory = new SimpleFSLockFactory();</span>
+        else
+<span class="fc" id="L547">            lockFactory = new NativeFSLockFactory();</span>
+
+        // elevation
+<span class="pc bpc" id="L550" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;graph.elevation.smoothing&quot;))</span>
+<span class="nc" id="L551">            throw new IllegalArgumentException(&quot;Use 'graph.elevation.edge_smoothing: moving_average' or the new 'graph.elevation.edge_smoothing: ramer'. See #2634.&quot;);</span>
+<span class="fc" id="L552">        osmReaderConfig.setElevationSmoothing(ghConfig.getString(&quot;graph.elevation.edge_smoothing&quot;, osmReaderConfig.getElevationSmoothing()));</span>
+<span class="fc" id="L553">        osmReaderConfig.setSmoothElevationAverageWindowSize(ghConfig.getDouble(&quot;graph.elevation.edge_smoothing.moving_average.window_size&quot;, osmReaderConfig.getSmoothElevationAverageWindowSize()));</span>
+<span class="fc" id="L554">        osmReaderConfig.setElevationSmoothingRamerMax(ghConfig.getInt(&quot;graph.elevation.edge_smoothing.ramer.max_elevation&quot;, osmReaderConfig.getElevationSmoothingRamerMax()));</span>
+<span class="fc" id="L555">        osmReaderConfig.setLongEdgeSamplingDistance(ghConfig.getDouble(&quot;graph.elevation.long_edge_sampling_distance&quot;, osmReaderConfig.getLongEdgeSamplingDistance()));</span>
+<span class="fc" id="L556">        osmReaderConfig.setElevationMaxWayPointDistance(ghConfig.getDouble(&quot;graph.elevation.way_point_max_distance&quot;, osmReaderConfig.getElevationMaxWayPointDistance()));</span>
+<span class="fc" id="L557">        routerConfig.setElevationWayPointMaxDistance(ghConfig.getDouble(&quot;graph.elevation.way_point_max_distance&quot;, routerConfig.getElevationWayPointMaxDistance()));</span>
+<span class="fc" id="L558">        ElevationProvider elevationProvider = createElevationProvider(ghConfig);</span>
+<span class="fc" id="L559">        setElevationProvider(elevationProvider);</span>
+
+<span class="pc bpc" id="L561" title="3 of 4 branches missed.">        if (osmReaderConfig.getLongEdgeSamplingDistance() &lt; Double.MAX_VALUE &amp;&amp; !elevationProvider.canInterpolate())</span>
+<span class="nc" id="L562">            logger.warn(&quot;Long edge sampling enabled, but bilinear interpolation disabled. See #1953&quot;);</span>
+
+        // optimizable prepare
+<span class="fc" id="L565">        minNetworkSize = ghConfig.getInt(&quot;prepare.min_network_size&quot;, minNetworkSize);</span>
+<span class="fc" id="L566">        subnetworksThreads = ghConfig.getInt(&quot;prepare.subnetworks.threads&quot;, subnetworksThreads);</span>
+
+        // prepare CH&amp;LM
+<span class="fc" id="L569">        chPreparationHandler.init(ghConfig);</span>
+<span class="fc" id="L570">        lmPreparationHandler.init(ghConfig);</span>
+
+        // osm import
+        // We do a few checks for import.osm.ignored_highways to prevent configuration errors when migrating from an older
+        // GH version.
+<span class="pc bpc" id="L575" title="1 of 2 branches missed.">        if (!ghConfig.has(&quot;import.osm.ignored_highways&quot;))</span>
+<span class="nc" id="L576">            throw new IllegalArgumentException(&quot;Missing 'import.osm.ignored_highways'. Not using this parameter can decrease performance, see config-example.yml for more details&quot;);</span>
+<span class="fc" id="L577">        String ignoredHighwaysString = ghConfig.getString(&quot;import.osm.ignored_highways&quot;, &quot;&quot;);</span>
+<span class="pc bpc" id="L578" title="8 of 10 branches missed.">        if ((ignoredHighwaysString.contains(&quot;footway&quot;) || ignoredHighwaysString.contains(&quot;path&quot;)) &amp;&amp; ghConfig.getProfiles().stream().map(Profile::getName).anyMatch(p -&gt; p.contains(&quot;foot&quot;) || p.contains(&quot;hike&quot;)))</span>
+<span class="nc" id="L579">            throw new IllegalArgumentException(&quot;You should not use import.osm.ignored_highways=footway or =path in conjunction with pedestrian profiles. This is probably an error in your configuration.&quot;);</span>
+<span class="pc bpc" id="L580" title="8 of 10 branches missed.">        if ((ignoredHighwaysString.contains(&quot;cycleway&quot;) || ignoredHighwaysString.contains(&quot;path&quot;)) &amp;&amp; ghConfig.getProfiles().stream().map(Profile::getName).anyMatch(p -&gt; p.contains(&quot;mtb&quot;) || p.contains(&quot;bike&quot;)))</span>
+<span class="nc" id="L581">            throw new IllegalArgumentException(&quot;You should not use import.osm.ignored_highways=cycleway or =path in conjunction with bicycle profiles. This is probably an error in your configuration&quot;);</span>
+
+<span class="fc" id="L583">        osmReaderConfig.setIgnoredHighways(Arrays.stream(ghConfig.getString(&quot;import.osm.ignored_highways&quot;, String.join(&quot;,&quot;, osmReaderConfig.getIgnoredHighways()))</span>
+<span class="fc" id="L584">                .split(&quot;,&quot;)).map(String::trim).collect(Collectors.toList()));</span>
+<span class="fc" id="L585">        osmReaderConfig.setParseWayNames(ghConfig.getBool(&quot;datareader.instructions&quot;, osmReaderConfig.isParseWayNames()));</span>
+<span class="fc" id="L586">        osmReaderConfig.setPreferredLanguage(ghConfig.getString(&quot;datareader.preferred_language&quot;, osmReaderConfig.getPreferredLanguage()));</span>
+<span class="fc" id="L587">        osmReaderConfig.setMaxWayPointDistance(ghConfig.getDouble(Routing.INIT_WAY_POINT_MAX_DISTANCE, osmReaderConfig.getMaxWayPointDistance()));</span>
+<span class="fc" id="L588">        osmReaderConfig.setWorkerThreads(ghConfig.getInt(&quot;datareader.worker_threads&quot;, osmReaderConfig.getWorkerThreads()));</span>
+
+        // index
+<span class="fc" id="L591">        preciseIndexResolution = ghConfig.getInt(&quot;index.high_resolution&quot;, preciseIndexResolution);</span>
+<span class="fc" id="L592">        maxRegionSearch = ghConfig.getInt(&quot;index.max_region_search&quot;, maxRegionSearch);</span>
+
+        // urban density calculation
+<span class="fc" id="L595">        residentialAreaRadius = ghConfig.getDouble(&quot;graph.urban_density.residential_radius&quot;, residentialAreaRadius);</span>
+<span class="fc" id="L596">        residentialAreaSensitivity = ghConfig.getDouble(&quot;graph.urban_density.residential_sensitivity&quot;, residentialAreaSensitivity);</span>
+<span class="fc" id="L597">        cityAreaRadius = ghConfig.getDouble(&quot;graph.urban_density.city_radius&quot;, cityAreaRadius);</span>
+<span class="fc" id="L598">        cityAreaSensitivity = ghConfig.getDouble(&quot;graph.urban_density.city_sensitivity&quot;, cityAreaSensitivity);</span>
+<span class="fc" id="L599">        urbanDensityCalculationThreads = ghConfig.getInt(&quot;graph.urban_density.threads&quot;, urbanDensityCalculationThreads);</span>
+
+        // routing
+<span class="fc" id="L602">        routerConfig.setMaxVisitedNodes(ghConfig.getInt(Routing.INIT_MAX_VISITED_NODES, routerConfig.getMaxVisitedNodes()));</span>
+<span class="fc" id="L603">        routerConfig.setTimeoutMillis(ghConfig.getLong(Routing.INIT_TIMEOUT_MS, routerConfig.getTimeoutMillis()));</span>
+<span class="fc" id="L604">        routerConfig.setMaxRoundTripRetries(ghConfig.getInt(RoundTrip.INIT_MAX_RETRIES, routerConfig.getMaxRoundTripRetries()));</span>
+<span class="fc" id="L605">        routerConfig.setNonChMaxWaypointDistance(ghConfig.getInt(Parameters.NON_CH.MAX_NON_CH_POINT_DISTANCE, routerConfig.getNonChMaxWaypointDistance()));</span>
+<span class="fc" id="L606">        routerConfig.setInstructionsEnabled(ghConfig.getBool(Routing.INIT_INSTRUCTIONS, routerConfig.isInstructionsEnabled()));</span>
+<span class="fc" id="L607">        int activeLandmarkCount = ghConfig.getInt(Landmark.ACTIVE_COUNT_DEFAULT, Math.min(8, lmPreparationHandler.getLandmarks()));</span>
+<span class="pc bpc" id="L608" title="1 of 2 branches missed.">        if (activeLandmarkCount &gt; lmPreparationHandler.getLandmarks())</span>
+<span class="nc" id="L609">            throw new IllegalArgumentException(&quot;Default value for active landmarks &quot; + activeLandmarkCount</span>
+<span class="nc" id="L610">                    + &quot; should be less or equal to landmark count of &quot; + lmPreparationHandler.getLandmarks());</span>
+<span class="fc" id="L611">        routerConfig.setActiveLandmarkCount(activeLandmarkCount);</span>
+
+<span class="fc" id="L613">        calcChecksums = ghConfig.getBool(&quot;graph.calc_checksums&quot;, false);</span>
+
+<span class="fc" id="L615">        return this;</span>
+    }
+
+    protected EncodingManager buildEncodingManager(Map&lt;String, PMap&gt; encodedValuesWithProps,
+                                                   Map&lt;String, ImportUnit&gt; activeImportUnits,
+                                                   Map&lt;String, List&lt;String&gt;&gt; restrictionVehicleTypesByProfile) {
+<span class="fc" id="L621">        List&lt;EncodedValue&gt; encodedValues = new ArrayList&lt;&gt;(activeImportUnits.entrySet().stream()</span>
+<span class="fc" id="L622">                .map(e -&gt; {</span>
+<span class="fc" id="L623">                    Function&lt;PMap, EncodedValue&gt; f = e.getValue().getCreateEncodedValue();</span>
+<span class="fc bfc" id="L624" title="All 2 branches covered.">                    return f == null ? null : f.apply(encodedValuesWithProps.getOrDefault(e.getKey(), new PMap()));</span>
+                })
+<span class="fc" id="L626">                .filter(Objects::nonNull)</span>
+<span class="fc" id="L627">                .toList());</span>
+
+<span class="fc" id="L629">        encodedValues.addAll(createSubnetworkEncodedValues());</span>
+
+<span class="fc" id="L631">        List&lt;String&gt; sortedEVs = getEVSortIndex(profilesByName);</span>
+<span class="fc" id="L632">        encodedValues.sort(Comparator.comparingInt(ev -&gt; sortedEVs.indexOf(ev.getName())));</span>
+
+<span class="fc" id="L634">        EncodingManager.Builder emBuilder = new EncodingManager.Builder();</span>
+<span class="fc" id="L635">        encodedValues.forEach(emBuilder::add);</span>
+<span class="fc" id="L636">        restrictionVehicleTypesByProfile.entrySet().stream()</span>
+<span class="pc bpc" id="L637" title="1 of 2 branches missed.">                .filter(e -&gt; !e.getValue().isEmpty())</span>
+<span class="fc" id="L638">                .forEach(e -&gt; emBuilder.addTurnCostEncodedValue(TurnRestriction.create(e.getKey())));</span>
+<span class="fc" id="L639">        return emBuilder.build();</span>
+    }
+
+    protected List&lt;BooleanEncodedValue&gt; createSubnetworkEncodedValues() {
+<span class="fc" id="L643">        return profilesByName.values().stream().map(profile -&gt; Subnetwork.create(profile.getName())).toList();</span>
+    }
+
+    protected List&lt;String&gt; getEVSortIndex(Map&lt;String, Profile&gt; profilesByName) {
+<span class="fc" id="L647">        return Collections.emptyList();</span>
+    }
+
+    protected OSMParsers buildOSMParsers(Map&lt;String, PMap&gt; encodedValuesWithProps,
+                                         Map&lt;String, ImportUnit&gt; activeImportUnits,
+                                         Map&lt;String, List&lt;String&gt;&gt; restrictionVehicleTypesByProfile,
+                                         List&lt;String&gt; ignoredHighways) {
+<span class="fc" id="L654">        ImportUnitSorter sorter = new ImportUnitSorter(activeImportUnits);</span>
+<span class="fc" id="L655">        Map&lt;String, ImportUnit&gt; sortedImportUnits = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L656">        sorter.sort().forEach(name -&gt; sortedImportUnits.put(name, activeImportUnits.get(name)));</span>
+<span class="fc" id="L657">        List&lt;TagParser&gt; sortedParsers = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L658">        sortedImportUnits.forEach((name, importUnit) -&gt; {</span>
+<span class="fc" id="L659">            BiFunction&lt;EncodedValueLookup, PMap, TagParser&gt; createTagParser = importUnit.getCreateTagParser();</span>
+<span class="fc bfc" id="L660" title="All 2 branches covered.">            if (createTagParser != null) {</span>
+<span class="fc" id="L661">                PMap pmap = encodedValuesWithProps.getOrDefault(name, new PMap());</span>
+<span class="pc bpc" id="L662" title="1 of 2 branches missed.">                if (!pmap.has(&quot;date_range_parser_day&quot;))</span>
+<span class="fc" id="L663">                    pmap.putObject(&quot;date_range_parser_day&quot;, dateRangeParserString);</span>
+<span class="fc" id="L664">                sortedParsers.add(createTagParser.apply(encodingManager, pmap));</span>
+            }
+<span class="fc" id="L666">        });</span>
+
+<span class="fc" id="L668">        OSMParsers osmParsers = new OSMParsers();</span>
+<span class="fc" id="L669">        ignoredHighways.forEach(osmParsers::addIgnoredHighway);</span>
+<span class="fc" id="L670">        sortedParsers.forEach(osmParsers::addWayTagParser);</span>
+
+<span class="pc bpc" id="L672" title="1 of 2 branches missed.">        if (maxSpeedCalculator != null) {</span>
+<span class="nc" id="L673">            maxSpeedCalculator.checkEncodedValues(encodingManager);</span>
+<span class="nc" id="L674">            osmParsers.addWayTagParser(maxSpeedCalculator.getParser());</span>
+        }
+
+<span class="fc bfc" id="L677" title="All 2 branches covered.">        if (encodingManager.hasEncodedValue(BikeNetwork.KEY))</span>
+<span class="fc" id="L678">            osmParsers.addRelationTagParser(relConfig -&gt; new OSMBikeNetworkTagParser(encodingManager.getEnumEncodedValue(BikeNetwork.KEY, RouteNetwork.class), relConfig));</span>
+<span class="pc bpc" id="L679" title="1 of 2 branches missed.">        if (encodingManager.hasEncodedValue(MtbNetwork.KEY))</span>
+<span class="nc" id="L680">            osmParsers.addRelationTagParser(relConfig -&gt; new OSMMtbNetworkTagParser(encodingManager.getEnumEncodedValue(MtbNetwork.KEY, RouteNetwork.class), relConfig));</span>
+<span class="fc bfc" id="L681" title="All 2 branches covered.">        if (encodingManager.hasEncodedValue(FootNetwork.KEY))</span>
+<span class="fc" id="L682">            osmParsers.addRelationTagParser(relConfig -&gt; new OSMFootNetworkTagParser(encodingManager.getEnumEncodedValue(FootNetwork.KEY, RouteNetwork.class), relConfig));</span>
+
+<span class="fc" id="L684">        restrictionVehicleTypesByProfile.forEach((profile, restrictionVehicleTypes) -&gt; {</span>
+<span class="fc" id="L685">            osmParsers.addRestrictionTagParser(new RestrictionTagParser(</span>
+<span class="fc" id="L686">                    restrictionVehicleTypes, encodingManager.getTurnBooleanEncodedValue(TurnRestriction.key(profile))));</span>
+<span class="fc" id="L687">        });</span>
+<span class="fc" id="L688">        return osmParsers;</span>
+    }
+
+    public static Map&lt;String, PMap&gt; parseEncodedValueString(String encodedValuesStr) {
+<span class="fc" id="L692">        Map&lt;String, PMap&gt; encodedValuesWithProps = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L693">        Arrays.stream(encodedValuesStr.split(&quot;,&quot;))</span>
+<span class="fc bfc" id="L694" title="All 2 branches covered.">                .filter(evStr -&gt; !evStr.isBlank())</span>
+<span class="fc" id="L695">                .forEach(evStr -&gt; {</span>
+<span class="fc" id="L696">                    String key = evStr.trim().split(&quot;\\|&quot;)[0];</span>
+<span class="pc bpc" id="L697" title="1 of 2 branches missed.">                    if (encodedValuesWithProps.put(key, new PMap(evStr)) != null)</span>
+<span class="nc" id="L698">                        throw new IllegalArgumentException(&quot;duplicate encoded value in config graph.encoded_values: &quot; + key);</span>
+<span class="fc" id="L699">                });</span>
+<span class="fc" id="L700">        return encodedValuesWithProps;</span>
+    }
+
+    private static Map&lt;String, List&lt;String&gt;&gt; getRestrictionVehicleTypesByProfile(Collection&lt;Profile&gt; profiles) {
+<span class="fc" id="L704">        Map&lt;String, List&lt;String&gt;&gt; result = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L705" title="All 2 branches covered.">        for (Profile profile : profiles)</span>
+<span class="fc bfc" id="L706" title="All 2 branches covered.">            if (profile.hasTurnCosts())</span>
+<span class="fc" id="L707">                result.put(profile.getName(), profile.getTurnCostsConfig().getVehicleTypes());</span>
+<span class="fc" id="L708">        return result;</span>
+    }
+
+    private static ElevationProvider createElevationProvider(GraphHopperConfig ghConfig) {
+<span class="fc" id="L712">        String eleProviderStr = toLowerCase(ghConfig.getString(&quot;graph.elevation.provider&quot;, &quot;noop&quot;));</span>
+
+<span class="pc bpc" id="L714" title="1 of 2 branches missed.">        if (ghConfig.has(&quot;graph.elevation.calcmean&quot;))</span>
+<span class="nc" id="L715">            throw new IllegalArgumentException(&quot;graph.elevation.calcmean is deprecated, use graph.elevation.interpolate&quot;);</span>
+
+<span class="fc" id="L717">        String cacheDirStr = ghConfig.getString(&quot;graph.elevation.cache_dir&quot;, &quot;&quot;);</span>
+<span class="pc bpc" id="L718" title="2 of 4 branches missed.">        if (cacheDirStr.isEmpty() &amp;&amp; ghConfig.has(&quot;graph.elevation.cachedir&quot;))</span>
+<span class="nc" id="L719">            throw new IllegalArgumentException(&quot;use graph.elevation.cache_dir not cachedir in configuration&quot;);</span>
+
+<span class="fc" id="L721">        ElevationProvider elevationProvider = ElevationProvider.NOOP;</span>
+<span class="pc bpc" id="L722" title="1 of 2 branches missed.">        if (eleProviderStr.equalsIgnoreCase(&quot;hgt&quot;)) {</span>
+<span class="nc" id="L723">            elevationProvider = new HGTProvider(cacheDirStr);</span>
+<span class="pc bpc" id="L724" title="1 of 2 branches missed.">        } else if (eleProviderStr.equalsIgnoreCase(&quot;srtm&quot;)) {</span>
+<span class="nc" id="L725">            elevationProvider = new SRTMProvider(cacheDirStr);</span>
+<span class="pc bpc" id="L726" title="1 of 2 branches missed.">        } else if (eleProviderStr.equalsIgnoreCase(&quot;cgiar&quot;)) {</span>
+<span class="nc" id="L727">            elevationProvider = new CGIARProvider(cacheDirStr);</span>
+<span class="pc bpc" id="L728" title="1 of 2 branches missed.">        } else if (eleProviderStr.equalsIgnoreCase(&quot;gmted&quot;)) {</span>
+<span class="nc" id="L729">            elevationProvider = new GMTEDProvider(cacheDirStr);</span>
+<span class="pc bpc" id="L730" title="1 of 2 branches missed.">        } else if (eleProviderStr.equalsIgnoreCase(&quot;srtmgl1&quot;)) {</span>
+<span class="nc" id="L731">            elevationProvider = new SRTMGL1Provider(cacheDirStr);</span>
+<span class="pc bpc" id="L732" title="1 of 2 branches missed.">        } else if (eleProviderStr.equalsIgnoreCase(&quot;multi&quot;)) {</span>
+<span class="nc" id="L733">            elevationProvider = new MultiSourceElevationProvider(cacheDirStr);</span>
+<span class="pc bpc" id="L734" title="1 of 2 branches missed.">        } else if (eleProviderStr.equalsIgnoreCase(&quot;skadi&quot;)) {</span>
+<span class="nc" id="L735">            elevationProvider = new SkadiProvider(cacheDirStr);</span>
+        }
+
+<span class="pc bpc" id="L738" title="1 of 2 branches missed.">        if (elevationProvider instanceof TileBasedElevationProvider) {</span>
+<span class="nc" id="L739">            TileBasedElevationProvider provider = (TileBasedElevationProvider) elevationProvider;</span>
+
+<span class="nc" id="L741">            String baseURL = ghConfig.getString(&quot;graph.elevation.base_url&quot;, &quot;&quot;);</span>
+<span class="nc bnc" id="L742" title="All 4 branches missed.">            if (baseURL.isEmpty() &amp;&amp; ghConfig.has(&quot;graph.elevation.baseurl&quot;))</span>
+<span class="nc" id="L743">                throw new IllegalArgumentException(&quot;use graph.elevation.base_url not baseurl in configuration&quot;);</span>
+
+<span class="nc" id="L745">            DAType elevationDAType = DAType.fromString(ghConfig.getString(&quot;graph.elevation.dataaccess&quot;, &quot;MMAP&quot;));</span>
+
+<span class="nc bnc" id="L747" title="All 2 branches missed.">            boolean interpolate = ghConfig.has(&quot;graph.elevation.interpolate&quot;)</span>
+<span class="nc" id="L748">                    ? &quot;bilinear&quot;.equals(ghConfig.getString(&quot;graph.elevation.interpolate&quot;, &quot;none&quot;))</span>
+<span class="nc" id="L749">                    : ghConfig.getBool(&quot;graph.elevation.calc_mean&quot;, false);</span>
+
+<span class="nc" id="L751">            boolean removeTempElevationFiles = ghConfig.getBool(&quot;graph.elevation.cgiar.clear&quot;, true);</span>
+<span class="nc" id="L752">            removeTempElevationFiles = ghConfig.getBool(&quot;graph.elevation.clear&quot;, removeTempElevationFiles);</span>
+
+<span class="nc" id="L754">            provider</span>
+<span class="nc" id="L755">                    .setAutoRemoveTemporaryFiles(removeTempElevationFiles)</span>
+<span class="nc" id="L756">                    .setInterpolate(interpolate)</span>
+<span class="nc" id="L757">                    .setDAType(elevationDAType);</span>
+<span class="nc bnc" id="L758" title="All 2 branches missed.">            if (!baseURL.isEmpty())</span>
+<span class="nc" id="L759">                provider.setBaseURL(baseURL);</span>
+        }
+<span class="fc" id="L761">        return elevationProvider;</span>
+    }
+
+    private void printInfo() {
+<span class="fc" id="L765">        logger.info(&quot;version &quot; + Constants.VERSION + &quot;|&quot; + Constants.BUILD_DATE + &quot; (&quot; + Constants.getVersions() + &quot;)&quot;);</span>
+<span class="fc bfc" id="L766" title="All 2 branches covered.">        if (baseGraph != null)</span>
+<span class="fc" id="L767">            logger.info(&quot;graph &quot; + getBaseGraphString() + &quot;, details:&quot; + baseGraph.toDetailsString());</span>
+<span class="fc" id="L768">    }</span>
+
+    private String getBaseGraphString() {
+<span class="fc" id="L771">        return encodingManager</span>
+<span class="fc" id="L772">                + &quot;|&quot; + baseGraph.getDirectory().getDefaultType()</span>
+<span class="fc" id="L773">                + &quot;|&quot; + baseGraph.getNodeAccess().getDimension() + &quot;D&quot;</span>
+<span class="fc bfc" id="L774" title="All 2 branches covered.">                + &quot;|&quot; + (baseGraph.getTurnCostStorage() != null ? baseGraph.getTurnCostStorage() : &quot;no_turn_cost&quot;)</span>
+<span class="fc" id="L775">                + &quot;|&quot; + getVersionsString();</span>
+    }
+
+    private String getVersionsString() {
+<span class="fc" id="L779">        return &quot;nodes:&quot; + Constants.VERSION_NODE +</span>
+                &quot;,edges:&quot; + Constants.VERSION_EDGE +
+                &quot;,geometry:&quot; + Constants.VERSION_GEOMETRY +
+                &quot;,location_index:&quot; + Constants.VERSION_LOCATION_IDX +
+                &quot;,string_index:&quot; + Constants.VERSION_KV_STORAGE +
+                &quot;,nodesCH:&quot; + Constants.VERSION_NODE_CH +
+                &quot;,shortcuts:&quot; + Constants.VERSION_SHORTCUT;
+    }
+
+    /**
+     * Imports provided data from disc and creates graph. Depending on the settings the resulting
+     * graph will be stored to disc so on a second call this method will only load the graph from
+     * disc which is usually a lot faster.
+     */
+    public GraphHopper importOrLoad() {
+<span class="fc bfc" id="L794" title="All 2 branches covered.">        if (!load()) {</span>
+<span class="fc" id="L795">            printInfo();</span>
+<span class="fc" id="L796">            process(false);</span>
+        } else {
+<span class="fc" id="L798">            printInfo();</span>
+        }
+<span class="fc" id="L800">        return this;</span>
+    }
+
+    /**
+     * Imports and processes data, storing it to disk when complete.
+     */
+    public void importAndClose() {
+<span class="pc bpc" id="L807" title="1 of 2 branches missed.">        if (!load()) {</span>
+<span class="fc" id="L808">            printInfo();</span>
+<span class="fc" id="L809">            process(true);</span>
+        } else {
+<span class="nc" id="L811">            printInfo();</span>
+<span class="nc" id="L812">            logger.info(&quot;Graph already imported into &quot; + ghLocation);</span>
+        }
+<span class="fc" id="L814">        close();</span>
+<span class="fc" id="L815">    }</span>
+
+    /**
+     * Creates the graph from OSM data.
+     */
+    protected void process(boolean closeEarly) {
+<span class="fc" id="L821">        prepareImport();</span>
+<span class="pc bpc" id="L822" title="1 of 2 branches missed.">        if (encodingManager == null)</span>
+<span class="nc" id="L823">            throw new IllegalStateException(&quot;The EncodingManager must be created in `prepareImport()`&quot;);</span>
+<span class="fc" id="L824">        GHDirectory directory = new GHDirectory(ghLocation, dataAccessDefaultType);</span>
+<span class="fc" id="L825">        directory.configure(dataAccessConfig);</span>
+<span class="fc" id="L826">        baseGraph = new BaseGraph.Builder(getEncodingManager())</span>
+<span class="fc" id="L827">                .setDir(directory)</span>
+<span class="fc" id="L828">                .set3D(hasElevation())</span>
+<span class="fc" id="L829">                .withTurnCosts(encodingManager.needsTurnCostsSupport())</span>
+<span class="fc" id="L830">                .setSegmentSize(defaultSegmentSize)</span>
+<span class="fc" id="L831">                .build();</span>
+<span class="fc" id="L832">        properties = new StorableProperties(directory);</span>
+<span class="fc" id="L833">        checkProfilesConsistency();</span>
+
+<span class="fc" id="L835">        GHLock lock = null;</span>
+        try {
+<span class="fc bfc" id="L837" title="All 2 branches covered.">            if (directory.getDefaultType().isStoring()) {</span>
+<span class="fc" id="L838">                lockFactory.setLockDir(new File(ghLocation));</span>
+<span class="fc" id="L839">                lock = lockFactory.create(fileLockName, true);</span>
+<span class="pc bpc" id="L840" title="1 of 2 branches missed.">                if (!lock.tryLock())</span>
+<span class="nc" id="L841">                    throw new RuntimeException(&quot;To avoid multiple writers we need to obtain a write lock but it failed. In &quot; + ghLocation, lock.getObtainFailedReason());</span>
+            }
+<span class="fc" id="L843">            ensureWriteAccess();</span>
+
+<span class="fc" id="L845">            importOSM();</span>
+<span class="fc" id="L846">            postImportOSM();</span>
+<span class="fc" id="L847">            cleanUp();</span>
+
+<span class="fc" id="L849">            properties.put(&quot;profiles&quot;, getProfilesString());</span>
+<span class="fc" id="L850">            writeEncodingManagerToProperties();</span>
+
+<span class="fc" id="L852">            postProcessing(closeEarly);</span>
+<span class="fc" id="L853">            flush();</span>
+        } finally {
+<span class="fc bfc" id="L855" title="All 2 branches covered.">            if (lock != null)</span>
+<span class="fc" id="L856">                lock.release();</span>
+        }
+<span class="fc" id="L858">    }</span>
+
+    protected void prepareImport() {
+<span class="fc" id="L861">        Map&lt;String, PMap&gt; encodedValuesWithProps = parseEncodedValueString(encodedValuesString);</span>
+<span class="pc bpc" id="L862" title="1 of 2 branches missed.">        NameValidator nameValidator = s -&gt; importRegistry.createImportUnit(s) != null;</span>
+<span class="fc" id="L863">        Set&lt;String&gt; missing = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc" id="L864">        profilesByName.values().</span>
+<span class="fc" id="L865">                forEach(profile -&gt; CustomModelParser.findVariablesForEncodedValuesString(profile.getCustomModel(), nameValidator, s -&gt; &quot;&quot;).</span>
+<span class="fc" id="L866">                        forEach(var -&gt; {</span>
+<span class="pc bpc" id="L867" title="1 of 2 branches missed.">                            if (!encodedValuesWithProps.containsKey(var)) missing.add(var);</span>
+<span class="fc" id="L868">                            encodedValuesWithProps.putIfAbsent(var, new PMap());</span>
+<span class="fc" id="L869">                        }));</span>
+<span class="pc bpc" id="L870" title="1 of 2 branches missed.">        if (!missing.isEmpty()) {</span>
+<span class="nc" id="L871">            String encodedValuesString = encodedValuesWithProps.entrySet().stream()</span>
+<span class="nc bnc" id="L872" title="All 2 branches missed.">                    .map(e -&gt; e.getKey() + (e.getValue().isEmpty() ? &quot;&quot; : (&quot;|&quot; + e.getValue().toMap().entrySet().stream().map(p -&gt; p.getKey() + &quot;=&quot; + p.getValue()).collect(Collectors.joining(&quot;|&quot;)))))</span>
+<span class="nc" id="L873">                    .collect(Collectors.joining(&quot;, &quot;));</span>
+<span class="nc" id="L874">            throw new IllegalArgumentException(&quot;Encoded values missing: &quot; + String.join(&quot;, &quot;, missing) + &quot;.\n&quot; +</span>
+                    &quot;To avoid that certain encoded values are automatically removed when you change the custom model later, you need to set the encoded values manually:\n&quot; +
+                    &quot;graph.encoded_values: &quot; + encodedValuesString);
+        }
+
+        // following encoded values are used by instructions and in the snap prevention filter (avoid motorway, tunnel, etc.)
+<span class="fc" id="L880">        encodedValuesWithProps.putIfAbsent(RoadClass.KEY, new PMap());</span>
+<span class="fc" id="L881">        encodedValuesWithProps.putIfAbsent(RoadEnvironment.KEY, new PMap());</span>
+        // now only used by instructions:
+<span class="fc" id="L883">        encodedValuesWithProps.putIfAbsent(Roundabout.KEY, new PMap());</span>
+<span class="fc" id="L884">        encodedValuesWithProps.putIfAbsent(VehicleAccess.key(&quot;car&quot;), new PMap());</span>
+<span class="fc" id="L885">        encodedValuesWithProps.putIfAbsent(RoadClassLink.KEY, new PMap());</span>
+<span class="fc" id="L886">        encodedValuesWithProps.putIfAbsent(MaxSpeed.KEY, new PMap());</span>
+
+<span class="fc" id="L888">        Map&lt;String, List&lt;String&gt;&gt; restrictionVehicleTypesByProfile = getRestrictionVehicleTypesByProfile(profilesByName.values());</span>
+
+<span class="pc bpc" id="L890" title="1 of 2 branches missed.">        if (urbanDensityCalculationThreads &gt; 0)</span>
+<span class="nc" id="L891">            encodedValuesWithProps.put(UrbanDensity.KEY, new PMap());</span>
+<span class="pc bpc" id="L892" title="1 of 2 branches missed.">        if (maxSpeedCalculator != null) {</span>
+<span class="nc bnc" id="L893" title="All 2 branches missed.">            if (urbanDensityCalculationThreads &lt;= 0)</span>
+<span class="nc" id="L894">                throw new IllegalArgumentException(&quot;For max_speed_calculator the urban density calculation needs to be enabled (e.g. graph.urban_density.threads: 1)&quot;);</span>
+<span class="nc" id="L895">            encodedValuesWithProps.put(MaxSpeedEstimated.KEY, new PMap());</span>
+        }
+
+<span class="fc" id="L898">        Map&lt;String, ImportUnit&gt; activeImportUnits = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L899">        ArrayDeque&lt;String&gt; deque = new ArrayDeque&lt;&gt;(encodedValuesWithProps.keySet());</span>
+<span class="fc bfc" id="L900" title="All 2 branches covered.">        while (!deque.isEmpty()) {</span>
+<span class="fc" id="L901">            String ev = deque.removeFirst();</span>
+<span class="fc" id="L902">            ImportUnit importUnit = importRegistry.createImportUnit(ev);</span>
+<span class="pc bpc" id="L903" title="1 of 2 branches missed.">            if (importUnit == null)</span>
+<span class="nc" id="L904">                throw new IllegalArgumentException(&quot;Unknown encoded value: &quot; + ev);</span>
+<span class="fc bfc" id="L905" title="All 2 branches covered.">            if (activeImportUnits.put(ev, importUnit) == null)</span>
+<span class="fc" id="L906">                deque.addAll(importUnit.getRequiredImportUnits());</span>
+<span class="fc" id="L907">        }</span>
+<span class="fc" id="L908">        encodingManager = buildEncodingManager(encodedValuesWithProps, activeImportUnits, restrictionVehicleTypesByProfile);</span>
+<span class="fc" id="L909">        osmParsers = buildOSMParsers(encodedValuesWithProps, activeImportUnits, restrictionVehicleTypesByProfile, osmReaderConfig.getIgnoredHighways());</span>
+<span class="fc" id="L910">    }</span>
+
+    protected void postImportOSM() {
+        // Important note: To deal with via-way turn restrictions we introduce artificial edges in OSMReader (#2689).
+        // These are simply copies of real edges. Any further modifications of the graph edges must take care of keeping
+        // the artificial edges in sync with their real counterparts. So if an edge attribute shall be changed this change
+        // must also be applied to the corresponding artificial edge.
+<span class="fc" id="L917">        calculateUrbanDensity();</span>
+
+<span class="pc bpc" id="L919" title="1 of 2 branches missed.">        if (maxSpeedCalculator != null) {</span>
+<span class="nc" id="L920">            maxSpeedCalculator.fillMaxSpeed(getBaseGraph(), encodingManager);</span>
+<span class="nc" id="L921">            maxSpeedCalculator.close();</span>
+        }
+
+<span class="fc bfc" id="L924" title="All 2 branches covered.">        if (hasElevation())</span>
+<span class="fc" id="L925">            interpolateBridgesTunnelsAndFerries();</span>
+
+<span class="fc bfc" id="L927" title="All 2 branches covered.">        if (sortGraph)</span>
+<span class="fc" id="L928">            sortGraphAlongHilbertCurve(baseGraph);</span>
+<span class="fc" id="L929">    }</span>
+
+    protected void importOSM() {
+<span class="fc bfc" id="L932" title="All 2 branches covered.">        if (osmFile == null)</span>
+<span class="fc" id="L933">            throw new IllegalStateException(&quot;Couldn't load from existing folder: &quot; + ghLocation</span>
+                    + &quot; but also cannot use file for DataReader as it wasn't specified!&quot;);
+
+<span class="fc" id="L936">        List&lt;CustomArea&gt; customAreas = readCountries();</span>
+<span class="pc bpc" id="L937" title="1 of 2 branches missed.">        if (isEmpty(customAreasDirectory)) {</span>
+<span class="fc" id="L938">            logger.info(&quot;No custom areas are used, custom_areas.directory not given&quot;);</span>
+        } else {
+<span class="nc" id="L940">            logger.info(&quot;Creating custom area index, reading custom areas from: '&quot; + customAreasDirectory + &quot;'&quot;);</span>
+<span class="nc" id="L941">            customAreas.addAll(readCustomAreas());</span>
+        }
+
+<span class="fc" id="L944">        AreaIndex&lt;CustomArea&gt; areaIndex = new AreaIndex&lt;&gt;(customAreas);</span>
+<span class="pc bpc" id="L945" title="1 of 4 branches missed.">        if (countryRuleFactory == null || countryRuleFactory.getCountryToRuleMap().isEmpty()) {</span>
+<span class="fc" id="L946">            logger.info(&quot;No country rules available&quot;);</span>
+        } else {
+<span class="fc" id="L948">            logger.info(&quot;Applying rules for the following countries: {}&quot;, countryRuleFactory.getCountryToRuleMap().keySet());</span>
+        }
+
+<span class="fc" id="L951">        logger.info(&quot;start creating graph from &quot; + osmFile);</span>
+<span class="fc" id="L952">        OSMReader reader = new OSMReader(baseGraph.getBaseGraph(), osmParsers, osmReaderConfig).setFile(_getOSMFile()).</span>
+<span class="fc" id="L953">                setAreaIndex(areaIndex).</span>
+<span class="fc" id="L954">                setElevationProvider(eleProvider).</span>
+<span class="fc" id="L955">                setCountryRuleFactory(countryRuleFactory);</span>
+<span class="fc" id="L956">        logger.info(&quot;using &quot; + getBaseGraphString() + &quot;, memory:&quot; + getMemInfo());</span>
+
+<span class="fc" id="L958">        createBaseGraphAndProperties();</span>
+
+        try {
+<span class="fc" id="L961">            reader.readGraph();</span>
+<span class="nc" id="L962">        } catch (IOException ex) {</span>
+<span class="nc" id="L963">            throw new RuntimeException(&quot;Cannot read file &quot; + getOSMFile(), ex);</span>
+<span class="fc" id="L964">        }</span>
+<span class="fc" id="L965">        DateFormat f = createFormatter();</span>
+<span class="fc" id="L966">        properties.put(&quot;datareader.import.date&quot;, f.format(new Date()));</span>
+<span class="fc bfc" id="L967" title="All 2 branches covered.">        if (reader.getDataDate() != null)</span>
+<span class="fc" id="L968">            properties.put(&quot;datareader.data.date&quot;, f.format(reader.getDataDate()));</span>
+<span class="fc" id="L969">    }</span>
+
+    protected void createBaseGraphAndProperties() {
+<span class="fc" id="L972">        baseGraph.getDirectory().create();</span>
+<span class="fc" id="L973">        baseGraph.create(100);</span>
+<span class="fc" id="L974">        properties.create(100);</span>
+<span class="pc bpc" id="L975" title="1 of 2 branches missed.">        if (maxSpeedCalculator != null)</span>
+<span class="nc" id="L976">            maxSpeedCalculator.createDataAccessForParser(baseGraph.getDirectory());</span>
+<span class="fc" id="L977">    }</span>
+
+    public static void sortGraphAlongHilbertCurve(BaseGraph graph) {
+<span class="fc" id="L980">        logger.info(&quot;sorting graph along Hilbert curve...&quot;);</span>
+<span class="fc" id="L981">        StopWatch sw = StopWatch.started();</span>
+<span class="fc" id="L982">        NodeAccess na = graph.getNodeAccess();</span>
+<span class="fc" id="L983">        final int order = 31; // using 15 would allow us to use ints for sortIndices, but this would result in (marginally) slower routing</span>
+<span class="fc" id="L984">        LongArrayList sortIndices = new LongArrayList();</span>
+<span class="fc bfc" id="L985" title="All 2 branches covered.">        for (int node = 0; node &lt; graph.getNodes(); node++)</span>
+<span class="fc" id="L986">            sortIndices.add(latLonToHilbertIndex(na.getLat(node), na.getLon(node), order));</span>
+<span class="fc" id="L987">        int[] nodeOrder = IndirectSort.mergesort(0, graph.getNodes(), (nodeA, nodeB) -&gt; Long.compare(sortIndices.get(nodeA), sortIndices.get(nodeB)));</span>
+<span class="fc" id="L988">        EdgeExplorer explorer = graph.createEdgeExplorer();</span>
+<span class="fc" id="L989">        int edges = graph.getEdges();</span>
+<span class="fc" id="L990">        IntArrayList edgeOrder = new IntArrayList();</span>
+<span class="fc" id="L991">        com.carrotsearch.hppc.BitSet edgesFound = new BitSet(edges);</span>
+<span class="fc bfc" id="L992" title="All 2 branches covered.">        for (int node : nodeOrder) {</span>
+<span class="fc" id="L993">            EdgeIterator iter = explorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L994" title="All 2 branches covered.">            while (iter.next()) {</span>
+<span class="fc bfc" id="L995" title="All 2 branches covered.">                if (!edgesFound.get(iter.getEdge())) {</span>
+<span class="fc" id="L996">                    edgeOrder.add(iter.getEdge());</span>
+<span class="fc" id="L997">                    edgesFound.set(iter.getEdge());</span>
+                }
+            }
+        }
+<span class="fc" id="L1001">        IntArrayList newEdgesByOldEdges = ArrayUtil.invert(edgeOrder);</span>
+<span class="fc" id="L1002">        IntArrayList newNodesByOldNodes = IntArrayList.from(ArrayUtil.invert(nodeOrder));</span>
+<span class="fc" id="L1003">        logger.info(&quot;calculating sort order took: &quot; + sw.stop().getTimeString());</span>
+<span class="fc" id="L1004">        sortGraphForGivenOrdering(graph, newNodesByOldNodes, newEdgesByOldEdges);</span>
+<span class="fc" id="L1005">    }</span>
+
+    public static void sortGraphForGivenOrdering(BaseGraph baseGraph, IntArrayList newNodesByOldNodes, IntArrayList newEdgesByOldEdges) {
+<span class="pc bpc" id="L1008" title="1 of 2 branches missed.">        if (!ArrayUtil.isPermutation(newEdgesByOldEdges))</span>
+<span class="nc" id="L1009">            throw new IllegalStateException(&quot;New edges: not a permutation&quot;);</span>
+<span class="pc bpc" id="L1010" title="1 of 2 branches missed.">        if (!ArrayUtil.isPermutation(newNodesByOldNodes))</span>
+<span class="nc" id="L1011">            throw new IllegalStateException(&quot;New nodes: not a permutation&quot;);</span>
+<span class="fc" id="L1012">        logger.info(&quot;sort graph for fixed ordering...&quot;);</span>
+<span class="fc" id="L1013">        StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L1014">        baseGraph.sortEdges(newEdgesByOldEdges::get);</span>
+<span class="fc" id="L1015">        logger.info(&quot;sorting {} edges took: {}&quot;, Helper.nf(newEdgesByOldEdges.size()), sw.stop().getTimeString());</span>
+<span class="fc" id="L1016">        sw = new StopWatch().start();</span>
+<span class="fc" id="L1017">        baseGraph.relabelNodes(newNodesByOldNodes::get);</span>
+<span class="fc" id="L1018">        logger.info(&quot;sorting {} nodes took: {}&quot;, Helper.nf(newNodesByOldNodes.size()), sw.stop().getTimeString());</span>
+<span class="fc" id="L1019">    }</span>
+
+    public static long latLonToHilbertIndex(double lat, double lon, int order) {
+<span class="fc" id="L1022">        double nx = (lon + 180) / 360;</span>
+<span class="fc" id="L1023">        double ny = (90 - lat) / 180;</span>
+<span class="fc" id="L1024">        long size = 1L &lt;&lt; order;</span>
+<span class="fc" id="L1025">        long x = (long) (nx * size);</span>
+<span class="fc" id="L1026">        long y = (long) (ny * size);</span>
+<span class="fc" id="L1027">        x = Math.max(0, Math.min(size - 1, x));</span>
+<span class="fc" id="L1028">        y = Math.max(0, Math.min(size - 1, y));</span>
+<span class="fc" id="L1029">        return xy2d(order, x, y);</span>
+    }
+
+    public static long xy2d(int n, long x, long y) {
+<span class="fc" id="L1033">        long d = 0;</span>
+<span class="fc bfc" id="L1034" title="All 2 branches covered.">        for (long s = 1L &lt;&lt; (n - 1); s &gt; 0; s &gt;&gt;= 1) {</span>
+<span class="fc bfc" id="L1035" title="All 2 branches covered.">            int rx = (x &amp; s) &gt; 0 ? 1 : 0;</span>
+<span class="fc bfc" id="L1036" title="All 2 branches covered.">            int ry = (y &amp; s) &gt; 0 ? 1 : 0;</span>
+<span class="fc" id="L1037">            d += s * s * ((3 * rx) ^ ry);</span>
+            // rotate
+<span class="fc bfc" id="L1039" title="All 2 branches covered.">            if (ry == 0) {</span>
+<span class="fc bfc" id="L1040" title="All 2 branches covered.">                if (rx == 1) {</span>
+<span class="fc" id="L1041">                    x = s - 1 - x;</span>
+<span class="fc" id="L1042">                    y = s - 1 - y;</span>
+                }
+<span class="fc" id="L1044">                long tmp = x;</span>
+<span class="fc" id="L1045">                x = y;</span>
+<span class="fc" id="L1046">                y = tmp;</span>
+            }
+        }
+<span class="fc" id="L1049">        return d;</span>
+    }
+
+    private void calculateUrbanDensity() {
+<span class="pc bpc" id="L1053" title="1 of 2 branches missed.">        if (encodingManager.hasEncodedValue(UrbanDensity.KEY)) {</span>
+<span class="nc" id="L1054">            EnumEncodedValue&lt;UrbanDensity&gt; urbanDensityEnc = encodingManager.getEnumEncodedValue(UrbanDensity.KEY, UrbanDensity.class);</span>
+<span class="nc bnc" id="L1055" title="All 2 branches missed.">            if (!encodingManager.hasEncodedValue(RoadClass.KEY))</span>
+<span class="nc" id="L1056">                throw new IllegalArgumentException(&quot;Urban density calculation requires &quot; + RoadClass.KEY);</span>
+<span class="nc bnc" id="L1057" title="All 2 branches missed.">            if (!encodingManager.hasEncodedValue(RoadClassLink.KEY))</span>
+<span class="nc" id="L1058">                throw new IllegalArgumentException(&quot;Urban density calculation requires &quot; + RoadClassLink.KEY);</span>
+<span class="nc" id="L1059">            EnumEncodedValue&lt;RoadClass&gt; roadClassEnc = encodingManager.getEnumEncodedValue(RoadClass.KEY, RoadClass.class);</span>
+<span class="nc" id="L1060">            BooleanEncodedValue roadClassLinkEnc = encodingManager.getBooleanEncodedValue(RoadClassLink.KEY);</span>
+<span class="nc" id="L1061">            UrbanDensityCalculator.calcUrbanDensity(baseGraph, urbanDensityEnc, roadClassEnc,</span>
+                    roadClassLinkEnc, residentialAreaRadius, residentialAreaSensitivity, cityAreaRadius, cityAreaSensitivity, urbanDensityCalculationThreads);
+        }
+<span class="fc" id="L1064">    }</span>
+
+    private void writeEncodingManagerToProperties() {
+<span class="fc" id="L1067">        EncodingManager.putEncodingManagerIntoProperties(encodingManager, properties);</span>
+<span class="fc" id="L1068">    }</span>
+
+    private List&lt;CustomArea&gt; readCustomAreas() {
+<span class="nc" id="L1071">        ObjectMapper objectMapper = new ObjectMapper();</span>
+<span class="nc" id="L1072">        objectMapper.registerModule(new JtsModule());</span>
+<span class="nc" id="L1073">        final Path bordersDirectory = Paths.get(customAreasDirectory);</span>
+<span class="nc" id="L1074">        List&lt;JsonFeatureCollection&gt; jsonFeatureCollections = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L1075">        try (DirectoryStream&lt;Path&gt; stream = Files.newDirectoryStream(bordersDirectory, &quot;*.{geojson,json}&quot;)) {</span>
+<span class="nc bnc" id="L1076" title="All 2 branches missed.">            for (Path borderFile : stream) {</span>
+<span class="nc" id="L1077">                try (BufferedReader reader = Files.newBufferedReader(borderFile, StandardCharsets.UTF_8)) {</span>
+<span class="nc" id="L1078">                    JsonFeatureCollection jsonFeatureCollection = objectMapper.readValue(reader, JsonFeatureCollection.class);</span>
+<span class="nc" id="L1079">                    jsonFeatureCollections.add(jsonFeatureCollection);</span>
+                }
+<span class="nc" id="L1081">            }</span>
+<span class="nc" id="L1082">        } catch (IOException e) {</span>
+<span class="nc" id="L1083">            throw new UncheckedIOException(e);</span>
+<span class="nc" id="L1084">        }</span>
+<span class="nc" id="L1085">        return jsonFeatureCollections.stream().flatMap(j -&gt; j.getFeatures().stream())</span>
+<span class="nc" id="L1086">                .map(CustomArea::fromJsonFeature)</span>
+<span class="nc" id="L1087">                .collect(Collectors.toList());</span>
+    }
+
+    /**
+     * Currently we use this for a few tests where the dataReaderFile is loaded from the classpath
+     */
+    protected File _getOSMFile() {
+<span class="fc" id="L1094">        return new File(osmFile);</span>
+    }
+
+    /**
+     * Load from existing graph folder.
+     */
+    public boolean load() {
+<span class="fc bfc" id="L1101" title="All 2 branches covered.">        if (isEmpty(ghLocation))</span>
+<span class="fc" id="L1102">            throw new IllegalStateException(&quot;GraphHopperLocation is not specified. Call setGraphHopperLocation or init before&quot;);</span>
+
+<span class="pc bpc" id="L1104" title="1 of 2 branches missed.">        if (fullyLoaded)</span>
+<span class="nc" id="L1105">            throw new IllegalStateException(&quot;graph is already successfully loaded&quot;);</span>
+
+<span class="fc" id="L1107">        File tmpFileOrFolder = new File(ghLocation);</span>
+<span class="pc bpc" id="L1108" title="1 of 4 branches missed.">        if (!tmpFileOrFolder.isDirectory() &amp;&amp; tmpFileOrFolder.exists()) {</span>
+<span class="nc" id="L1109">            throw new IllegalArgumentException(&quot;GraphHopperLocation cannot be an existing file. Has to be either non-existing or a folder.&quot;);</span>
+        } else {
+<span class="fc" id="L1111">            File compressed = new File(ghLocation + &quot;.ghz&quot;);</span>
+<span class="pc bpc" id="L1112" title="3 of 4 branches missed.">            if (compressed.exists() &amp;&amp; !compressed.isDirectory()) {</span>
+                try {
+<span class="nc" id="L1114">                    new Unzipper().unzip(compressed.getAbsolutePath(), ghLocation, removeZipped);</span>
+<span class="nc" id="L1115">                } catch (IOException ex) {</span>
+<span class="nc" id="L1116">                    throw new RuntimeException(&quot;Couldn't extract file &quot; + compressed.getAbsolutePath()</span>
+                            + &quot; to &quot; + ghLocation, ex);
+<span class="nc" id="L1118">                }</span>
+            }
+        }
+
+        // todo: this does not really belong here, we abuse the load method to derive the dataAccessDefaultType setting from others
+<span class="pc bpc" id="L1123" title="1 of 4 branches missed.">        if (!allowWrites &amp;&amp; dataAccessDefaultType.isMMap())</span>
+<span class="nc" id="L1124">            dataAccessDefaultType = DAType.MMAP_RO;</span>
+
+<span class="fc bfc" id="L1126" title="All 2 branches covered.">        if (!new File(ghLocation).exists())</span>
+            // there is just nothing to load
+<span class="fc" id="L1128">            return false;</span>
+
+<span class="fc" id="L1130">        GHDirectory directory = new GHDirectory(ghLocation, dataAccessDefaultType);</span>
+<span class="fc" id="L1131">        directory.configure(dataAccessConfig);</span>
+<span class="fc" id="L1132">        GHLock lock = null;</span>
+        try {
+            // create locks only if writes are allowed, if they are not allowed a lock cannot be created
+            // (e.g. on a read only filesystem locks would fail)
+<span class="fc bfc" id="L1136" title="All 4 branches covered.">            if (directory.getDefaultType().isStoring() &amp;&amp; isAllowWrites()) {</span>
+<span class="fc" id="L1137">                lockFactory.setLockDir(new File(ghLocation));</span>
+<span class="fc" id="L1138">                lock = lockFactory.create(fileLockName, false);</span>
+<span class="fc bfc" id="L1139" title="All 2 branches covered.">                if (!lock.tryLock())</span>
+<span class="fc" id="L1140">                    throw new RuntimeException(&quot;To avoid reading partial data we need to obtain the read lock but it failed. In &quot; + ghLocation, lock.getObtainFailedReason());</span>
+            }
+<span class="fc" id="L1142">            properties = new StorableProperties(directory);</span>
+<span class="fc bfc" id="L1143" title="All 2 branches covered.">            if (!properties.loadExisting())</span>
+                // the -gh folder exists, but there is no properties file. it might be just empty, so let's act as if
+                // the import did not run yet or is not complete for some reason
+<span class="fc" id="L1146">                return false;</span>
+<span class="fc" id="L1147">            encodingManager = EncodingManager.fromProperties(properties);</span>
+<span class="fc" id="L1148">            baseGraph = new BaseGraph.Builder(encodingManager)</span>
+<span class="fc" id="L1149">                    .setDir(directory)</span>
+<span class="fc" id="L1150">                    .set3D(hasElevation())</span>
+<span class="fc" id="L1151">                    .withTurnCosts(encodingManager.needsTurnCostsSupport())</span>
+<span class="fc" id="L1152">                    .setSegmentSize(defaultSegmentSize)</span>
+<span class="fc" id="L1153">                    .build();</span>
+<span class="fc" id="L1154">            checkProfilesConsistency();</span>
+<span class="fc" id="L1155">            baseGraph.loadExisting();</span>
+<span class="fc" id="L1156">            String storedProfiles = properties.get(&quot;profiles&quot;);</span>
+<span class="fc" id="L1157">            String configuredProfiles = getProfilesString();</span>
+<span class="fc bfc" id="L1158" title="All 2 branches covered.">            if (!storedProfiles.equals(configuredProfiles))</span>
+<span class="fc" id="L1159">                throw new IllegalStateException(&quot;Profiles do not match:&quot;</span>
+                        + &quot;\nGraphhopper config: &quot; + configuredProfiles
+                        + &quot;\nGraph: &quot; + storedProfiles
+<span class="fc" id="L1162">                        + &quot;\nChange configuration to match the graph or delete &quot; + baseGraph.getDirectory().getLocation());</span>
+
+<span class="fc" id="L1164">            postProcessing(false);</span>
+<span class="fc" id="L1165">            directory.loadMMap();</span>
+<span class="fc" id="L1166">            setFullyLoaded();</span>
+<span class="fc" id="L1167">            return true;</span>
+        } finally {
+<span class="fc bfc" id="L1169" title="All 2 branches covered.">            if (lock != null)</span>
+<span class="fc" id="L1170">                lock.release();</span>
+        }
+    }
+
+    protected int getProfileHash(Profile profile) {
+<span class="fc" id="L1175">        return profile.getVersion();</span>
+    }
+
+    private String getProfilesString() {
+<span class="fc" id="L1179">        return profilesByName.values().stream().map(p -&gt; p.getName() + &quot;|&quot; + getProfileHash(p)).collect(Collectors.joining(&quot;,&quot;));</span>
+    }
+
+    public void checkProfilesConsistency() {
+<span class="fc bfc" id="L1183" title="All 2 branches covered.">        if (profilesByName.isEmpty())</span>
+<span class="fc" id="L1184">            throw new IllegalArgumentException(&quot;There has to be at least one profile&quot;);</span>
+<span class="fc bfc" id="L1185" title="All 2 branches covered.">        for (Profile profile : profilesByName.values()) {</span>
+            try {
+<span class="fc" id="L1187">                createWeighting(profile, new PMap());</span>
+<span class="fc" id="L1188">            } catch (IllegalArgumentException e) {</span>
+<span class="fc" id="L1189">                throw new IllegalArgumentException(&quot;Could not create weighting for profile: '&quot; + profile.getName() + &quot;'.\n&quot; +</span>
+                        &quot;Profile: &quot; + profile + &quot;\n&quot; +
+<span class="fc" id="L1191">                        &quot;Error: &quot; + e.getMessage());</span>
+<span class="fc" id="L1192">            }</span>
+
+<span class="pc bpc" id="L1194" title="2 of 4 branches missed.">            if (CustomWeighting.NAME.equals(profile.getWeighting()) &amp;&amp; profile.getCustomModel() == null)</span>
+<span class="nc" id="L1195">                throw new IllegalArgumentException(&quot;custom model for profile '&quot; + profile.getName() + &quot;' was empty&quot;);</span>
+<span class="pc bpc" id="L1196" title="3 of 4 branches missed.">            if (!CustomWeighting.NAME.equals(profile.getWeighting()) &amp;&amp; profile.getCustomModel() != null)</span>
+<span class="nc" id="L1197">                throw new IllegalArgumentException(&quot;profile '&quot; + profile.getName() + &quot;' has a custom model but &quot; +</span>
+<span class="nc" id="L1198">                        &quot;weighting=&quot; + profile.getWeighting() + &quot; was defined&quot;);</span>
+<span class="fc" id="L1199">        }</span>
+
+<span class="fc" id="L1201">        Set&lt;String&gt; chProfileSet = new LinkedHashSet&lt;&gt;(chPreparationHandler.getCHProfiles().size());</span>
+<span class="fc bfc" id="L1202" title="All 2 branches covered.">        for (CHProfile chProfile : chPreparationHandler.getCHProfiles()) {</span>
+<span class="fc" id="L1203">            boolean added = chProfileSet.add(chProfile.getProfile());</span>
+<span class="fc bfc" id="L1204" title="All 2 branches covered.">            if (!added) {</span>
+<span class="fc" id="L1205">                throw new IllegalArgumentException(&quot;Duplicate CH reference to profile '&quot; + chProfile.getProfile() + &quot;'&quot;);</span>
+            }
+<span class="fc bfc" id="L1207" title="All 2 branches covered.">            if (!profilesByName.containsKey(chProfile.getProfile())) {</span>
+<span class="fc" id="L1208">                throw new IllegalArgumentException(&quot;CH profile references unknown profile '&quot; + chProfile.getProfile() + &quot;'&quot;);</span>
+            }
+<span class="fc" id="L1210">        }</span>
+<span class="fc" id="L1211">        Map&lt;String, LMProfile&gt; lmProfileMap = new LinkedHashMap&lt;&gt;(lmPreparationHandler.getLMProfiles().size());</span>
+<span class="fc bfc" id="L1212" title="All 2 branches covered.">        for (LMProfile lmProfile : lmPreparationHandler.getLMProfiles()) {</span>
+<span class="fc" id="L1213">            LMProfile previous = lmProfileMap.put(lmProfile.getProfile(), lmProfile);</span>
+<span class="fc bfc" id="L1214" title="All 2 branches covered.">            if (previous != null) {</span>
+<span class="fc" id="L1215">                throw new IllegalArgumentException(&quot;Multiple LM profiles are using the same profile '&quot; + lmProfile.getProfile() + &quot;'&quot;);</span>
+            }
+<span class="fc bfc" id="L1217" title="All 2 branches covered.">            if (!profilesByName.containsKey(lmProfile.getProfile())) {</span>
+<span class="fc" id="L1218">                throw new IllegalArgumentException(&quot;LM profile references unknown profile '&quot; + lmProfile.getProfile() + &quot;'&quot;);</span>
+            }
+<span class="fc bfc" id="L1220" title="All 4 branches covered.">            if (lmProfile.usesOtherPreparation() &amp;&amp; !profilesByName.containsKey(lmProfile.getPreparationProfile())) {</span>
+<span class="fc" id="L1221">                throw new IllegalArgumentException(&quot;LM profile references unknown preparation profile '&quot; + lmProfile.getPreparationProfile() + &quot;'&quot;);</span>
+            }
+<span class="fc" id="L1223">        }</span>
+<span class="fc bfc" id="L1224" title="All 2 branches covered.">        for (LMProfile lmProfile : lmPreparationHandler.getLMProfiles()) {</span>
+<span class="fc bfc" id="L1225" title="All 4 branches covered.">            if (lmProfile.usesOtherPreparation() &amp;&amp; !lmProfileMap.containsKey(lmProfile.getPreparationProfile())) {</span>
+<span class="fc" id="L1226">                throw new IllegalArgumentException(&quot;Unknown LM preparation profile '&quot; + lmProfile.getPreparationProfile() + &quot;' in LM profile '&quot; + lmProfile.getProfile() + &quot;' cannot be used as preparation_profile&quot;);</span>
+            }
+<span class="fc bfc" id="L1228" title="All 4 branches covered.">            if (lmProfile.usesOtherPreparation() &amp;&amp; lmProfileMap.get(lmProfile.getPreparationProfile()).usesOtherPreparation()) {</span>
+<span class="fc" id="L1229">                throw new IllegalArgumentException(&quot;Cannot use '&quot; + lmProfile.getPreparationProfile() + &quot;' as preparation_profile for LM profile '&quot; + lmProfile.getProfile() + &quot;', because it uses another profile for preparation itself.&quot;);</span>
+            }
+<span class="fc" id="L1231">        }</span>
+<span class="fc" id="L1232">    }</span>
+
+    public final CHPreparationHandler getCHPreparationHandler() {
+<span class="fc" id="L1235">        return chPreparationHandler;</span>
+    }
+
+    private List&lt;CHConfig&gt; createCHConfigs(List&lt;CHProfile&gt; chProfiles) {
+<span class="fc" id="L1239">        List&lt;CHConfig&gt; chConfigs = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L1240" title="All 2 branches covered.">        for (CHProfile chProfile : chProfiles) {</span>
+<span class="fc" id="L1241">            Profile profile = profilesByName.get(chProfile.getProfile());</span>
+<span class="fc bfc" id="L1242" title="All 2 branches covered.">            if (profile.hasTurnCosts()) {</span>
+<span class="fc" id="L1243">                chConfigs.add(CHConfig.edgeBased(profile.getName(), createWeighting(profile, new PMap())));</span>
+            } else {
+<span class="fc" id="L1245">                chConfigs.add(CHConfig.nodeBased(profile.getName(), createWeighting(profile, new PMap())));</span>
+            }
+<span class="fc" id="L1247">        }</span>
+<span class="fc" id="L1248">        return chConfigs;</span>
+    }
+
+    public final LMPreparationHandler getLMPreparationHandler() {
+<span class="fc" id="L1252">        return lmPreparationHandler;</span>
+    }
+
+    private List&lt;LMConfig&gt; createLMConfigs(List&lt;LMProfile&gt; lmProfiles) {
+<span class="fc" id="L1256">        List&lt;LMConfig&gt; lmConfigs = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L1257" title="All 2 branches covered.">        for (LMProfile lmProfile : lmProfiles) {</span>
+<span class="fc bfc" id="L1258" title="All 2 branches covered.">            if (lmProfile.usesOtherPreparation())</span>
+<span class="fc" id="L1259">                continue;</span>
+<span class="fc" id="L1260">            Profile profile = profilesByName.get(lmProfile.getProfile());</span>
+            // Note that we have to make sure the weighting used for LM preparation does not include turn costs, because
+            // the LM preparation is running node-based and the landmark weights will be wrong if there are non-zero
+            // turn costs, see discussion in #1960
+            // Running the preparation without turn costs is also useful to allow e.g. changing the u_turn_costs per
+            // request (we have to use the minimum weight settings (= no turn costs) for the preparation)
+<span class="fc" id="L1266">            Weighting weighting = createWeighting(profile, new PMap(), true);</span>
+<span class="fc" id="L1267">            lmConfigs.add(new LMConfig(profile.getName(), weighting));</span>
+<span class="fc" id="L1268">        }</span>
+<span class="fc" id="L1269">        return lmConfigs;</span>
+    }
+
+    /**
+     * Runs both after the import and when loading an existing Graph
+     *
+     * @param closeEarly release resources as early as possible
+     */
+    protected void postProcessing(boolean closeEarly) {
+<span class="fc" id="L1278">        calcChecksums();</span>
+<span class="fc" id="L1279">        initLocationIndex();</span>
+<span class="fc" id="L1280">        importPublicTransit();</span>
+
+<span class="fc bfc" id="L1282" title="All 2 branches covered.">        if (closeEarly) {</span>
+<span class="fc" id="L1283">            boolean includesCustomProfiles = profilesByName.values().stream().anyMatch(p -&gt; CustomWeighting.NAME.equals(p.getWeighting()));</span>
+<span class="pc bpc" id="L1284" title="1 of 2 branches missed.">            if (!includesCustomProfiles)</span>
+                // when there are custom profiles we must not close way geometry or KVStorage, because
+                // they might be needed to evaluate the custom weightings for the following preparations
+<span class="nc" id="L1287">                baseGraph.flushAndCloseGeometryAndNameStorage();</span>
+        }
+
+<span class="fc bfc" id="L1290" title="All 2 branches covered.">        if (lmPreparationHandler.isEnabled())</span>
+<span class="fc" id="L1291">            loadOrPrepareLM(closeEarly);</span>
+
+<span class="fc bfc" id="L1293" title="All 2 branches covered.">        if (closeEarly)</span>
+            // we needed the location index for the LM preparation, but we don't need it for CH
+<span class="fc" id="L1295">            locationIndex.close();</span>
+
+<span class="fc bfc" id="L1297" title="All 2 branches covered.">        if (chPreparationHandler.isEnabled())</span>
+<span class="fc" id="L1298">            loadOrPrepareCH(closeEarly);</span>
+<span class="fc" id="L1299">    }</span>
+
+    protected void importPublicTransit() {
+<span class="fc" id="L1302">    }</span>
+
+    void interpolateBridgesTunnelsAndFerries() {
+<span class="pc bpc" id="L1305" title="1 of 2 branches missed.">        if (encodingManager.hasEncodedValue(RoadEnvironment.KEY)) {</span>
+<span class="fc" id="L1306">            EnumEncodedValue&lt;RoadEnvironment&gt; roadEnvEnc = encodingManager.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class);</span>
+<span class="fc" id="L1307">            StopWatch sw = new StopWatch().start();</span>
+<span class="fc" id="L1308">            new EdgeElevationInterpolator(baseGraph.getBaseGraph(), roadEnvEnc, RoadEnvironment.TUNNEL).execute();</span>
+<span class="fc" id="L1309">            float tunnel = sw.stop().getSeconds();</span>
+<span class="fc" id="L1310">            sw = new StopWatch().start();</span>
+<span class="fc" id="L1311">            new EdgeElevationInterpolator(baseGraph.getBaseGraph(), roadEnvEnc, RoadEnvironment.BRIDGE).execute();</span>
+<span class="fc" id="L1312">            float bridge = sw.stop().getSeconds();</span>
+            // The SkadiProvider contains bathymetric data. For ferries this can result in bigger elevation changes
+            // See #2098 for mor information
+<span class="fc" id="L1315">            sw = new StopWatch().start();</span>
+<span class="fc" id="L1316">            new EdgeElevationInterpolator(baseGraph.getBaseGraph(), roadEnvEnc, RoadEnvironment.FERRY).execute();</span>
+<span class="fc" id="L1317">            logger.info(&quot;Bridge interpolation &quot; + (int) bridge + &quot;s, &quot; + &quot;tunnel interpolation &quot; + (int) tunnel + &quot;s, ferry interpolation &quot; + (int) sw.stop().getSeconds() + &quot;s&quot;);</span>
+        }
+<span class="fc" id="L1319">    }</span>
+
+    public final Weighting createWeighting(Profile profile, PMap hints) {
+<span class="fc" id="L1322">        return createWeighting(profile, hints, false);</span>
+    }
+
+    public final Weighting createWeighting(Profile profile, PMap hints, boolean disableTurnCosts) {
+<span class="fc" id="L1326">        return createWeightingFactory().createWeighting(profile, hints, disableTurnCosts);</span>
+    }
+
+    protected WeightingFactory createWeightingFactory() {
+<span class="fc" id="L1330">        return new DefaultWeightingFactory(baseGraph.getBaseGraph(), getEncodingManager());</span>
+    }
+
+    public GHResponse route(GHRequest request) {
+<span class="fc" id="L1334">        return createRouter().route(request);</span>
+    }
+
+    private Router createRouter() {
+<span class="pc bpc" id="L1338" title="1 of 4 branches missed.">        if (baseGraph == null || !fullyLoaded)</span>
+<span class="fc" id="L1339">            throw new IllegalStateException(&quot;Do a successful call to load or importOrLoad before routing&quot;);</span>
+<span class="fc bfc" id="L1340" title="All 2 branches covered.">        if (baseGraph.isClosed())</span>
+<span class="fc" id="L1341">            throw new IllegalStateException(&quot;You need to create a new GraphHopper instance as it is already closed&quot;);</span>
+<span class="pc bpc" id="L1342" title="1 of 2 branches missed.">        if (locationIndex == null)</span>
+<span class="nc" id="L1343">            throw new IllegalStateException(&quot;Location index not initialized&quot;);</span>
+
+<span class="fc" id="L1345">        return doCreateRouter(baseGraph, encodingManager, locationIndex, profilesByName, pathBuilderFactory,</span>
+<span class="fc" id="L1346">                trMap, routerConfig, createWeightingFactory(), chGraphs, landmarks);</span>
+    }
+
+    protected Router doCreateRouter(BaseGraph baseGraph, EncodingManager encodingManager, LocationIndex locationIndex, Map&lt;String, Profile&gt; profilesByName,
+                                    PathDetailsBuilderFactory pathBuilderFactory, TranslationMap trMap, RouterConfig routerConfig,
+                                    WeightingFactory weightingFactory, Map&lt;String, RoutingCHGraph&gt; chGraphs, Map&lt;String, LandmarkStorage&gt; landmarks) {
+<span class="fc" id="L1352">        return new Router(baseGraph, encodingManager, locationIndex, profilesByName, pathBuilderFactory,</span>
+                trMap, routerConfig, weightingFactory, chGraphs, landmarks
+        );
+    }
+
+    protected LocationIndex createLocationIndex(Directory dir) {
+<span class="fc" id="L1358">        LocationIndexTree tmpIndex = new LocationIndexTree(baseGraph, dir);</span>
+<span class="fc" id="L1359">        tmpIndex.setResolution(preciseIndexResolution);</span>
+<span class="fc" id="L1360">        tmpIndex.setMaxRegionSearch(maxRegionSearch);</span>
+<span class="fc bfc" id="L1361" title="All 2 branches covered.">        if (!tmpIndex.loadExisting()) {</span>
+<span class="fc" id="L1362">            ensureWriteAccess();</span>
+<span class="fc" id="L1363">            tmpIndex.prepareIndex();</span>
+        }
+
+<span class="fc" id="L1366">        return tmpIndex;</span>
+    }
+
+    private void calcChecksums() {
+<span class="pc bpc" id="L1370" title="1 of 2 branches missed.">        if (!calcChecksums) return;</span>
+<span class="nc" id="L1371">        logger.info(&quot;Calculating checksums for {} profiles&quot;, profilesByName.size());</span>
+<span class="nc" id="L1372">        StopWatch sw = StopWatch.started();</span>
+<span class="nc" id="L1373">        double[] checksums_fwd = new double[profilesByName.size()];</span>
+<span class="nc" id="L1374">        double[] checksums_bwd = new double[profilesByName.size()];</span>
+<span class="nc" id="L1375">        List&lt;Weighting&gt; weightings = profilesByName.values().stream().map(profile -&gt; createWeighting(profile, new PMap())).toList();</span>
+<span class="nc" id="L1376">        AllEdgesIterator edge = baseGraph.getAllEdges();</span>
+<span class="nc bnc" id="L1377" title="All 2 branches missed.">        while (edge.next()) {</span>
+<span class="nc bnc" id="L1378" title="All 2 branches missed.">            for (int i = 0; i &lt; profilesByName.size(); i++) {</span>
+<span class="nc" id="L1379">                double weightFwd = weightings.get(i).calcEdgeWeight(edge, false);</span>
+<span class="nc bnc" id="L1380" title="All 2 branches missed.">                if (Double.isInfinite(weightFwd)) weightFwd = -1;</span>
+<span class="nc bnc" id="L1381" title="All 2 branches missed.">                weightFwd *= (i % 2 == 0) ? -1 : 1;</span>
+<span class="nc" id="L1382">                double weightBwd = weightings.get(i).calcEdgeWeight(edge, true);</span>
+<span class="nc bnc" id="L1383" title="All 2 branches missed.">                if (Double.isInfinite(weightBwd)) weightBwd = -1;</span>
+<span class="nc bnc" id="L1384" title="All 2 branches missed.">                weightBwd *= (i % 2 == 0) ? -1 : 1;</span>
+<span class="nc" id="L1385">                checksums_fwd[i] += weightFwd;</span>
+<span class="nc" id="L1386">                checksums_bwd[i] += weightBwd;</span>
+            }
+        }
+<span class="nc" id="L1389">        int index = 0;</span>
+<span class="nc bnc" id="L1390" title="All 2 branches missed.">        for (Profile profile : profilesByName.values()) {</span>
+<span class="nc" id="L1391">            properties.put(&quot;checksum.fwd.&quot; + profile.getName(), checksums_fwd[index]);</span>
+<span class="nc" id="L1392">            properties.put(&quot;checksum.bwd.&quot; + profile.getName(), checksums_bwd[index]);</span>
+<span class="nc" id="L1393">            logger.info(&quot;checksum.fwd.&quot; + profile.getName() + &quot;: &quot; + checksums_fwd[index]);</span>
+<span class="nc" id="L1394">            logger.info(&quot;checksum.bwd.&quot; + profile.getName() + &quot;: &quot; + checksums_bwd[index]);</span>
+<span class="nc" id="L1395">            index++;</span>
+<span class="nc" id="L1396">        }</span>
+<span class="nc" id="L1397">        logger.info(&quot;Calculating checksums took: &quot; + sw.stop().getTimeString());</span>
+<span class="nc" id="L1398">    }</span>
+
+    /**
+     * Initializes the location index after the import is done.
+     */
+    protected void initLocationIndex() {
+<span class="pc bpc" id="L1404" title="1 of 2 branches missed.">        if (locationIndex != null)</span>
+<span class="nc" id="L1405">            throw new IllegalStateException(&quot;Cannot initialize locationIndex twice!&quot;);</span>
+
+<span class="fc" id="L1407">        locationIndex = createLocationIndex(baseGraph.getDirectory());</span>
+<span class="fc" id="L1408">    }</span>
+
+    private String getCHProfileVersion(String profile) {
+<span class="fc" id="L1411">        return properties.get(&quot;graph.profiles.ch.&quot; + profile + &quot;.version&quot;);</span>
+    }
+
+    private void setCHProfileVersion(String profile, int version) {
+<span class="fc" id="L1415">        properties.put(&quot;graph.profiles.ch.&quot; + profile + &quot;.version&quot;, version);</span>
+<span class="fc" id="L1416">    }</span>
+
+    private String getLMProfileVersion(String profile) {
+<span class="fc" id="L1419">        return properties.get(&quot;graph.profiles.lm.&quot; + profile + &quot;.version&quot;);</span>
+    }
+
+    private void setLMProfileVersion(String profile, int version) {
+<span class="fc" id="L1423">        properties.put(&quot;graph.profiles.lm.&quot; + profile + &quot;.version&quot;, version);</span>
+<span class="fc" id="L1424">    }</span>
+
+    protected void loadOrPrepareCH(boolean closeEarly) {
+<span class="fc bfc" id="L1427" title="All 2 branches covered.">        for (CHProfile profile : chPreparationHandler.getCHProfiles())</span>
+<span class="fc bfc" id="L1428" title="All 2 branches covered.">            if (!getCHProfileVersion(profile.getProfile()).isEmpty()</span>
+<span class="fc bfc" id="L1429" title="All 2 branches covered.">                    &amp;&amp; !getCHProfileVersion(profile.getProfile()).equals(&quot;&quot; + getProfileHash(profilesByName.get(profile.getProfile()))))</span>
+<span class="fc" id="L1430">                throw new IllegalArgumentException(&quot;CH preparation of &quot; + profile.getProfile() + &quot; already exists in storage and doesn't match configuration&quot;);</span>
+
+        // we load ch graphs that already exist and prepare the other ones
+<span class="fc" id="L1433">        List&lt;CHConfig&gt; chConfigs = createCHConfigs(chPreparationHandler.getCHProfiles());</span>
+<span class="fc" id="L1434">        Map&lt;String, RoutingCHGraph&gt; loaded = chPreparationHandler.load(baseGraph.getBaseGraph(), chConfigs);</span>
+<span class="fc bfc" id="L1435" title="All 2 branches covered.">        List&lt;CHConfig&gt; configsToPrepare = chConfigs.stream().filter(c -&gt; !loaded.containsKey(c.getName())).collect(Collectors.toList());</span>
+<span class="fc" id="L1436">        Map&lt;String, PrepareContractionHierarchies.Result&gt; prepared = prepareCH(closeEarly, configsToPrepare);</span>
+
+        // we map all profile names for which there is CH support to the according CH graphs
+<span class="fc" id="L1439">        chGraphs = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L1440" title="All 2 branches covered.">        for (CHProfile profile : chPreparationHandler.getCHProfiles()) {</span>
+<span class="pc bpc" id="L1441" title="1 of 4 branches missed.">            if (loaded.containsKey(profile.getProfile()) &amp;&amp; prepared.containsKey(profile.getProfile()))</span>
+<span class="nc" id="L1442">                throw new IllegalStateException(&quot;CH graph should be either loaded or prepared, but not both: &quot; + profile.getProfile());</span>
+<span class="fc bfc" id="L1443" title="All 2 branches covered.">            else if (prepared.containsKey(profile.getProfile())) {</span>
+<span class="fc" id="L1444">                setCHProfileVersion(profile.getProfile(), getProfileHash(profilesByName.get(profile.getProfile())));</span>
+<span class="fc" id="L1445">                PrepareContractionHierarchies.Result res = prepared.get(profile.getProfile());</span>
+<span class="fc" id="L1446">                chGraphs.put(profile.getProfile(), RoutingCHGraphImpl.fromGraph(baseGraph.getBaseGraph(), res.getCHStorage(), res.getCHConfig()));</span>
+<span class="pc bpc" id="L1447" title="1 of 2 branches missed.">            } else if (loaded.containsKey(profile.getProfile())) {</span>
+<span class="fc" id="L1448">                chGraphs.put(profile.getProfile(), loaded.get(profile.getProfile()));</span>
+            } else
+<span class="nc" id="L1450">                throw new IllegalStateException(&quot;CH graph should be either loaded or prepared: &quot; + profile.getProfile());</span>
+<span class="fc" id="L1451">        }</span>
+<span class="fc" id="L1452">    }</span>
+
+    protected Map&lt;String, PrepareContractionHierarchies.Result&gt; prepareCH(boolean closeEarly, List&lt;CHConfig&gt; configsToPrepare) {
+<span class="fc bfc" id="L1455" title="All 2 branches covered.">        if (!configsToPrepare.isEmpty())</span>
+<span class="fc" id="L1456">            ensureWriteAccess();</span>
+<span class="fc bfc" id="L1457" title="All 2 branches covered.">        if (!baseGraph.isFrozen())</span>
+<span class="fc" id="L1458">            baseGraph.freeze();</span>
+<span class="fc" id="L1459">        return chPreparationHandler.prepare(baseGraph, properties, configsToPrepare, closeEarly);</span>
+    }
+
+    /**
+     * For landmarks it is required to always call this method: either it creates the landmark data or it loads it.
+     */
+    protected void loadOrPrepareLM(boolean closeEarly) {
+<span class="fc bfc" id="L1466" title="All 2 branches covered.">        for (LMProfile profile : lmPreparationHandler.getLMProfiles())</span>
+<span class="fc bfc" id="L1467" title="All 2 branches covered.">            if (!getLMProfileVersion(profile.getProfile()).isEmpty()</span>
+<span class="fc bfc" id="L1468" title="All 2 branches covered.">                    &amp;&amp; !getLMProfileVersion(profile.getProfile()).equals(&quot;&quot; + getProfileHash(profilesByName.get(profile.getProfile()))))</span>
+<span class="fc" id="L1469">                throw new IllegalArgumentException(&quot;LM preparation of &quot; + profile.getProfile() + &quot; already exists in storage and doesn't match configuration&quot;);</span>
+
+        // we load landmark storages that already exist and prepare the other ones
+<span class="fc" id="L1472">        List&lt;LMConfig&gt; lmConfigs = createLMConfigs(lmPreparationHandler.getLMProfiles());</span>
+<span class="fc" id="L1473">        List&lt;LandmarkStorage&gt; loaded = lmPreparationHandler.load(lmConfigs, baseGraph, encodingManager);</span>
+<span class="fc" id="L1474">        List&lt;LMConfig&gt; loadedConfigs = loaded.stream().map(LandmarkStorage::getLMConfig).toList();</span>
+<span class="fc bfc" id="L1475" title="All 2 branches covered.">        List&lt;LMConfig&gt; configsToPrepare = lmConfigs.stream().filter(c -&gt; !loadedConfigs.contains(c)).collect(Collectors.toList());</span>
+<span class="fc" id="L1476">        List&lt;PrepareLandmarks&gt; prepared = prepareLM(closeEarly, configsToPrepare);</span>
+
+        // we map all profile names for which there is LM support to the according LM storages
+<span class="fc" id="L1479">        landmarks = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L1480" title="All 2 branches covered.">        for (LMProfile lmp : lmPreparationHandler.getLMProfiles()) {</span>
+            // cross-querying
+<span class="fc bfc" id="L1482" title="All 2 branches covered.">            String prepProfile = lmp.usesOtherPreparation() ? lmp.getPreparationProfile() : lmp.getProfile();</span>
+<span class="fc" id="L1483">            Optional&lt;LandmarkStorage&gt; loadedLMS = loaded.stream().filter(lms -&gt; lms.getLMConfig().getName().equals(prepProfile)).findFirst();</span>
+<span class="fc" id="L1484">            Optional&lt;PrepareLandmarks&gt; preparedLMS = prepared.stream().filter(pl -&gt; pl.getLandmarkStorage().getLMConfig().getName().equals(prepProfile)).findFirst();</span>
+<span class="pc bpc" id="L1485" title="1 of 4 branches missed.">            if (loadedLMS.isPresent() &amp;&amp; preparedLMS.isPresent())</span>
+<span class="nc" id="L1486">                throw new IllegalStateException(&quot;LM should be either loaded or prepared, but not both: &quot; + prepProfile);</span>
+<span class="fc bfc" id="L1487" title="All 2 branches covered.">            else if (preparedLMS.isPresent()) {</span>
+<span class="fc" id="L1488">                setLMProfileVersion(lmp.getProfile(), getProfileHash(profilesByName.get(lmp.getProfile())));</span>
+<span class="fc" id="L1489">                landmarks.put(lmp.getProfile(), preparedLMS.get().getLandmarkStorage());</span>
+            } else
+<span class="fc" id="L1491">                loadedLMS.ifPresent(landmarkStorage -&gt; landmarks.put(lmp.getProfile(), landmarkStorage));</span>
+<span class="fc" id="L1492">        }</span>
+<span class="fc" id="L1493">    }</span>
+
+    protected List&lt;PrepareLandmarks&gt; prepareLM(boolean closeEarly, List&lt;LMConfig&gt; configsToPrepare) {
+<span class="fc bfc" id="L1496" title="All 2 branches covered.">        if (!configsToPrepare.isEmpty())</span>
+<span class="fc" id="L1497">            ensureWriteAccess();</span>
+<span class="fc bfc" id="L1498" title="All 2 branches covered.">        if (!baseGraph.isFrozen())</span>
+<span class="fc" id="L1499">            baseGraph.freeze();</span>
+<span class="fc" id="L1500">        return lmPreparationHandler.prepare(configsToPrepare, baseGraph, encodingManager, properties, locationIndex, closeEarly);</span>
+    }
+
+    /**
+     * Internal method to clean up the graph.
+     */
+    protected void cleanUp() {
+<span class="fc" id="L1507">        PrepareRoutingSubnetworks preparation = new PrepareRoutingSubnetworks(baseGraph.getBaseGraph(), buildSubnetworkRemovalJobs());</span>
+<span class="fc" id="L1508">        preparation.setMinNetworkSize(minNetworkSize);</span>
+<span class="fc" id="L1509">        preparation.setThreads(subnetworksThreads);</span>
+<span class="fc" id="L1510">        preparation.doWork();</span>
+<span class="fc" id="L1511">        logger.info(&quot;nodes: &quot; + Helper.nf(baseGraph.getNodes()) + &quot;, edges: &quot; + Helper.nf(baseGraph.getEdges()));</span>
+<span class="fc" id="L1512">    }</span>
+
+    private List&lt;PrepareJob&gt; buildSubnetworkRemovalJobs() {
+<span class="fc" id="L1515">        List&lt;PrepareJob&gt; jobs = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L1516" title="All 2 branches covered.">        for (Profile profile : profilesByName.values()) {</span>
+            // if turn costs are enabled use u-turn costs of zero as we only want to make sure the graph is fully connected assuming finite u-turn costs
+<span class="fc" id="L1518">            Weighting weighting = createWeighting(profile, new PMap().putObject(Parameters.Routing.U_TURN_COSTS, 0));</span>
+<span class="fc" id="L1519">            jobs.add(new PrepareJob(encodingManager.getBooleanEncodedValue(Subnetwork.key(profile.getName())), weighting));</span>
+<span class="fc" id="L1520">        }</span>
+<span class="fc" id="L1521">        return jobs;</span>
+    }
+
+    protected void flush() {
+<span class="fc" id="L1525">        logger.info(&quot;flushing graph &quot; + getBaseGraphString() + &quot;, details:&quot; + baseGraph.toDetailsString() + &quot;, &quot;</span>
+<span class="fc" id="L1526">                + getMemInfo() + &quot;)&quot;);</span>
+<span class="fc" id="L1527">        baseGraph.flush();</span>
+<span class="fc" id="L1528">        properties.flush();</span>
+<span class="fc" id="L1529">        logger.info(&quot;flushed graph &quot; + getMemInfo() + &quot;)&quot;);</span>
+<span class="fc" id="L1530">        setFullyLoaded();</span>
+<span class="fc" id="L1531">    }</span>
+
+    /**
+     * Releases all associated resources like memory or files. But it does not remove them. To
+     * remove the files created in graphhopperLocation you have to call clean().
+     */
+    public void close() {
+<span class="fc bfc" id="L1538" title="All 2 branches covered.">        if (baseGraph != null)</span>
+<span class="fc" id="L1539">            baseGraph.close();</span>
+<span class="fc bfc" id="L1540" title="All 2 branches covered.">        if (properties != null)</span>
+<span class="fc" id="L1541">            properties.close();</span>
+
+<span class="fc" id="L1543">        chGraphs.values().forEach(RoutingCHGraph::close);</span>
+<span class="fc" id="L1544">        landmarks.values().forEach(LandmarkStorage::close);</span>
+
+<span class="fc bfc" id="L1546" title="All 2 branches covered.">        if (locationIndex != null)</span>
+<span class="fc" id="L1547">            locationIndex.close();</span>
+
+        try {
+<span class="fc" id="L1550">            lockFactory.forceRemove(fileLockName, true);</span>
+<span class="fc" id="L1551">        } catch (Exception ex) {</span>
+            // silently fail e.g. on Windows where we cannot remove an unreleased native lock
+<span class="fc" id="L1553">        }</span>
+<span class="fc" id="L1554">    }</span>
+
+    /**
+     * Removes the on-disc routing files. Call only after calling close or before importOrLoad or
+     * load
+     */
+    public void clean() {
+<span class="pc bpc" id="L1561" title="1 of 2 branches missed.">        if (getGraphHopperLocation().isEmpty())</span>
+<span class="nc" id="L1562">            throw new IllegalStateException(&quot;Cannot clean GraphHopper without specified graphHopperLocation&quot;);</span>
+
+<span class="fc" id="L1564">        File folder = new File(getGraphHopperLocation());</span>
+<span class="fc" id="L1565">        removeDir(folder);</span>
+<span class="fc" id="L1566">    }</span>
+
+    protected void ensureNotLoaded() {
+<span class="pc bpc" id="L1569" title="1 of 2 branches missed.">        if (fullyLoaded)</span>
+<span class="nc" id="L1570">            throw new IllegalStateException(&quot;No configuration changes are possible after loading the graph&quot;);</span>
+<span class="fc" id="L1571">    }</span>
+
+    protected void ensureWriteAccess() {
+<span class="pc bpc" id="L1574" title="1 of 2 branches missed.">        if (!allowWrites)</span>
+<span class="nc" id="L1575">            throw new IllegalStateException(&quot;Writes are not allowed!&quot;);</span>
+<span class="fc" id="L1576">    }</span>
+
+    private void setFullyLoaded() {
+<span class="fc" id="L1579">        fullyLoaded = true;</span>
+<span class="fc" id="L1580">    }</span>
+
+    public boolean getFullyLoaded() {
+<span class="nc" id="L1583">        return fullyLoaded;</span>
+    }
+
+    public RouterConfig getRouterConfig() {
+<span class="fc" id="L1587">        return routerConfig;</span>
+    }
+
+    public OSMReaderConfig getReaderConfig() {
+<span class="fc" id="L1591">        return osmReaderConfig;</span>
+    }
+
+    public static JsonFeatureCollection resolveCustomAreas(String customAreasDirectory) {
+<span class="fc" id="L1595">        JsonFeatureCollection globalAreas = new JsonFeatureCollection();</span>
+<span class="pc bpc" id="L1596" title="1 of 2 branches missed.">        if (!customAreasDirectory.isEmpty()) {</span>
+<span class="nc" id="L1597">            ObjectMapper mapper = new ObjectMapper().registerModule(new JtsModule());</span>
+<span class="nc" id="L1598">            try (DirectoryStream&lt;Path&gt; stream = Files.newDirectoryStream(Paths.get(customAreasDirectory), &quot;*.{geojson,json}&quot;)) {</span>
+<span class="nc" id="L1599">                StreamSupport.stream(stream.spliterator(), false)</span>
+<span class="nc" id="L1600">                        .sorted(Comparator.comparing(Path::toString))</span>
+<span class="nc" id="L1601">                        .forEach(customAreaFile -&gt; {</span>
+<span class="nc" id="L1602">                            try (BufferedReader reader = Files.newBufferedReader(customAreaFile, StandardCharsets.UTF_8)) {</span>
+<span class="nc" id="L1603">                                globalAreas.getFeatures().addAll(mapper.readValue(reader, JsonFeatureCollection.class).getFeatures());</span>
+<span class="nc" id="L1604">                            } catch (IOException e) {</span>
+<span class="nc" id="L1605">                                throw new UncheckedIOException(e);</span>
+<span class="nc" id="L1606">                            }</span>
+<span class="nc" id="L1607">                        });</span>
+<span class="nc" id="L1608">                logger.info(&quot;Will make &quot; + globalAreas.getFeatures().size() + &quot; areas available to all custom profiles. Found in &quot; + customAreasDirectory);</span>
+<span class="nc" id="L1609">            } catch (IOException e) {</span>
+<span class="nc" id="L1610">                throw new UncheckedIOException(e);</span>
+<span class="nc" id="L1611">            }</span>
+        }
+<span class="fc" id="L1613">        return globalAreas;</span>
+    }
+
+    public static List&lt;Profile&gt; resolveCustomModelFiles(String customModelFolder, List&lt;Profile&gt; profiles, JsonFeatureCollection globalAreas) {
+<span class="fc" id="L1617">        ObjectMapper jsonOM = Jackson.newObjectMapper();</span>
+<span class="fc" id="L1618">        List&lt;Profile&gt; newProfiles = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L1619" title="All 2 branches covered.">        for (Profile profile : profiles) {</span>
+<span class="pc bpc" id="L1620" title="1 of 2 branches missed.">            if (!CustomWeighting.NAME.equals(profile.getWeighting())) {</span>
+<span class="nc" id="L1621">                newProfiles.add(profile);</span>
+<span class="nc" id="L1622">                continue;</span>
+            }
+<span class="fc" id="L1624">            Object cm = profile.getHints().getObject(CustomModel.KEY, null);</span>
+            CustomModel customModel;
+<span class="pc bpc" id="L1626" title="1 of 2 branches missed.">            if (cm != null) {</span>
+<span class="pc bpc" id="L1627" title="1 of 2 branches missed.">                if (!profile.getHints().getObject(&quot;custom_model_files&quot;, Collections.emptyList()).isEmpty())</span>
+<span class="nc" id="L1628">                    throw new IllegalArgumentException(&quot;Do not use custom_model_files and custom_model together&quot;);</span>
+                try {
+                    // custom_model can be an object tree (read from config) or an object (e.g. from tests)
+<span class="fc" id="L1631">                    customModel = jsonOM.readValue(jsonOM.writeValueAsBytes(cm), CustomModel.class);</span>
+<span class="fc" id="L1632">                    newProfiles.add(profile.setCustomModel(customModel));</span>
+<span class="nc" id="L1633">                } catch (Exception ex) {</span>
+<span class="nc" id="L1634">                    throw new RuntimeException(&quot;Cannot load custom_model from &quot; + cm + &quot; for profile &quot; + profile.getName()</span>
+                            + &quot;. If you are trying to load from a file, use 'custom_model_files' instead.&quot;, ex);
+<span class="fc" id="L1636">                }</span>
+            } else {
+<span class="nc bnc" id="L1638" title="All 2 branches missed.">                if (!profile.getHints().getString(&quot;custom_model_file&quot;, &quot;&quot;).isEmpty())</span>
+<span class="nc" id="L1639">                    throw new IllegalArgumentException(&quot;Since 8.0 you must use a custom_model_files array instead of custom_model_file string&quot;);</span>
+<span class="nc" id="L1640">                List&lt;String&gt; customModelFileNames = profile.getHints().getObject(&quot;custom_model_files&quot;, null);</span>
+<span class="nc bnc" id="L1641" title="All 2 branches missed.">                if (customModelFileNames == null)</span>
+<span class="nc" id="L1642">                    throw new IllegalArgumentException(&quot;Missing 'custom_model' or 'custom_model_files' field in profile '&quot;</span>
+<span class="nc" id="L1643">                            + profile.getName() + &quot;'. To use default specify custom_model_files: []&quot;);</span>
+<span class="nc bnc" id="L1644" title="All 2 branches missed.">                if (customModelFileNames.isEmpty()) {</span>
+<span class="nc" id="L1645">                    newProfiles.add(profile.setCustomModel(customModel = new CustomModel()));</span>
+                } else {
+<span class="nc" id="L1647">                    customModel = new CustomModel();</span>
+<span class="nc bnc" id="L1648" title="All 2 branches missed.">                    for (String file : customModelFileNames) {</span>
+<span class="nc bnc" id="L1649" title="All 2 branches missed.">                        if (file.contains(File.separator))</span>
+<span class="nc" id="L1650">                            throw new IllegalArgumentException(&quot;Use custom_models.directory for the custom_model_files parent&quot;);</span>
+<span class="nc bnc" id="L1651" title="All 2 branches missed.">                        if (!file.endsWith(&quot;.json&quot;))</span>
+<span class="nc" id="L1652">                            throw new IllegalArgumentException(&quot;Yaml is no longer supported, see #2672. Use JSON with optional comments //&quot;);</span>
+
+                        try {
+                            String string;
+                            // 1. try to load custom model from jar
+<span class="nc" id="L1657">                            InputStream is = GHUtility.class.getResourceAsStream(&quot;/com/graphhopper/custom_models/&quot; + file);</span>
+                            // dropwizard makes it very hard to find out the folder of config.yml -&gt; use an extra parameter for the folder
+<span class="nc" id="L1659">                            Path customModelFile = Paths.get(customModelFolder).resolve(file);</span>
+<span class="nc bnc" id="L1660" title="All 2 branches missed.">                            if (is != null) {</span>
+<span class="nc bnc" id="L1661" title="All 2 branches missed.">                                if (Files.exists(customModelFile))</span>
+<span class="nc" id="L1662">                                    throw new RuntimeException(&quot;Custom model file name '&quot; + file + &quot;' is already used for built-in profiles. Use another name&quot;);</span>
+<span class="nc" id="L1663">                                string = readJSONFileWithoutComments(new InputStreamReader(is));</span>
+                            } else {
+                                // 2. try to load custom model file from external location
+<span class="nc" id="L1666">                                string = readJSONFileWithoutComments(customModelFile.toFile().getAbsolutePath());</span>
+                            }
+<span class="nc" id="L1668">                            customModel = CustomModel.merge(customModel, jsonOM.readValue(string, CustomModel.class));</span>
+<span class="nc" id="L1669">                        } catch (IOException ex) {</span>
+<span class="nc" id="L1670">                            throw new RuntimeException(&quot;Cannot load custom_model from location &quot; + file + &quot;, profile:&quot; + profile.getName(), ex);</span>
+<span class="nc" id="L1671">                        }</span>
+<span class="nc" id="L1672">                    }</span>
+
+<span class="nc" id="L1674">                    newProfiles.add(profile.setCustomModel(customModel));</span>
+                }
+            }
+
+            // we can fill in all areas here as in the created template we include only the areas that are used in
+            // statements (see CustomModelParser)
+<span class="fc" id="L1680">            customModel.addAreas(globalAreas);</span>
+<span class="fc" id="L1681">        }</span>
+<span class="fc" id="L1682">        return newProfiles;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

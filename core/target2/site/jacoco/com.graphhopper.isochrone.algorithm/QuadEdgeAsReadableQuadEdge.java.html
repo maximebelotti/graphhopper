@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QuadEdgeAsReadableQuadEdge.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.isochrone.algorithm</a> &gt; <span class="el_source">QuadEdgeAsReadableQuadEdge.java</span></div><h1>QuadEdgeAsReadableQuadEdge.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+package com.graphhopper.isochrone.algorithm;
+
+import org.locationtech.jts.triangulate.quadedge.Vertex;
+
+import java.util.Objects;
+
+public class QuadEdgeAsReadableQuadEdge implements ReadableQuadEdge {
+
+    private final org.locationtech.jts.triangulate.quadedge.QuadEdge delegate;
+
+<span class="fc" id="L29">    QuadEdgeAsReadableQuadEdge(org.locationtech.jts.triangulate.quadedge.QuadEdge startEdge) {</span>
+<span class="pc bpc" id="L30" title="1 of 2 branches missed.">        if (startEdge == null)</span>
+<span class="nc" id="L31">            throw new NullPointerException();</span>
+<span class="fc" id="L32">        this.delegate = startEdge;</span>
+<span class="fc" id="L33">    }</span>
+
+    public ReadableQuadEdge getPrimary() {
+<span class="fc" id="L36">        return new QuadEdgeAsReadableQuadEdge(delegate.getPrimary());</span>
+    }
+
+    public Vertex orig() {
+<span class="fc" id="L40">        return delegate.orig();</span>
+    }
+
+    public Vertex dest() {
+<span class="fc" id="L44">        return delegate.dest();</span>
+    }
+
+    public ReadableQuadEdge oNext() {
+<span class="fc" id="L48">        return new QuadEdgeAsReadableQuadEdge(delegate.oNext());</span>
+    }
+
+    public ReadableQuadEdge oPrev() {
+<span class="fc" id="L52">        return new QuadEdgeAsReadableQuadEdge(delegate.oPrev());</span>
+    }
+
+    public ReadableQuadEdge dPrev() {
+<span class="fc" id="L56">        return new QuadEdgeAsReadableQuadEdge(delegate.dPrev());</span>
+    }
+
+    public ReadableQuadEdge dNext() {
+<span class="fc" id="L60">        return new QuadEdgeAsReadableQuadEdge(delegate.dNext());</span>
+    }
+
+    @Override
+    public ReadableQuadEdge lNext() {
+<span class="fc" id="L65">        return new QuadEdgeAsReadableQuadEdge(delegate.lNext());</span>
+    }
+
+    @Override
+    public ReadableQuadEdge sym() {
+<span class="fc" id="L70">        return new QuadEdgeAsReadableQuadEdge(delegate.sym());</span>
+    }
+
+    @Override
+    public boolean equals(Object o) {
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (this == o) return true;</span>
+<span class="pc bpc" id="L76" title="2 of 4 branches missed.">        if (o == null || getClass() != o.getClass()) return false;</span>
+<span class="fc" id="L77">        QuadEdgeAsReadableQuadEdge that = (QuadEdgeAsReadableQuadEdge) o;</span>
+<span class="fc" id="L78">        return Objects.equals(delegate, that.delegate);</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="fc" id="L83">        return Objects.hash(delegate);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

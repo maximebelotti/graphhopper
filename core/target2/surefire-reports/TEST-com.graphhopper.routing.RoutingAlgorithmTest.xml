@@ -1,0 +1,448 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" name="com.graphhopper.routing.RoutingAlgorithmTest" time="2.972" tests="364" errors="0" skipped="0" failures="0">
+  <properties>
+    <property name="git.tags" value=""/>
+    <property name="java.specification.version" value="23"/>
+    <property name="sun.cpu.isalist" value="amd64"/>
+    <property name="sun.jnu.encoding" value="Cp1252"/>
+    <property name="git.build.version" value="11.0-SNAPSHOT"/>
+    <property name="java.class.path" value="C:\Users\emman\Desktop\IFT3913\graphhopper\core\target\test-classes;C:\Users\emman\Desktop\IFT3913\graphhopper\core\target\classes;C:\Users\emman\.m2\repository\org\mockito\mockito-core\4.11.0\mockito-core-4.11.0.jar;C:\Users\emman\.m2\repository\net\bytebuddy\byte-buddy\1.17.7\byte-buddy-1.17.7.jar;C:\Users\emman\.m2\repository\net\bytebuddy\byte-buddy-agent\1.12.19\byte-buddy-agent-1.12.19.jar;C:\Users\emman\.m2\repository\org\objenesis\objenesis\3.3\objenesis-3.3.jar;C:\Users\emman\.m2\repository\org\mockito\mockito-junit-jupiter\4.11.0\mockito-junit-jupiter-4.11.0.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-api\5.13.4\junit-jupiter-api-5.13.4.jar;C:\Users\emman\.m2\repository\org\opentest4j\opentest4j\1.3.0\opentest4j-1.3.0.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-commons\1.13.4\junit-platform-commons-1.13.4.jar;C:\Users\emman\Desktop\IFT3913\graphhopper\web-api\target\graphhopper-web-api-11.0-SNAPSHOT.jar;C:\Users\emman\.m2\repository\com\carrotsearch\hppc\0.8.1\hppc-0.8.1.jar;C:\Users\emman\.m2\repository\org\codehaus\janino\janino\3.1.9\janino-3.1.9.jar;C:\Users\emman\.m2\repository\org\codehaus\janino\commons-compiler\3.1.9\commons-compiler-3.1.9.jar;C:\Users\emman\.m2\repository\org\locationtech\jts\jts-core\1.20.0\jts-core-1.20.0.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-core\2.19.2\jackson-core-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-databind\2.19.2\jackson-databind-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-annotations\2.19.2\jackson-annotations-2.19.2.jar;C:\Users\emman\.m2\repository\com\graphhopper\external\jackson-datatype-jts\2.19.2\jackson-datatype-jts-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\dataformat\jackson-dataformat-xml\2.19.2\jackson-dataformat-xml-2.19.2.jar;C:\Users\emman\.m2\repository\org\codehaus\woodstox\stax2-api\4.2.2\stax2-api-4.2.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\woodstox\woodstox-core\7.1.1\woodstox-core-7.1.1.jar;C:\Users\emman\.m2\repository\org\apache\xmlgraphics\xmlgraphics-commons\2.7\xmlgraphics-commons-2.7.jar;C:\Users\emman\.m2\repository\commons-io\commons-io\2.14.0\commons-io-2.14.0.jar;C:\Users\emman\.m2\repository\de\westnordost\osm-legal-default-speeds-jvm\1.4\osm-legal-default-speeds-jvm-1.4.jar;C:\Users\emman\.m2\repository\org\jetbrains\kotlin\kotlin-stdlib\1.6.20\kotlin-stdlib-1.6.20.jar;C:\Users\emman\.m2\repository\org\jetbrains\kotlin\kotlin-stdlib-common\1.6.20\kotlin-stdlib-common-1.6.20.jar;C:\Users\emman\.m2\repository\org\jetbrains\annotations\13.0\annotations-13.0.jar;C:\Users\emman\.m2\repository\org\openstreetmap\osmosis\osmosis-osm-binary\0.48.3\osmosis-osm-binary-0.48.3.jar;C:\Users\emman\.m2\repository\com\google\protobuf\protobuf-java\3.12.2\protobuf-java-3.12.2.jar;C:\Users\emman\.m2\repository\org\slf4j\slf4j-api\2.0.17\slf4j-api-2.0.17.jar;C:\Users\emman\.m2\repository\ch\qos\logback\logback-classic\1.5.18\logback-classic-1.5.18.jar;C:\Users\emman\.m2\repository\ch\qos\logback\logback-core\1.5.18\logback-core-1.5.18.jar;C:\Users\emman\.m2\repository\com\github\javafaker\javafaker\1.0.2\javafaker-1.0.2.jar;C:\Users\emman\.m2\repository\org\apache\commons\commons-lang3\3.18.0\commons-lang3-3.18.0.jar;C:\Users\emman\.m2\repository\org\yaml\snakeyaml\1.23\snakeyaml-1.23-android.jar;C:\Users\emman\.m2\repository\com\github\mifmif\generex\1.0.2\generex-1.0.2.jar;C:\Users\emman\.m2\repository\dk\brics\automaton\automaton\1.11-8\automaton-1.11-8.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-launcher\1.13.4\junit-platform-launcher-1.13.4.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-engine\1.13.4\junit-platform-engine-1.13.4.jar;C:\Users\emman\.m2\repository\org\apiguardian\apiguardian-api\1.1.2\apiguardian-api-1.1.2.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-engine\5.13.4\junit-jupiter-engine-5.13.4.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-params\5.13.4\junit-jupiter-params-5.13.4.jar;"/>
+    <property name="git.branch" value="manu"/>
+    <property name="git.build.host" value="LAPTOP-4K2SB7BB"/>
+    <property name="java.vm.vendor" value="Oracle Corporation"/>
+    <property name="sun.arch.data.model" value="64"/>
+    <property name="user.variant" value=""/>
+    <property name="git.commit.id" value="b5150d03c8a5b02ade32fab13fc133e0d2c396be"/>
+    <property name="java.vendor.url" value="https://java.oracle.com/"/>
+    <property name="user.timezone" value="America/Toronto"/>
+    <property name="java.vm.specification.version" value="23"/>
+    <property name="os.name" value="Windows 11"/>
+    <property name="sun.java.launcher" value="SUN_STANDARD"/>
+    <property name="user.country" value="CO"/>
+    <property name="git.build.user.name" value="EmmanuelChicoine"/>
+    <property name="sun.boot.library.path" value="C:\Program Files\Java\jdk-23.0.1\bin"/>
+    <property name="sun.java.command" value="C:\Users\emman\AppData\Local\Temp\surefire16816641703254977940\surefirebooter12143986754705995640.jar C:\Users\emman\AppData\Local\Temp\surefire16816641703254977940 2025-11-19T11-57-24_776-jvmRun1 surefire4189624678434402194tmp surefire_15447932516519289921tmp"/>
+    <property name="jdk.debug" value="release"/>
+    <property name="surefire.test.class.path" value="C:\Users\emman\Desktop\IFT3913\graphhopper\core\target\test-classes;C:\Users\emman\Desktop\IFT3913\graphhopper\core\target\classes;C:\Users\emman\.m2\repository\org\mockito\mockito-core\4.11.0\mockito-core-4.11.0.jar;C:\Users\emman\.m2\repository\net\bytebuddy\byte-buddy\1.17.7\byte-buddy-1.17.7.jar;C:\Users\emman\.m2\repository\net\bytebuddy\byte-buddy-agent\1.12.19\byte-buddy-agent-1.12.19.jar;C:\Users\emman\.m2\repository\org\objenesis\objenesis\3.3\objenesis-3.3.jar;C:\Users\emman\.m2\repository\org\mockito\mockito-junit-jupiter\4.11.0\mockito-junit-jupiter-4.11.0.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-api\5.13.4\junit-jupiter-api-5.13.4.jar;C:\Users\emman\.m2\repository\org\opentest4j\opentest4j\1.3.0\opentest4j-1.3.0.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-commons\1.13.4\junit-platform-commons-1.13.4.jar;C:\Users\emman\Desktop\IFT3913\graphhopper\web-api\target\graphhopper-web-api-11.0-SNAPSHOT.jar;C:\Users\emman\.m2\repository\com\carrotsearch\hppc\0.8.1\hppc-0.8.1.jar;C:\Users\emman\.m2\repository\org\codehaus\janino\janino\3.1.9\janino-3.1.9.jar;C:\Users\emman\.m2\repository\org\codehaus\janino\commons-compiler\3.1.9\commons-compiler-3.1.9.jar;C:\Users\emman\.m2\repository\org\locationtech\jts\jts-core\1.20.0\jts-core-1.20.0.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-core\2.19.2\jackson-core-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-databind\2.19.2\jackson-databind-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\core\jackson-annotations\2.19.2\jackson-annotations-2.19.2.jar;C:\Users\emman\.m2\repository\com\graphhopper\external\jackson-datatype-jts\2.19.2\jackson-datatype-jts-2.19.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\jackson\dataformat\jackson-dataformat-xml\2.19.2\jackson-dataformat-xml-2.19.2.jar;C:\Users\emman\.m2\repository\org\codehaus\woodstox\stax2-api\4.2.2\stax2-api-4.2.2.jar;C:\Users\emman\.m2\repository\com\fasterxml\woodstox\woodstox-core\7.1.1\woodstox-core-7.1.1.jar;C:\Users\emman\.m2\repository\org\apache\xmlgraphics\xmlgraphics-commons\2.7\xmlgraphics-commons-2.7.jar;C:\Users\emman\.m2\repository\commons-io\commons-io\2.14.0\commons-io-2.14.0.jar;C:\Users\emman\.m2\repository\de\westnordost\osm-legal-default-speeds-jvm\1.4\osm-legal-default-speeds-jvm-1.4.jar;C:\Users\emman\.m2\repository\org\jetbrains\kotlin\kotlin-stdlib\1.6.20\kotlin-stdlib-1.6.20.jar;C:\Users\emman\.m2\repository\org\jetbrains\kotlin\kotlin-stdlib-common\1.6.20\kotlin-stdlib-common-1.6.20.jar;C:\Users\emman\.m2\repository\org\jetbrains\annotations\13.0\annotations-13.0.jar;C:\Users\emman\.m2\repository\org\openstreetmap\osmosis\osmosis-osm-binary\0.48.3\osmosis-osm-binary-0.48.3.jar;C:\Users\emman\.m2\repository\com\google\protobuf\protobuf-java\3.12.2\protobuf-java-3.12.2.jar;C:\Users\emman\.m2\repository\org\slf4j\slf4j-api\2.0.17\slf4j-api-2.0.17.jar;C:\Users\emman\.m2\repository\ch\qos\logback\logback-classic\1.5.18\logback-classic-1.5.18.jar;C:\Users\emman\.m2\repository\ch\qos\logback\logback-core\1.5.18\logback-core-1.5.18.jar;C:\Users\emman\.m2\repository\com\github\javafaker\javafaker\1.0.2\javafaker-1.0.2.jar;C:\Users\emman\.m2\repository\org\apache\commons\commons-lang3\3.18.0\commons-lang3-3.18.0.jar;C:\Users\emman\.m2\repository\org\yaml\snakeyaml\1.23\snakeyaml-1.23-android.jar;C:\Users\emman\.m2\repository\com\github\mifmif\generex\1.0.2\generex-1.0.2.jar;C:\Users\emman\.m2\repository\dk\brics\automaton\automaton\1.11-8\automaton-1.11-8.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-launcher\1.13.4\junit-platform-launcher-1.13.4.jar;C:\Users\emman\.m2\repository\org\junit\platform\junit-platform-engine\1.13.4\junit-platform-engine-1.13.4.jar;C:\Users\emman\.m2\repository\org\apiguardian\apiguardian-api\1.1.2\apiguardian-api-1.1.2.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-engine\5.13.4\junit-jupiter-engine-5.13.4.jar;C:\Users\emman\.m2\repository\org\junit\jupiter\junit-jupiter-params\5.13.4\junit-jupiter-params-5.13.4.jar;"/>
+    <property name="sun.cpu.endian" value="little"/>
+    <property name="user.home" value="C:\Users\emman"/>
+    <property name="user.language" value="es"/>
+    <property name="git.closest.tag.commit.count" value=""/>
+    <property name="java.specification.vendor" value="Oracle Corporation"/>
+    <property name="java.version.date" value="2024-10-15"/>
+    <property name="java.home" value="C:\Program Files\Java\jdk-23.0.1"/>
+    <property name="git.total.commit.count" value="6794"/>
+    <property name="file.separator" value="\"/>
+    <property name="basedir" value="C:\Users\emman\Desktop\IFT3913\graphhopper\core"/>
+    <property name="java.vm.compressedOopsMode" value="32-bit"/>
+    <property name="line.separator" value="&#10;"/>
+    <property name="git.build.user.email" value=""/>
+    <property name="java.vm.specification.vendor" value="Oracle Corporation"/>
+    <property name="java.specification.name" value="Java Platform API Specification"/>
+    <property name="git.closest.tag.name" value=""/>
+    <property name="git.local.branch.ahead" value="2"/>
+    <property name="git.build.time" value="2025-11-19T11:57:53-0500"/>
+    <property name="surefire.real.class.path" value="C:\Users\emman\AppData\Local\Temp\surefire16816641703254977940\surefirebooter12143986754705995640.jar"/>
+    <property name="git.commit.message.full" value="erreur de BBox&#10;Merge branch &apos;manu&apos; of https://github.com/maximebelotti/graphhopper into manu"/>
+    <property name="user.script" value=""/>
+    <property name="sun.management.compiler" value="HotSpot 64-Bit Tiered Compilers"/>
+    <property name="java.runtime.version" value="23.0.1+11-39"/>
+    <property name="user.name" value="emman"/>
+    <property name="stdout.encoding" value="Cp1252"/>
+    <property name="path.separator" value=";"/>
+    <property name="os.version" value="10.0"/>
+    <property name="java.runtime.name" value="OpenJDK Runtime Environment"/>
+    <property name="file.encoding" value="UTF-8"/>
+    <property name="git.commit.user.email" value=""/>
+    <property name="java.vm.name" value="OpenJDK 64-Bit Server VM"/>
+    <property name="git.local.branch.behind" value="0"/>
+    <property name="git.dirty" value="true"/>
+    <property name="localRepository" value="C:\Users\emman\.m2\repository"/>
+    <property name="java.vendor.url.bug" value="https://bugreport.java.com/bugreport/"/>
+    <property name="java.io.tmpdir" value="C:\Users\emman\AppData\Local\Temp\"/>
+    <property name="java.version" value="23.0.1"/>
+    <property name="user.dir" value="C:\Users\emman\Desktop\IFT3913\graphhopper\core"/>
+    <property name="os.arch" value="amd64"/>
+    <property name="git.commit.user.name" value="EmmanuelChicoine"/>
+    <property name="git.commit.id.abbrev" value="b5150d0"/>
+    <property name="java.vm.specification.name" value="Java Virtual Machine Specification"/>
+    <property name="git.commit.id.describe-short" value="b5150d0-dirty"/>
+    <property name="sun.os.patch.level" value=""/>
+    <property name="git.commit.id.describe" value="b5150d0-dirty"/>
+    <property name="native.encoding" value="Cp1252"/>
+    <property name="java.library.path" value="C:\Program Files\Java\jdk-23.0.1\bin;C:\WINDOWS\Sun\Java\bin;C:\WINDOWS\system32;C:\WINDOWS;c:\Users\emman\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\debugCommand;c:\Users\emman\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\copilotCli;C:\Program Files\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Intel\iCLS Client\;C:\Program Files\Intel\iCLS Client\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files (x86)\Intel\Intel(R) Management Engine Components\DAL;C:\Program Files\Intel\Intel(R) Management Engine Components\DAL;C:\Program Files (x86)\Intel\Intel(R) Management Engine Components\IPT;C:\Program Files\Intel\Intel(R) Management Engine Components\IPT;C:\Program Files\Intel\WiFi\bin\;C:\Program Files\Common Files\Intel\WirelessCommon\;C:\Program Files\Microsoft SQL Server\130\Tools\Binn\;C:\Program Files\dotnet\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Wolfram Research\WolframScript\;C:\Program Files\Git\cmd;C:\ProgramData\chocolatey\bin;C:\Program Files (x86)\dotnet\;C:\Program Files\nodejs\;C:\Program Files\Java\jdk-23.0.1\bin;C:\Users\emman\AppData\Local\Microsoft\WindowsApps;C:\Users\emman\AppData\Local\GitHubDesktop\bin;C:\Users\emman\miniconda3\condabin;C:\Users\emman\miniconda3\Lib\site-packages;C:\Users\emman\AppData\Local\Programs\Microsoft VS Code\bin;C:\ghcup\bin;C:\Users\emman\AppData\Local\Programs\MiKTeX\miktex\bin\x64\;C:\Users\emman\questa_fse\win64;C:\Program Files\Java\scripts;C:\msys64\ucrt64\bin;C:\Users\emman\AppData\Roaming\npm;C:\Users\emman\apache-maven-3.9.11-bin\apache-maven-3.9.11\bin;c:\Users\emman\.vscode\extensions\vscjava.vscode-java-debug-0.58.3\bundled\scripts\noConfigScripts;."/>
+    <property name="git.commit.message.short" value="erreur de BBox Merge branch &apos;manu&apos; of https://github.com/maximebelotti/graphhopper into manu"/>
+    <property name="java.vm.info" value="mixed mode, sharing"/>
+    <property name="stderr.encoding" value="Cp1252"/>
+    <property name="java.vendor" value="Oracle Corporation"/>
+    <property name="java.vm.version" value="23.0.1+11-39"/>
+    <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
+    <property name="java.class.version" value="67.0"/>
+    <property name="git.commit.time" value="2025-11-17T14:57:03-0500"/>
+    <property name="git.remote.origin.url" value="https://github.com/maximebelotti/graphhopper.git"/>
+  </properties>
+  <testcase name="testCalcFastestPath{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testCalcFastestPath{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFastestPath{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFastestPath{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.01"/>
+  <testcase name="testCalcFastestPath{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testCalcFastestPath{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testCalcFastestPath{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testCalcFastestPath{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testCalcFastestPath{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFastestPath{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.009"/>
+  <testcase name="testCalcFastestPath{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFastestPath{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFastestPath{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testBidirectional{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testBidirectional{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testBidirectional{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testBidirectional{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWikipediaShortestPath{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.005"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.005"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.003"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testCreateAlgoTwice{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.003"/>
+  <testcase name="testRandomGraph{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.092"/>
+  <testcase name="testRandomGraph{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.079"/>
+  <testcase name="testRandomGraph{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.093"/>
+  <testcase name="testRandomGraph{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.078"/>
+  <testcase name="testRandomGraph{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.09"/>
+  <testcase name="testRandomGraph{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.088"/>
+  <testcase name="testRandomGraph{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.078"/>
+  <testcase name="testRandomGraph{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.083"/>
+  <testcase name="testRandomGraph{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.083"/>
+  <testcase name="testRandomGraph{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.101"/>
+  <testcase name="testRandomGraph{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.083"/>
+  <testcase name="testRandomGraph{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.101"/>
+  <testcase name="testRandomGraph{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.083"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.014"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.01"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.005"/>
+  <testcase name="testDirectedGraphBug1{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.007"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.003"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testDirectedGraphBug2{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMultipleVehicles_issue548{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectionalLinear{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_WithCoordinates{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCannotCalculateSP{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCannotCalculateSP{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCannotCalculateSP{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCannotCalculateSP{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCannotCalculateSP{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testCannotCalculateSP{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCannotCalculateSP{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCannotCalculateSP{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCannotCalculateSP{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCannotCalculateSP{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCannotCalculateSP{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testCannotCalculateSP{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCannotCalculateSP{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_FromEqualsTo{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.003"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testTwoWeightsPerEdge{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.004"/>
+  <testcase name="testNoPathFound{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.004"/>
+  <testcase name="testNoPathFound{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.002"/>
+  <testcase name="testNoPathFound{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.001"/>
+  <testcase name="testNoPathFound{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testNoPathFound{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testNoPathFound{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testNoPathFound{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testNoPathFound{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testNoPathFound{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testNoPathFound{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testNoPathFound{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testNoPathFound{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testNoPathFound{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testCalcFootPath{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcFootPath{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testQueryGraphAndFastest{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testViaEdges_SpecialCases{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testCalcShortestPath_sourceEqualsTarget{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testBidirectional2{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testBidirectional2{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCalcShortestPath{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcShortestPath{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testViaEdges_BiGraph{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIfEmptyWay{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testSimpleAlternative{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testSimpleAlternative{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testSimpleAlternative{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testWithCoordinates{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWithCoordinates{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWithCoordinates{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.032"/>
+  <testcase name="testWithCoordinates{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWithCoordinates{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWithCoordinates{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testWithCoordinates{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testWithCoordinates{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.018"/>
+  <testcase name="testWithCoordinates{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.006"/>
+  <testcase name="testWithCoordinates{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.009"/>
+  <testcase name="testWithCoordinates{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.011"/>
+  <testcase name="testWithCoordinates{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.004"/>
+  <testcase name="testWithCoordinates{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.031"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.141"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testRekeyBugOfIntBinHeap{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.14"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.02"/>
+  <testcase name="testCalcIf1EdgeAway{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.006"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.004"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testMaxVisitedNodes{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.015"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[1]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[2]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[3]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[4]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[5]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[6]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[7]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[8]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[9]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[10]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[11]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[12]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+  <testcase name="testTwoWeightsPerEdge2{Fixture}[13]" classname="com.graphhopper.routing.RoutingAlgorithmTest" time="0.016"/>
+</testsuite>

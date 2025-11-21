@@ -1,0 +1,674 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GHUtility.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">GHUtility.java</span></div><h1>GHUtility.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import com.bedatadriven.jackson.datatype.jts.JtsModule;
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.IntIndexedContainer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.graphhopper.jackson.Jackson;
+import com.graphhopper.routing.Path;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.Country;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.State;
+import com.graphhopper.routing.util.AccessFilter;
+import com.graphhopper.routing.util.AllEdgesIterator;
+import com.graphhopper.routing.util.CustomArea;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.storage.*;
+import com.graphhopper.storage.index.LocationIndex;
+import com.graphhopper.storage.index.Snap;
+import com.graphhopper.util.shapes.BBox;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Polygon;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+
+import static com.graphhopper.routing.ev.State.ISO_3166_2;
+import static com.graphhopper.util.DistanceCalcEarth.DIST_EARTH;
+import static com.graphhopper.util.Helper.readJSONFileWithoutComments;
+
+/**
+ * A helper class to avoid cluttering the Graph interface with all the common methods. Most of the
+ * methods are useful for unit tests or debugging only.
+ *
+ * @author Peter Karich
+ */
+<span class="nc" id="L64">public class GHUtility {</span>
+<span class="fc" id="L65">    public static final Logger OSM_WARNING_LOGGER = LoggerFactory.getLogger(&quot;com.graphhopper.osm_warnings&quot;);</span>
+<span class="fc" id="L66">    private static final Logger LOGGER = LoggerFactory.getLogger(GHUtility.class);</span>
+
+    /**
+     * This method could throw an exception if problems like index out of bounds etc
+     */
+    public static List&lt;String&gt; getProblems(Graph g) {
+<span class="nc" id="L72">        List&lt;String&gt; problems = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L73">        int nodes = g.getNodes();</span>
+<span class="nc" id="L74">        int nodeIndex = 0;</span>
+<span class="nc" id="L75">        NodeAccess na = g.getNodeAccess();</span>
+        try {
+<span class="nc" id="L77">            EdgeExplorer explorer = g.createEdgeExplorer();</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">            for (; nodeIndex &lt; nodes; nodeIndex++) {</span>
+<span class="nc" id="L79">                double lat = na.getLat(nodeIndex);</span>
+<span class="nc bnc" id="L80" title="All 4 branches missed.">                if (lat &gt; 90 || lat &lt; -90)</span>
+<span class="nc" id="L81">                    problems.add(&quot;latitude is not within its bounds &quot; + lat);</span>
+
+<span class="nc" id="L83">                double lon = na.getLon(nodeIndex);</span>
+<span class="nc bnc" id="L84" title="All 4 branches missed.">                if (lon &gt; 180 || lon &lt; -180)</span>
+<span class="nc" id="L85">                    problems.add(&quot;longitude is not within its bounds &quot; + lon);</span>
+
+<span class="nc" id="L87">                EdgeIterator iter = explorer.setBaseNode(nodeIndex);</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">                while (iter.next()) {</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">                    if (iter.getAdjNode() &gt;= nodes) {</span>
+<span class="nc" id="L90">                        problems.add(&quot;edge of &quot; + nodeIndex + &quot; has a node &quot; + iter.getAdjNode() + &quot; greater or equal to getNodes&quot;);</span>
+                    }
+<span class="nc bnc" id="L92" title="All 2 branches missed.">                    if (iter.getAdjNode() &lt; 0) {</span>
+<span class="nc" id="L93">                        problems.add(&quot;edge of &quot; + nodeIndex + &quot; has a negative node &quot; + iter.getAdjNode());</span>
+                    }
+                }
+            }
+<span class="nc" id="L97">        } catch (Exception ex) {</span>
+<span class="nc" id="L98">            throw new RuntimeException(&quot;problem with node &quot; + nodeIndex, ex);</span>
+<span class="nc" id="L99">        }</span>
+
+//        for (int i = 0; i &lt; nodes; i++) {
+//            new BreadthFirstSearch().start(g, i);
+//        }
+<span class="nc" id="L104">        return problems;</span>
+    }
+
+    /**
+     * Counts reachable edges.
+     */
+    public static int count(EdgeIterator iter) {
+<span class="fc" id="L111">        int counter = 0;</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L113">            counter++;</span>
+        }
+<span class="fc" id="L115">        return counter;</span>
+    }
+
+    public static int count(RoutingCHEdgeIterator iter) {
+<span class="fc" id="L119">        int counter = 0;</span>
+<span class="fc bfc" id="L120" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L121">            counter++;</span>
+        }
+<span class="fc" id="L123">        return counter;</span>
+    }
+
+    public static Set&lt;Integer&gt; asSet(int... values) {
+<span class="fc" id="L127">        Set&lt;Integer&gt; s = new HashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L128" title="All 2 branches covered.">        for (int v : values) {</span>
+<span class="fc" id="L129">            s.add(v);</span>
+        }
+<span class="fc" id="L131">        return s;</span>
+    }
+
+    public static Set&lt;Integer&gt; getNeighbors(RoutingCHEdgeIterator iter) {
+        // make iteration order over set static =&gt; linked
+<span class="fc" id="L136">        Set&lt;Integer&gt; list = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L137" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L138">            list.add(iter.getAdjNode());</span>
+        }
+<span class="fc" id="L140">        return list;</span>
+    }
+
+    public static Set&lt;Integer&gt; getNeighbors(EdgeIterator iter) {
+        // make iteration order over set static =&gt; linked
+<span class="fc" id="L145">        Set&lt;Integer&gt; list = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L146" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L147">            list.add(iter.getAdjNode());</span>
+        }
+<span class="fc" id="L149">        return list;</span>
+    }
+
+    public static List&lt;Integer&gt; getEdgeIds(EdgeIterator iter) {
+<span class="fc" id="L153">        List&lt;Integer&gt; list = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L155">            list.add(iter.getEdge());</span>
+        }
+<span class="fc" id="L157">        return list;</span>
+    }
+
+    public static void printGraphForUnitTest(Graph g, DecimalEncodedValue speedEnc) {
+<span class="nc" id="L161">        printGraphForUnitTest(g, speedEnc, new BBox(</span>
+                Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY));
+<span class="nc" id="L163">    }</span>
+
+    public static void printGraphForUnitTest(Graph g, DecimalEncodedValue speedEnc, BBox bBox) {
+<span class="nc" id="L166">        NodeAccess na = g.getNodeAccess();</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">        for (int node = 0; node &lt; g.getNodes(); ++node) {</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">            if (bBox.contains(na.getLat(node), na.getLon(node))) {</span>
+<span class="nc" id="L169">                System.out.printf(Locale.ROOT, &quot;na.setNode(%d, %f, %f);\n&quot;, node, na.getLat(node), na.getLon(node));</span>
+            }
+        }
+<span class="nc" id="L172">        AllEdgesIterator iter = g.getAllEdges();</span>
+<span class="nc bnc" id="L173" title="All 2 branches missed.">        while (iter.next()) {</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">            if (bBox.contains(na.getLat(iter.getBaseNode()), na.getLon(iter.getBaseNode())) &amp;&amp;</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">                    bBox.contains(na.getLat(iter.getAdjNode()), na.getLon(iter.getAdjNode()))) {</span>
+<span class="nc" id="L176">                printUnitTestEdge(speedEnc, iter);</span>
+            }
+        }
+<span class="nc" id="L179">    }</span>
+
+    private static void printUnitTestEdge(DecimalEncodedValue speedEnc, EdgeIteratorState edge) {
+<span class="nc bnc" id="L182" title="All 2 branches missed.">        boolean fwd = edge.get(speedEnc) &gt; 0;</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">        int from = fwd ? edge.getBaseNode() : edge.getAdjNode();</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">        int to = fwd ? edge.getAdjNode() : edge.getBaseNode();</span>
+<span class="nc" id="L185">        System.out.printf(Locale.ROOT,</span>
+                &quot;graph.edge(%d, %d).setDistance(%f).set(speedEnc, %f, %f); // edgeId=%s\n&quot;,
+<span class="nc" id="L187">                from, to, edge.getDistance(), edge.get(speedEnc), edge.getReverse(speedEnc),</span>
+<span class="nc" id="L188">                edge.getEdge());</span>
+<span class="nc" id="L189">    }</span>
+
+    /**
+     * @param speed if null a random speed will be assigned to every edge
+     */
+    public static void buildRandomGraph(Graph graph, Random random, int numNodes, double meanDegree,
+                                        boolean allowZeroDistance, DecimalEncodedValue speedEnc, Double speed,
+                                        double pBothDir, double pRandomDistanceOffset) {
+<span class="pc bpc" id="L197" title="2 of 4 branches missed.">        if (numNodes &lt; 2 || meanDegree &lt; 1) {</span>
+<span class="nc" id="L198">            throw new IllegalArgumentException(&quot;numNodes must be &gt;= 2, meanDegree &gt;= 1&quot;);</span>
+        }
+<span class="fc bfc" id="L200" title="All 2 branches covered.">        for (int i = 0; i &lt; numNodes; ++i) {</span>
+<span class="fc" id="L201">            double lat = 49.4 + (random.nextDouble() * 0.01);</span>
+<span class="fc" id="L202">            double lon = 9.7 + (random.nextDouble() * 0.01);</span>
+<span class="fc" id="L203">            graph.getNodeAccess().setNode(i, lat, lon);</span>
+        }
+<span class="fc" id="L205">        double minDist = Double.MAX_VALUE;</span>
+<span class="fc" id="L206">        double maxDist = Double.MIN_VALUE;</span>
+<span class="fc" id="L207">        int totalNumEdges = (int) (0.5 * meanDegree * numNodes);</span>
+<span class="fc" id="L208">        int numEdges = 0;</span>
+<span class="fc bfc" id="L209" title="All 2 branches covered.">        while (numEdges &lt; totalNumEdges) {</span>
+<span class="fc" id="L210">            int from = random.nextInt(numNodes);</span>
+<span class="fc" id="L211">            int to = random.nextInt(numNodes);</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">            if (from == to)</span>
+<span class="fc" id="L213">                continue;</span>
+<span class="fc" id="L214">            double distance = GHUtility.getDistance(from, to, graph.getNodeAccess());</span>
+<span class="pc bpc" id="L215" title="1 of 2 branches missed.">            if (!allowZeroDistance) {</span>
+<span class="nc" id="L216">                distance = Math.max(0.001, distance);</span>
+            }
+            // add some random offset, but also allow duplicate edges with same weight
+<span class="fc bfc" id="L219" title="All 2 branches covered.">            if (random.nextDouble() &lt; pRandomDistanceOffset)</span>
+<span class="fc" id="L220">                distance += random.nextDouble() * distance * 0.01;</span>
+<span class="fc" id="L221">            minDist = Math.min(minDist, distance);</span>
+<span class="fc" id="L222">            maxDist = Math.max(maxDist, distance);</span>
+            // using bidirectional edges will increase mean degree of graph above given value
+<span class="fc bfc" id="L224" title="All 2 branches covered.">            boolean bothDirections = random.nextDouble() &lt; pBothDir;</span>
+<span class="fc" id="L225">            EdgeIteratorState edge = graph.edge(from, to).setDistance(distance);</span>
+<span class="fc" id="L226">            double fwdSpeed = 10 + random.nextDouble() * 110;</span>
+<span class="fc" id="L227">            double bwdSpeed = 10 + random.nextDouble() * 110;</span>
+            // if an explicit speed is given we discard the random speeds and use the given one instead
+<span class="fc bfc" id="L229" title="All 2 branches covered.">            if (speed != null) {</span>
+<span class="fc" id="L230">                fwdSpeed = bwdSpeed = speed;</span>
+            }
+<span class="fc bfc" id="L232" title="All 2 branches covered.">            if (speedEnc != null) {</span>
+<span class="fc" id="L233">                edge.set(speedEnc, fwdSpeed);</span>
+<span class="pc bpc" id="L234" title="1 of 2 branches missed.">                if (speedEnc.isStoreTwoDirections())</span>
+<span class="fc bfc" id="L235" title="All 2 branches covered.">                    edge.setReverse(speedEnc, !bothDirections ? 0 : bwdSpeed);</span>
+            }
+<span class="fc" id="L237">            numEdges++;</span>
+<span class="fc" id="L238">        }</span>
+<span class="fc" id="L239">        LOGGER.debug(String.format(Locale.ROOT, &quot;Finished building random graph&quot; +</span>
+                        &quot;, nodes: %d, edges: %d , min distance: %.2f, max distance: %.2f\n&quot;,
+<span class="fc" id="L241">                graph.getNodes(), graph.getEdges(), minDist, maxDist));</span>
+<span class="fc" id="L242">    }</span>
+
+    public static double getDistance(int from, int to, NodeAccess nodeAccess) {
+<span class="fc" id="L245">        double fromLat = nodeAccess.getLat(from);</span>
+<span class="fc" id="L246">        double fromLon = nodeAccess.getLon(from);</span>
+<span class="fc" id="L247">        double toLat = nodeAccess.getLat(to);</span>
+<span class="fc" id="L248">        double toLon = nodeAccess.getLon(to);</span>
+<span class="fc" id="L249">        return DistancePlaneProjection.DIST_PLANE.calcDist(fromLat, fromLon, toLat, toLon);</span>
+    }
+
+    public static void addRandomTurnCosts(Graph graph, long seed, BooleanEncodedValue accessEnc, DecimalEncodedValue turnCostEnc, int maxTurnCost, TurnCostStorage turnCostStorage) {
+<span class="fc" id="L253">        Random random = new Random(seed);</span>
+<span class="fc" id="L254">        double pNodeHasTurnCosts = 0.3;</span>
+<span class="fc" id="L255">        double pEdgePairHasTurnCosts = 0.6;</span>
+<span class="fc" id="L256">        double pCostIsRestriction = 0.1;</span>
+
+<span class="pc bpc" id="L258" title="1 of 2 branches missed.">        EdgeExplorer inExplorer = graph.createEdgeExplorer(accessEnc == null ? edge -&gt; true : AccessFilter.inEdges(accessEnc));</span>
+<span class="pc bpc" id="L259" title="1 of 2 branches missed.">        EdgeExplorer outExplorer = graph.createEdgeExplorer(accessEnc == null ? edge -&gt; true : AccessFilter.outEdges(accessEnc));</span>
+<span class="fc bfc" id="L260" title="All 2 branches covered.">        for (int node = 0; node &lt; graph.getNodes(); ++node) {</span>
+<span class="fc bfc" id="L261" title="All 2 branches covered.">            if (random.nextDouble() &lt; pNodeHasTurnCosts) {</span>
+<span class="fc" id="L262">                EdgeIterator inIter = inExplorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L263" title="All 2 branches covered.">                while (inIter.next()) {</span>
+<span class="fc" id="L264">                    EdgeIterator outIter = outExplorer.setBaseNode(node);</span>
+<span class="fc bfc" id="L265" title="All 2 branches covered.">                    while (outIter.next()) {</span>
+<span class="fc bfc" id="L266" title="All 2 branches covered.">                        if (inIter.getEdge() == outIter.getEdge()) {</span>
+                            // leave u-turns as they are
+<span class="fc" id="L268">                            continue;</span>
+                        }
+<span class="fc bfc" id="L270" title="All 2 branches covered.">                        if (random.nextDouble() &lt; pEdgePairHasTurnCosts) {</span>
+<span class="fc bfc" id="L271" title="All 2 branches covered.">                            double cost = random.nextDouble() &lt; pCostIsRestriction ? Double.POSITIVE_INFINITY : random.nextDouble() * maxTurnCost;</span>
+<span class="fc" id="L272">                            turnCostStorage.set(turnCostEnc, inIter.getEdge(), node, outIter.getEdge(), cost);</span>
+<span class="fc" id="L273">                        }</span>
+                    }
+<span class="fc" id="L275">                }</span>
+            }
+        }
+<span class="fc" id="L278">    }</span>
+
+    public static List&lt;Snap&gt; createRandomSnaps(BBox bbox, LocationIndex locationIndex, Random rnd, int numPoints, boolean acceptTower, EdgeFilter filter) {
+<span class="fc" id="L281">        int maxTries = numPoints * 100;</span>
+<span class="fc" id="L282">        int tries = 0;</span>
+<span class="fc" id="L283">        List&lt;Snap&gt; snaps = new ArrayList&lt;&gt;(numPoints);</span>
+<span class="fc bfc" id="L284" title="All 2 branches covered.">        while (snaps.size() &lt; numPoints) {</span>
+<span class="pc bpc" id="L285" title="1 of 2 branches missed.">            if (tries &gt; maxTries)</span>
+<span class="nc" id="L286">                throw new IllegalArgumentException(&quot;Could not create &quot; + numPoints + &quot; random points. tries: &quot; + tries + &quot;, maxTries: &quot; + maxTries);</span>
+<span class="fc" id="L287">            Snap snap = getRandomSnap(locationIndex, rnd, bbox, filter);</span>
+<span class="fc" id="L288">            boolean accepted = snap.isValid();</span>
+<span class="fc bfc" id="L289" title="All 2 branches covered.">            if (!acceptTower)</span>
+<span class="pc bpc" id="L290" title="1 of 4 branches missed.">                accepted = accepted &amp;&amp; !snap.getSnappedPosition().equals(Snap.Position.TOWER);</span>
+<span class="fc bfc" id="L291" title="All 2 branches covered.">            if (accepted)</span>
+<span class="fc" id="L292">                snaps.add(snap);</span>
+<span class="fc" id="L293">            tries++;</span>
+<span class="fc" id="L294">        }</span>
+<span class="fc" id="L295">        return snaps;</span>
+    }
+
+    public static Snap getRandomSnap(LocationIndex locationIndex, Random rnd, BBox bbox, EdgeFilter filter) {
+<span class="fc" id="L299">        return locationIndex.findClosest(</span>
+<span class="fc" id="L300">                randomDoubleInRange(rnd, bbox.minLat, bbox.maxLat),</span>
+<span class="fc" id="L301">                randomDoubleInRange(rnd, bbox.minLon, bbox.maxLon),</span>
+                filter
+        );
+    }
+
+    public static double randomDoubleInRange(Random rnd, double min, double max) {
+<span class="fc" id="L307">        return min + rnd.nextDouble() * (max - min);</span>
+    }
+
+    public static int getAdjNode(Graph g, int edge, int adjNode) {
+<span class="nc bnc" id="L311" title="All 2 branches missed.">        if (EdgeIterator.Edge.isValid(edge)) {</span>
+<span class="nc" id="L312">            EdgeIteratorState iterTo = g.getEdgeIteratorState(edge, adjNode);</span>
+<span class="nc" id="L313">            return iterTo.getAdjNode();</span>
+        }
+<span class="nc" id="L315">        return adjNode;</span>
+    }
+
+    public static void checkDAVersion(String name, int expectedVersion, int version) {
+<span class="pc bpc" id="L319" title="1 of 2 branches missed.">        if (version != expectedVersion) {</span>
+<span class="nc" id="L320">            throw new IllegalStateException(&quot;Unexpected version for '&quot; + name + &quot;'. Got: &quot; + version + &quot;, &quot; +</span>
+                    &quot;expected: &quot; + expectedVersion + &quot;. &quot;
+                    + &quot;Make sure you are using the same GraphHopper version for reading the files that was used for creating them. &quot;
+                    + &quot;See https://discuss.graphhopper.com/t/722&quot;);
+        }
+<span class="fc" id="L325">    }</span>
+
+    /**
+     * @return the edge between base and adj, or null if there is no such edge
+     * @throws IllegalArgumentException when there are multiple edges
+     */
+    public static EdgeIteratorState getEdge(Graph graph, int base, int adj) {
+<span class="fc" id="L332">        EdgeExplorer explorer = graph.createEdgeExplorer();</span>
+<span class="fc" id="L333">        int count = count(explorer.setBaseNode(base), adj);</span>
+<span class="pc bpc" id="L334" title="1 of 2 branches missed.">        if (count &gt; 1)</span>
+<span class="nc" id="L335">            throw new IllegalArgumentException(&quot;There are multiple edges between nodes &quot; + base + &quot; and &quot; + adj);</span>
+<span class="fc bfc" id="L336" title="All 2 branches covered.">        else if (count == 0)</span>
+<span class="fc" id="L337">            return null;</span>
+<span class="fc" id="L338">        EdgeIterator iter = explorer.setBaseNode(base);</span>
+<span class="pc bpc" id="L339" title="1 of 2 branches missed.">        while (iter.next()) {</span>
+<span class="fc bfc" id="L340" title="All 2 branches covered.">            if (iter.getAdjNode() == adj)</span>
+<span class="fc" id="L341">                return iter;</span>
+        }
+<span class="nc" id="L343">        throw new IllegalStateException(&quot;There should be an edge&quot;);</span>
+    }
+
+    /**
+     * @return the number of edges with the given adj node
+     */
+    public static int count(EdgeIterator iterator, int adj) {
+<span class="fc" id="L350">        int count = 0;</span>
+<span class="fc bfc" id="L351" title="All 2 branches covered.">        while (iterator.next()) {</span>
+<span class="fc bfc" id="L352" title="All 2 branches covered.">            if (iterator.getAdjNode() == adj)</span>
+<span class="fc" id="L353">                count++;</span>
+        }
+<span class="fc" id="L355">        return count;</span>
+    }
+
+    /**
+     * Creates an edge key, i.e. an integer number that encodes an edge ID and the direction of an edge
+     */
+    public static int createEdgeKey(int edgeId, boolean reverse) {
+        // edge state in storage direction -&gt; edge key is even
+        // edge state against storage direction -&gt; edge key is odd
+<span class="fc bfc" id="L364" title="All 2 branches covered.">        return (edgeId &lt;&lt; 1) + (reverse ? 1 : 0);</span>
+    }
+
+    /**
+     * Returns the edgeKey of the opposite direction
+     */
+    public static int reverseEdgeKey(int edgeKey) {
+<span class="fc bfc" id="L371" title="All 2 branches covered.">        return edgeKey % 2 == 0 ? edgeKey + 1 : edgeKey - 1;</span>
+    }
+
+    /**
+     * @return edge ID for edgeKey
+     */
+    public static int getEdgeFromEdgeKey(int edgeKey) {
+<span class="fc" id="L378">        return edgeKey / 2;</span>
+    }
+
+    /**
+     * @return the common node of two edges
+     * @throws IllegalArgumentException if one of the edges doesn't exist or is a loop or the edges
+     *                                  aren't connected at exactly one distinct node
+     */
+    public static int getCommonNode(BaseGraph baseGraph, int edge1, int edge2) {
+<span class="nc" id="L387">        EdgeIteratorState e1 = baseGraph.getEdgeIteratorState(edge1, Integer.MIN_VALUE);</span>
+<span class="nc" id="L388">        EdgeIteratorState e2 = baseGraph.getEdgeIteratorState(edge2, Integer.MIN_VALUE);</span>
+<span class="nc bnc" id="L389" title="All 2 branches missed.">        if (e1.getBaseNode() == e1.getAdjNode())</span>
+<span class="nc" id="L390">            throw new IllegalArgumentException(&quot;edge1: &quot; + edge1 + &quot; is a loop at node &quot; + e1.getBaseNode());</span>
+<span class="nc bnc" id="L391" title="All 2 branches missed.">        if (e2.getBaseNode() == e2.getAdjNode())</span>
+<span class="nc" id="L392">            throw new IllegalArgumentException(&quot;edge2: &quot; + edge2 + &quot; is a loop at node &quot; + e2.getBaseNode());</span>
+
+<span class="nc bnc" id="L394" title="All 8 branches missed.">        if ((e1.getBaseNode() == e2.getBaseNode() &amp;&amp; e1.getAdjNode() == e2.getAdjNode()) || (e1.getBaseNode() == e2.getAdjNode() &amp;&amp; e1.getAdjNode() == e2.getBaseNode()))</span>
+<span class="nc" id="L395">            throw new IllegalArgumentException(&quot;edge1: &quot; + edge1 + &quot; and edge2: &quot; + edge2 + &quot; form a circle&quot;);</span>
+<span class="nc bnc" id="L396" title="All 4 branches missed.">        else if (e1.getBaseNode() == e2.getBaseNode() || e1.getBaseNode() == e2.getAdjNode())</span>
+<span class="nc" id="L397">            return e1.getBaseNode();</span>
+<span class="nc bnc" id="L398" title="All 4 branches missed.">        else if (e1.getAdjNode() == e2.getAdjNode() || e1.getAdjNode() == e2.getBaseNode())</span>
+<span class="nc" id="L399">            return e1.getAdjNode();</span>
+        else
+<span class="nc" id="L401">            throw new IllegalArgumentException(&quot;edge1: &quot; + edge1 + &quot; and edge2: &quot; + edge2 + &quot; aren't connected&quot;);</span>
+    }
+
+    public static void setSpeed(double fwdSpeed, double bwdSpeed, BooleanEncodedValue accessEnc, DecimalEncodedValue speedEnc, EdgeIteratorState... edges) {
+<span class="fc" id="L405">        setSpeed(fwdSpeed, bwdSpeed, accessEnc, speedEnc, Arrays.asList(edges));</span>
+<span class="fc" id="L406">    }</span>
+
+    public static void setSpeed(double fwdSpeed, double bwdSpeed, BooleanEncodedValue accessEnc, DecimalEncodedValue speedEnc, Collection&lt;EdgeIteratorState&gt; edges) {
+<span class="pc bpc" id="L409" title="2 of 4 branches missed.">        if (fwdSpeed &lt; 0 || bwdSpeed &lt; 0)</span>
+<span class="nc" id="L410">            throw new IllegalArgumentException(&quot;Speed must be positive but wasn't! fwdSpeed:&quot; + fwdSpeed + &quot;, bwdSpeed:&quot; + bwdSpeed);</span>
+<span class="fc bfc" id="L411" title="All 2 branches covered.">        for (EdgeIteratorState edge : edges) {</span>
+<span class="fc" id="L412">            edge.set(speedEnc, fwdSpeed);</span>
+<span class="pc bpc" id="L413" title="1 of 2 branches missed.">            if (fwdSpeed &gt; 0)</span>
+<span class="fc" id="L414">                edge.set(accessEnc, true);</span>
+
+<span class="pc bpc" id="L416" title="3 of 6 branches missed.">            if (bwdSpeed &gt; 0 &amp;&amp; (fwdSpeed != bwdSpeed || speedEnc.isStoreTwoDirections())) {</span>
+<span class="nc bnc" id="L417" title="All 2 branches missed.">                if (!speedEnc.isStoreTwoDirections())</span>
+<span class="nc" id="L418">                    throw new IllegalArgumentException(&quot;EncodedValue &quot; + speedEnc.getName() + &quot; supports only one direction &quot; +</span>
+                            &quot;but two different speeds were specified &quot; + fwdSpeed + &quot; &quot; + bwdSpeed);
+<span class="nc" id="L420">                edge.setReverse(speedEnc, bwdSpeed);</span>
+            }
+<span class="pc bpc" id="L422" title="1 of 2 branches missed.">            if (bwdSpeed &gt; 0)</span>
+<span class="fc" id="L423">                edge.setReverse(accessEnc, true);</span>
+<span class="fc" id="L424">        }</span>
+<span class="fc" id="L425">    }</span>
+
+    public static EdgeIteratorState setSpeed(double averageSpeed, boolean fwd, boolean bwd, BooleanEncodedValue accessEnc, DecimalEncodedValue avSpeedEnc, EdgeIteratorState edge) {
+<span class="pc bpc" id="L428" title="5 of 6 branches missed.">        if (averageSpeed &lt; 0.0001 &amp;&amp; (fwd || bwd))</span>
+<span class="nc" id="L429">            throw new IllegalStateException(&quot;Zero speed is only allowed if edge will get inaccessible. Otherwise Weighting can produce inconsistent results&quot;);</span>
+<span class="fc" id="L430">        edge.set(accessEnc, fwd, bwd);</span>
+<span class="pc bpc" id="L431" title="1 of 2 branches missed.">        if (fwd)</span>
+<span class="fc" id="L432">            edge.set(avSpeedEnc, averageSpeed);</span>
+<span class="pc bpc" id="L433" title="1 of 4 branches missed.">        if (bwd &amp;&amp; avSpeedEnc.isStoreTwoDirections())</span>
+<span class="nc" id="L434">            edge.setReverse(avSpeedEnc, averageSpeed);</span>
+<span class="fc" id="L435">        return edge;</span>
+    }
+
+    public static void updateDistancesFor(Graph g, int node, double... latlonele) {
+<span class="fc" id="L439">        NodeAccess na = g.getNodeAccess();</span>
+<span class="fc bfc" id="L440" title="All 2 branches covered.">        if (latlonele.length == 3)</span>
+<span class="fc" id="L441">            na.setNode(node, latlonele[0], latlonele[1], latlonele[2]);</span>
+<span class="pc bpc" id="L442" title="1 of 2 branches missed.">        else if (latlonele.length == 2) {</span>
+<span class="pc bpc" id="L443" title="1 of 2 branches missed.">            if (na.is3D()) throw new IllegalArgumentException(&quot;graph requires elevation&quot;);</span>
+<span class="fc" id="L444">            na.setNode(node, latlonele[0], latlonele[1]);</span>
+        } else
+<span class="nc" id="L446">            throw new IllegalArgumentException(&quot;illegal number of arguments &quot; + latlonele.length);</span>
+<span class="fc" id="L447">        EdgeIterator iter = g.createEdgeExplorer().setBaseNode(node);</span>
+<span class="fc bfc" id="L448" title="All 2 branches covered.">        while (iter.next()) {</span>
+<span class="fc" id="L449">            iter.setDistance(DIST_EARTH.calcDistance(iter.fetchWayGeometry(FetchMode.ALL)));</span>
+        }
+<span class="fc" id="L451">    }</span>
+
+    /**
+     * Calculates the weight of a given edge like {@link Weighting#calcEdgeWeight} and adds the transition
+     * cost (the turn weight, {@link Weighting#calcTurnWeight}) associated with transitioning from/to the edge with ID prevOrNextEdgeId.
+     *
+     * @param prevOrNextEdgeId if reverse is false this has to be the previous edgeId, if true it
+     *                         has to be the next edgeId in the direction from start to end.
+     */
+    public static double calcWeightWithTurnWeight(Weighting weighting, EdgeIteratorState edgeState, boolean reverse, int prevOrNextEdgeId) {
+<span class="fc" id="L461">        final double edgeWeight = weighting.calcEdgeWeight(edgeState, reverse);</span>
+<span class="fc bfc" id="L462" title="All 2 branches covered.">        if (!EdgeIterator.Edge.isValid(prevOrNextEdgeId)) {</span>
+<span class="fc" id="L463">            return edgeWeight;</span>
+        }
+<span class="fc bfc" id="L465" title="All 2 branches covered.">        double turnWeight = reverse</span>
+<span class="fc" id="L466">                ? weighting.calcTurnWeight(edgeState.getEdge(), edgeState.getBaseNode(), prevOrNextEdgeId)</span>
+<span class="fc" id="L467">                : weighting.calcTurnWeight(prevOrNextEdgeId, edgeState.getBaseNode(), edgeState.getEdge());</span>
+<span class="fc" id="L468">        return edgeWeight + turnWeight;</span>
+    }
+
+    /**
+     * @see #calcWeightWithTurnWeight(Weighting, EdgeIteratorState, boolean, int)
+     */
+    public static long calcMillisWithTurnMillis(Weighting weighting, EdgeIteratorState edgeState, boolean reverse, int prevOrNextEdgeId) {
+<span class="fc" id="L475">        long edgeMillis = weighting.calcEdgeMillis(edgeState, reverse);</span>
+<span class="pc bpc" id="L476" title="1 of 2 branches missed.">        if (edgeMillis == Long.MAX_VALUE)</span>
+<span class="nc" id="L477">            return edgeMillis;</span>
+<span class="fc bfc" id="L478" title="All 2 branches covered.">        if (!EdgeIterator.Edge.isValid(prevOrNextEdgeId))</span>
+<span class="fc" id="L479">            return edgeMillis;</span>
+        // should we also separate weighting vs. time for turn? E.g. a fast but dangerous turn - is this common?
+        // todo: why no first/last orig edge here as in calcWeight ?
+//        final int origEdgeId = reverse ? edgeState.getOrigEdgeLast() : edgeState.getOrigEdgeFirst();
+<span class="fc" id="L483">        final int origEdgeId = edgeState.getEdge();</span>
+<span class="fc bfc" id="L484" title="All 2 branches covered.">        long turnMillis = reverse</span>
+<span class="fc" id="L485">                ? weighting.calcTurnMillis(origEdgeId, edgeState.getBaseNode(), prevOrNextEdgeId)</span>
+<span class="fc" id="L486">                : weighting.calcTurnMillis(prevOrNextEdgeId, edgeState.getBaseNode(), origEdgeId);</span>
+<span class="pc bpc" id="L487" title="1 of 2 branches missed.">        if (turnMillis == Long.MAX_VALUE)</span>
+<span class="nc" id="L488">            return turnMillis;</span>
+<span class="fc" id="L489">        return edgeMillis + turnMillis;</span>
+    }
+
+    /**
+     * Reads the country borders from the countries.geojson resource file
+     */
+    public static List&lt;CustomArea&gt; readCountries() {
+<span class="fc" id="L496">        ObjectMapper objectMapper = new ObjectMapper();</span>
+<span class="fc" id="L497">        objectMapper.registerModule(new JtsModule());</span>
+
+<span class="fc" id="L499">        Set&lt;String&gt; enumSet = new HashSet&lt;&gt;(Country.values().length * 2);</span>
+<span class="fc bfc" id="L500" title="All 2 branches covered.">        for (Country c : Country.values()) {</span>
+<span class="fc bfc" id="L501" title="All 2 branches covered.">            if (c == Country.MISSING) continue;</span>
+<span class="fc bfc" id="L502" title="All 2 branches covered.">            if (c.getStates().isEmpty()) enumSet.add(c.getAlpha2());</span>
+<span class="fc bfc" id="L503" title="All 2 branches covered.">            else for (State s : c.getStates()) enumSet.add(s.getStateCode());</span>
+        }
+
+<span class="fc" id="L506">        try (Reader reader = new InputStreamReader(GHUtility.class.getResourceAsStream(&quot;/com/graphhopper/countries/countries.geojson&quot;), StandardCharsets.UTF_8)) {</span>
+<span class="fc" id="L507">            JsonFeatureCollection jsonFeatureCollection = objectMapper.readValue(reader, JsonFeatureCollection.class);</span>
+<span class="fc" id="L508">            return jsonFeatureCollection.getFeatures().stream()</span>
+                    // exclude areas not in the list of Country enums like FX =&gt; Metropolitan France
+<span class="fc" id="L510">                    .filter(customArea -&gt; enumSet.contains(getIdOrPropertiesId(customArea)))</span>
+<span class="fc" id="L511">                    .map((f) -&gt; {</span>
+<span class="fc" id="L512">                        CustomArea ca = CustomArea.fromJsonFeature(f);</span>
+                        // the Feature does not include &quot;id&quot; but we expect it
+<span class="pc bpc" id="L514" title="1 of 2 branches missed.">                        if (f.getId() == null) f.setId(getIdOrPropertiesId(f));</span>
+<span class="fc" id="L515">                        ca.getProperties().put(ISO_3166_2, f.getId());</span>
+<span class="fc" id="L516">                        return ca;</span>
+                    })
+<span class="fc" id="L518">                    .collect(Collectors.toList());</span>
+<span class="nc" id="L519">        } catch (IOException e) {</span>
+<span class="nc" id="L520">            throw new UncheckedIOException(e);</span>
+        }
+    }
+
+    private static String getIdOrPropertiesId(JsonFeature feature) {
+<span class="pc bpc" id="L525" title="1 of 2 branches missed.">        if (feature.getId() != null) return feature.getId();</span>
+<span class="pc bpc" id="L526" title="1 of 2 branches missed.">        if (feature.getProperties() != null) return (String) feature.getProperties().get(&quot;id&quot;);</span>
+<span class="nc" id="L527">        return null;</span>
+    }
+
+    public static void runConcurrently(Stream&lt;Runnable&gt; runnables, int threads) {
+<span class="fc" id="L531">        ForkJoinPool pool = new ForkJoinPool(threads);</span>
+        try {
+<span class="fc" id="L533">            pool.submit(() -&gt; runnables.parallel().forEach(Runnable::run)).get();</span>
+<span class="nc" id="L534">        } catch (InterruptedException | ExecutionException e) {</span>
+<span class="nc" id="L535">            throw new RuntimeException(e);</span>
+        } finally {
+<span class="fc" id="L537">            pool.shutdown();</span>
+        }
+<span class="fc" id="L539">    }</span>
+
+    public static BBox createBBox(EdgeIteratorState edgeState) {
+<span class="fc" id="L542">        PointList towerNodes = edgeState.fetchWayGeometry(FetchMode.TOWER_ONLY);</span>
+<span class="pc bpc" id="L543" title="1 of 2 branches missed.">        int secondIndex = towerNodes.size() == 1 ? 0 : 1;</span>
+<span class="fc" id="L544">        return BBox.fromPoints(towerNodes.getLat(0), towerNodes.getLon(0),</span>
+<span class="fc" id="L545">                towerNodes.getLat(secondIndex), towerNodes.getLon(secondIndex));</span>
+    }
+
+    public static JsonFeature createCircle(String id, double centerLat, double centerLon, double radius) {
+<span class="fc" id="L549">        final int n = 36;</span>
+<span class="fc" id="L550">        final double delta = 360.0 / n;</span>
+<span class="fc" id="L551">        Coordinate[] coordinates = IntStream.range(0, n + 1)</span>
+<span class="fc" id="L552">                .mapToObj(i -&gt; DIST_EARTH.projectCoordinate(centerLat, centerLon, radius, (i * delta) % 360))</span>
+<span class="fc" id="L553">                .map(p -&gt; new Coordinate(p.lon, p.lat)).toArray(Coordinate[]::new);</span>
+<span class="fc" id="L554">        Polygon polygon = new GeometryFactory().createPolygon(coordinates);</span>
+<span class="fc" id="L555">        JsonFeature result = new JsonFeature();</span>
+<span class="fc" id="L556">        result.setId(id);</span>
+<span class="fc" id="L557">        result.setGeometry(polygon);</span>
+<span class="fc" id="L558">        return result;</span>
+    }
+
+    public static JsonFeature createRectangle(String id, double minLat, double minLon, double maxLat, double maxLon) {
+<span class="fc" id="L562">        Coordinate[] coordinates = new Coordinate[]{</span>
+                new Coordinate(minLon, minLat),
+                new Coordinate(minLon, maxLat),
+                new Coordinate(maxLon, maxLat),
+                new Coordinate(maxLon, minLat),
+                new Coordinate(minLon, minLat)
+        };
+<span class="fc" id="L569">        Polygon polygon = new GeometryFactory().createPolygon(coordinates);</span>
+<span class="fc" id="L570">        JsonFeature result = new JsonFeature();</span>
+<span class="fc" id="L571">        result.setId(id);</span>
+<span class="fc" id="L572">        result.setGeometry(polygon);</span>
+<span class="fc" id="L573">        return result;</span>
+    }
+
+    public static List&lt;String&gt; comparePaths(Path refPath, Path path, int source, int target, long seed) {
+<span class="fc" id="L577">        List&lt;String&gt; strictViolations = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L578">        double refWeight = refPath.getWeight();</span>
+<span class="fc" id="L579">        double weight = path.getWeight();</span>
+<span class="pc bpc" id="L580" title="1 of 2 branches missed.">        if (Math.abs(refWeight - weight) &gt; 1.e-2) {</span>
+<span class="nc" id="L581">            LOGGER.warn(&quot;expected: &quot; + refPath.calcNodes());</span>
+<span class="nc" id="L582">            LOGGER.warn(&quot;given:    &quot; + path.calcNodes());</span>
+<span class="nc" id="L583">            LOGGER.warn(&quot;seed: &quot; + seed);</span>
+<span class="nc" id="L584">            fail(&quot;wrong weight: &quot; + source + &quot;-&gt;&quot; + target + &quot;\nexpected: &quot; + refWeight + &quot;\ngiven:    &quot; + weight + &quot;\nseed: &quot; + seed);</span>
+        }
+<span class="pc bpc" id="L586" title="1 of 2 branches missed.">        if (Math.abs(path.getDistance() - refPath.getDistance()) &gt; 1.e-1) {</span>
+<span class="nc" id="L587">            strictViolations.add(&quot;wrong distance &quot; + source + &quot;-&gt;&quot; + target + &quot;, expected: &quot; + refPath.getDistance() + &quot;, given: &quot; + path.getDistance());</span>
+        }
+<span class="pc bpc" id="L589" title="1 of 2 branches missed.">        if (Math.abs(path.getTime() - refPath.getTime()) &gt; 50) {</span>
+<span class="nc" id="L590">            strictViolations.add(&quot;wrong time &quot; + source + &quot;-&gt;&quot; + target + &quot;, expected: &quot; + refPath.getTime() + &quot;, given: &quot; + path.getTime());</span>
+        }
+<span class="fc" id="L592">        IntIndexedContainer refNodes = refPath.calcNodes();</span>
+<span class="fc" id="L593">        IntIndexedContainer pathNodes = path.calcNodes();</span>
+<span class="pc bpc" id="L594" title="1 of 2 branches missed.">        if (!refNodes.equals(pathNodes)) {</span>
+            // sometimes there are paths including an edge a-c that has the same distance as the two edges a-b-c. in this
+            // case both options are valid best paths. we only check for this most simple and frequent case here...
+<span class="nc bnc" id="L597" title="All 2 branches missed.">            if (path.getGraph() != refPath.getGraph())</span>
+<span class="nc" id="L598">                fail(&quot;path and refPath graphs are different&quot;);</span>
+<span class="nc bnc" id="L599" title="All 2 branches missed.">            if (!pathsEqualExceptOneEdge(path.getGraph(), refNodes, pathNodes))</span>
+<span class="nc" id="L600">                strictViolations.add(&quot;wrong nodes &quot; + source + &quot;-&gt;&quot; + target + &quot;\nexpected: &quot; + refNodes + &quot;\ngiven:    &quot; + pathNodes);</span>
+        }
+<span class="fc" id="L602">        return strictViolations;</span>
+    }
+
+    /**
+     * Sometimes the graph can contain edges like this:
+     * A--C
+     * \-B|
+     * where A-C is the same distance as A-B-C. In this case the shortest path is not well defined in terms of nodes.
+     * This method checks if two node-paths are equal except for such an edge.
+     */
+    private static boolean pathsEqualExceptOneEdge(Graph graph, IntIndexedContainer p1, IntIndexedContainer p2) {
+<span class="nc bnc" id="L613" title="All 2 branches missed.">        if (p1.equals(p2))</span>
+<span class="nc" id="L614">            throw new IllegalArgumentException(&quot;paths are equal&quot;);</span>
+<span class="nc bnc" id="L615" title="All 2 branches missed.">        if (Math.abs(p1.size() - p2.size()) != 1)</span>
+<span class="nc" id="L616">            return false;</span>
+<span class="nc bnc" id="L617" title="All 2 branches missed.">        IntIndexedContainer shorterPath = p1.size() &lt; p2.size() ? p1 : p2;</span>
+<span class="nc bnc" id="L618" title="All 2 branches missed.">        IntIndexedContainer longerPath = p1.size() &lt; p2.size() ? p2 : p1;</span>
+<span class="nc bnc" id="L619" title="All 2 branches missed.">        if (shorterPath.size() &lt; 2)</span>
+<span class="nc" id="L620">            return false;</span>
+<span class="nc" id="L621">        IntArrayList indicesWithDifferentNodes = new IntArrayList();</span>
+<span class="nc bnc" id="L622" title="All 2 branches missed.">        for (int i = 1; i &lt; shorterPath.size(); i++) {</span>
+<span class="nc bnc" id="L623" title="All 2 branches missed.">            if (shorterPath.get(i - indicesWithDifferentNodes.size()) != longerPath.get(i)) {</span>
+<span class="nc" id="L624">                indicesWithDifferentNodes.add(i);</span>
+            }
+        }
+<span class="nc bnc" id="L627" title="All 2 branches missed.">        if (indicesWithDifferentNodes.size() != 1)</span>
+<span class="nc" id="L628">            return false;</span>
+<span class="nc" id="L629">        int b = indicesWithDifferentNodes.get(0);</span>
+<span class="nc" id="L630">        int a = b - 1;</span>
+<span class="nc" id="L631">        int c = b + 1;</span>
+<span class="nc bnc" id="L632" title="All 2 branches missed.">        assert shorterPath.get(a) == longerPath.get(a);</span>
+<span class="nc bnc" id="L633" title="All 2 branches missed.">        assert shorterPath.get(b) != longerPath.get(b);</span>
+<span class="nc bnc" id="L634" title="All 2 branches missed.">        if (shorterPath.get(b) != longerPath.get(c))</span>
+<span class="nc" id="L635">            return false;</span>
+<span class="nc" id="L636">        double distABC = getMinDist(graph, longerPath.get(a), longerPath.get(b)) + getMinDist(graph, longerPath.get(b), longerPath.get(c));</span>
+
+<span class="nc" id="L638">        double distAC = getMinDist(graph, shorterPath.get(a), longerPath.get(c));</span>
+<span class="nc bnc" id="L639" title="All 2 branches missed.">        if (Math.abs(distABC - distAC) &gt; 0.1)</span>
+<span class="nc" id="L640">            return false;</span>
+<span class="nc" id="L641">        LOGGER.info(&quot;Distance &quot; + shorterPath.get(a) + &quot;-&quot; + longerPath.get(c) + &quot; is the same as distance &quot; +</span>
+<span class="nc" id="L642">                longerPath.get(a) + &quot;-&quot; + longerPath.get(b) + &quot;-&quot; + longerPath.get(c) + &quot; -&gt; there are multiple possibilities &quot; +</span>
+                &quot;for shortest paths&quot;);
+<span class="nc" id="L644">        return true;</span>
+    }
+
+    private static double getMinDist(Graph graph, int p, int q) {
+<span class="nc" id="L648">        EdgeExplorer explorer = graph.createEdgeExplorer();</span>
+<span class="nc" id="L649">        EdgeIterator iter = explorer.setBaseNode(p);</span>
+<span class="nc" id="L650">        double distance = Double.MAX_VALUE;</span>
+<span class="nc bnc" id="L651" title="All 2 branches missed.">        while (iter.next())</span>
+<span class="nc bnc" id="L652" title="All 2 branches missed.">            if (iter.getAdjNode() == q)</span>
+<span class="nc" id="L653">                distance = Math.min(distance, iter.getDistance());</span>
+<span class="nc" id="L654">        return distance;</span>
+    }
+
+    private static void fail(String message) {
+<span class="nc" id="L658">        throw new AssertionError(message);</span>
+    }
+
+    public static CustomModel loadCustomModelFromJar(String name) {
+        try {
+<span class="fc" id="L663">            InputStream is = GHUtility.class.getResourceAsStream(&quot;/com/graphhopper/custom_models/&quot; + name);</span>
+<span class="pc bpc" id="L664" title="1 of 2 branches missed.">            if (is == null)</span>
+<span class="nc" id="L665">                throw new IllegalArgumentException(&quot;There is no built-in custom model '&quot; + name + &quot;'&quot;);</span>
+<span class="fc" id="L666">            String json = readJSONFileWithoutComments(new InputStreamReader(is));</span>
+<span class="fc" id="L667">            ObjectMapper objectMapper = Jackson.newObjectMapper();</span>
+<span class="fc" id="L668">            return objectMapper.readValue(json, CustomModel.class);</span>
+<span class="nc" id="L669">        } catch (IOException e) {</span>
+<span class="nc" id="L670">            throw new IllegalArgumentException(&quot;Could not load built-in custom model '&quot; + name + &quot;'&quot;, e);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

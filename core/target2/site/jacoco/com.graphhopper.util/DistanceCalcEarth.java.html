@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DistanceCalcEarth.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.util</a> &gt; <span class="el_source">DistanceCalcEarth.java</span></div><h1>DistanceCalcEarth.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.util;
+
+import com.graphhopper.util.shapes.BBox;
+import com.graphhopper.util.shapes.GHPoint;
+
+import static java.lang.Math.*;
+
+/**
+ * @author Peter Karich
+ */
+<span class="fc" id="L28">public class DistanceCalcEarth implements DistanceCalc {</span>
+    /**
+     * mean radius of the earth
+     */
+    public final static double R = 6371000; // m
+    /**
+     * Radius of the earth at equator
+     */
+    public final static double R_EQ = 6378137; // m
+    /**
+     * Circumference of the earth
+     */
+    public final static double C = 2 * PI * R;
+    public final static double KM_MILE = 1.609344;
+    public final static double METERS_PER_DEGREE = C / 360.0;
+<span class="fc" id="L43">    public static final DistanceCalcEarth DIST_EARTH = new DistanceCalcEarth();</span>
+
+    /**
+     * Calculates distance of (from, to) in meter.
+     * &lt;p&gt;
+     * http://en.wikipedia.org/wiki/Haversine_formula a = sin²(Δlat/2) +
+     * cos(lat1).cos(lat2).sin²(Δlong/2) c = 2.atan2(√a, √(1−a)) d = R.c
+     */
+    @Override
+    public double calcDist(double fromLat, double fromLon, double toLat, double toLon) {
+<span class="fc" id="L53">        double normedDist = calcNormalizedDist(fromLat, fromLon, toLat, toLon);</span>
+<span class="fc" id="L54">        return R * 2 * asin(sqrt(normedDist));</span>
+    }
+
+    /**
+     * This implements a rather quick solution to calculate 3D distances on earth using euclidean
+     * geometry mixed with Haversine formula used for the on earth distance. The haversine formula makes
+     * not so much sense as it is only important for large distances where then the rather smallish
+     * heights would becomes negligible.
+     */
+    @Override
+    public double calcDist3D(double fromLat, double fromLon, double fromHeight,
+                             double toLat, double toLon, double toHeight) {
+<span class="fc bfc" id="L66" title="All 2 branches covered.">        double eleDelta = hasElevationDiff(fromHeight, toHeight) ? (toHeight - fromHeight) : 0;</span>
+<span class="fc" id="L67">        double len = calcDist(fromLat, fromLon, toLat, toLon);</span>
+<span class="fc" id="L68">        return Math.sqrt(eleDelta * eleDelta + len * len);</span>
+    }
+
+    @Override
+    public double calcDenormalizedDist(double normedDist) {
+<span class="fc" id="L73">        return R * 2 * asin(sqrt(normedDist));</span>
+    }
+
+    /**
+     * Returns the specified length in normalized meter.
+     */
+    @Override
+    public double calcNormalizedDist(double dist) {
+<span class="fc" id="L81">        double tmp = sin(dist / 2 / R);</span>
+<span class="fc" id="L82">        return tmp * tmp;</span>
+    }
+
+    @Override
+    public double calcNormalizedDist(double fromLat, double fromLon, double toLat, double toLon) {
+<span class="fc" id="L87">        double sinDeltaLat = sin(toRadians(toLat - fromLat) / 2);</span>
+<span class="fc" id="L88">        double sinDeltaLon = sin(toRadians(toLon - fromLon) / 2);</span>
+<span class="fc" id="L89">        return sinDeltaLat * sinDeltaLat</span>
+<span class="fc" id="L90">                + sinDeltaLon * sinDeltaLon * cos(toRadians(fromLat)) * cos(toRadians(toLat));</span>
+    }
+
+    /**
+     * Circumference of the earth at different latitudes (breitengrad)
+     */
+    public double calcCircumference(double lat) {
+<span class="fc" id="L97">        return 2 * PI * R * cos(toRadians(lat));</span>
+    }
+
+    public boolean isDateLineCrossOver(double lon1, double lon2) {
+<span class="nc bnc" id="L101" title="All 2 branches missed.">        return abs(lon1 - lon2) &gt; 180.0;</span>
+    }
+
+    @Override
+    public BBox createBBox(double lat, double lon, double radiusInMeter) {
+<span class="pc bpc" id="L106" title="1 of 2 branches missed.">        if (radiusInMeter &lt;= 0)</span>
+<span class="nc" id="L107">            throw new IllegalArgumentException(&quot;Distance must not be zero or negative! &quot; + radiusInMeter + &quot; lat,lon:&quot; + lat + &quot;,&quot; + lon);</span>
+
+        // length of a circle at specified lat / dist
+<span class="fc" id="L110">        double dLon = (360 / (calcCircumference(lat) / radiusInMeter));</span>
+
+        // length of a circle is independent of the longitude
+<span class="fc" id="L113">        double dLat = (360 / (DistanceCalcEarth.C / radiusInMeter));</span>
+
+        // Now return bounding box in coordinates
+<span class="fc" id="L116">        return new BBox(lon - dLon, lon + dLon, lat - dLat, lat + dLat);</span>
+    }
+
+    @Override
+    public double calcNormalizedEdgeDistance(double r_lat_deg, double r_lon_deg,
+                                             double a_lat_deg, double a_lon_deg,
+                                             double b_lat_deg, double b_lon_deg) {
+<span class="fc" id="L123">        double shrinkFactor = calcShrinkFactor(a_lat_deg, b_lat_deg);</span>
+
+<span class="fc" id="L125">        double a_lat = a_lat_deg;</span>
+<span class="fc" id="L126">        double a_lon = a_lon_deg * shrinkFactor;</span>
+
+<span class="fc" id="L128">        double b_lat = b_lat_deg;</span>
+<span class="fc" id="L129">        double b_lon = b_lon_deg * shrinkFactor;</span>
+
+<span class="fc" id="L131">        double r_lat = r_lat_deg;</span>
+<span class="fc" id="L132">        double r_lon = r_lon_deg * shrinkFactor;</span>
+
+<span class="fc" id="L134">        double delta_lon = b_lon - a_lon;</span>
+<span class="fc" id="L135">        double delta_lat = b_lat - a_lat;</span>
+
+<span class="fc bfc" id="L137" title="All 2 branches covered.">        if (delta_lat == 0)</span>
+            // special case: horizontal edge
+<span class="fc" id="L139">            return calcNormalizedDist(a_lat_deg, r_lon_deg, r_lat_deg, r_lon_deg);</span>
+
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        if (delta_lon == 0)</span>
+            // special case: vertical edge
+<span class="fc" id="L143">            return calcNormalizedDist(r_lat_deg, a_lon_deg, r_lat_deg, r_lon_deg);</span>
+
+<span class="fc" id="L145">        double norm = delta_lon * delta_lon + delta_lat * delta_lat;</span>
+<span class="fc" id="L146">        double factor = ((r_lon - a_lon) * delta_lon + (r_lat - a_lat) * delta_lat) / norm;</span>
+
+        // x,y is projection of r onto segment a-b
+<span class="fc" id="L149">        double c_lon = a_lon + factor * delta_lon;</span>
+<span class="fc" id="L150">        double c_lat = a_lat + factor * delta_lat;</span>
+<span class="fc" id="L151">        return calcNormalizedDist(c_lat, c_lon / shrinkFactor, r_lat_deg, r_lon_deg);</span>
+    }
+
+    @Override
+    public double calcNormalizedEdgeDistance3D(double r_lat_deg, double r_lon_deg, double r_ele_m,
+                                               double a_lat_deg, double a_lon_deg, double a_ele_m,
+                                               double b_lat_deg, double b_lon_deg, double b_ele_m) {
+<span class="pc bpc" id="L158" title="3 of 6 branches missed.">        if (Double.isNaN(r_ele_m) || Double.isNaN(a_ele_m) || Double.isNaN(b_ele_m))</span>
+<span class="nc" id="L159">            return calcNormalizedEdgeDistance(r_lat_deg, r_lon_deg, a_lat_deg, a_lon_deg, b_lat_deg, b_lon_deg);</span>
+
+<span class="fc" id="L161">        double shrinkFactor = calcShrinkFactor(a_lat_deg, b_lat_deg);</span>
+
+<span class="fc" id="L163">        double a_lat = a_lat_deg;</span>
+<span class="fc" id="L164">        double a_lon = a_lon_deg * shrinkFactor;</span>
+<span class="fc" id="L165">        double a_ele = a_ele_m / METERS_PER_DEGREE;</span>
+
+<span class="fc" id="L167">        double b_lat = b_lat_deg;</span>
+<span class="fc" id="L168">        double b_lon = b_lon_deg * shrinkFactor;</span>
+<span class="fc" id="L169">        double b_ele = b_ele_m / METERS_PER_DEGREE;</span>
+
+<span class="fc" id="L171">        double r_lat = r_lat_deg;</span>
+<span class="fc" id="L172">        double r_lon = r_lon_deg * shrinkFactor;</span>
+<span class="fc" id="L173">        double r_ele = r_ele_m / METERS_PER_DEGREE;</span>
+
+<span class="fc" id="L175">        double delta_lon = b_lon - a_lon;</span>
+<span class="fc" id="L176">        double delta_lat = b_lat - a_lat;</span>
+<span class="fc" id="L177">        double delta_ele = b_ele - a_ele;</span>
+
+<span class="fc" id="L179">        double norm = delta_lon * delta_lon + delta_lat * delta_lat + delta_ele * delta_ele;</span>
+<span class="fc" id="L180">        double factor = ((r_lon - a_lon) * delta_lon + (r_lat - a_lat) * delta_lat + (r_ele - a_ele) * delta_ele) / norm;</span>
+<span class="fc bfc" id="L181" title="All 2 branches covered.">        if (Double.isNaN(factor)) factor = 0;</span>
+
+        // x,y,z is projection of r onto segment a-b
+<span class="fc" id="L184">        double c_lon = a_lon + factor * delta_lon;</span>
+<span class="fc" id="L185">        double c_lat = a_lat + factor * delta_lat;</span>
+<span class="fc" id="L186">        double c_ele_m = (a_ele + factor * delta_ele) * METERS_PER_DEGREE;</span>
+<span class="fc" id="L187">        return calcNormalizedDist(c_lat, c_lon / shrinkFactor, r_lat_deg, r_lon_deg) + calcNormalizedDist(r_ele_m - c_ele_m);</span>
+    }
+
+    double calcShrinkFactor(double a_lat_deg, double b_lat_deg) {
+<span class="fc" id="L191">        return cos(toRadians((a_lat_deg + b_lat_deg) / 2));</span>
+    }
+
+    @Override
+    public GHPoint calcCrossingPointToEdge(double r_lat_deg, double r_lon_deg,
+                                           double a_lat_deg, double a_lon_deg,
+                                           double b_lat_deg, double b_lon_deg) {
+<span class="fc" id="L198">        double shrinkFactor = calcShrinkFactor(a_lat_deg, b_lat_deg);</span>
+<span class="fc" id="L199">        double a_lat = a_lat_deg;</span>
+<span class="fc" id="L200">        double a_lon = a_lon_deg * shrinkFactor;</span>
+
+<span class="fc" id="L202">        double b_lat = b_lat_deg;</span>
+<span class="fc" id="L203">        double b_lon = b_lon_deg * shrinkFactor;</span>
+
+<span class="fc" id="L205">        double r_lat = r_lat_deg;</span>
+<span class="fc" id="L206">        double r_lon = r_lon_deg * shrinkFactor;</span>
+
+<span class="fc" id="L208">        double delta_lon = b_lon - a_lon;</span>
+<span class="fc" id="L209">        double delta_lat = b_lat - a_lat;</span>
+
+<span class="fc bfc" id="L211" title="All 2 branches covered.">        if (delta_lat == 0)</span>
+            // special case: horizontal edge
+<span class="fc" id="L213">            return new GHPoint(a_lat_deg, r_lon_deg);</span>
+
+<span class="fc bfc" id="L215" title="All 2 branches covered.">        if (delta_lon == 0)</span>
+            // special case: vertical edge        
+<span class="fc" id="L217">            return new GHPoint(r_lat_deg, a_lon_deg);</span>
+
+<span class="fc" id="L219">        double norm = delta_lon * delta_lon + delta_lat * delta_lat;</span>
+<span class="fc" id="L220">        double factor = ((r_lon - a_lon) * delta_lon + (r_lat - a_lat) * delta_lat) / norm;</span>
+
+        // x,y is projection of r onto segment a-b
+<span class="fc" id="L223">        double c_lon = a_lon + factor * delta_lon;</span>
+<span class="fc" id="L224">        double c_lat = a_lat + factor * delta_lat;</span>
+<span class="fc" id="L225">        return new GHPoint(c_lat, c_lon / shrinkFactor);</span>
+    }
+
+    @Override
+    public boolean validEdgeDistance(double r_lat_deg, double r_lon_deg,
+                                     double a_lat_deg, double a_lon_deg,
+                                     double b_lat_deg, double b_lon_deg) {
+<span class="fc" id="L232">        double shrinkFactor = calcShrinkFactor(a_lat_deg, b_lat_deg);</span>
+<span class="fc" id="L233">        double a_lat = a_lat_deg;</span>
+<span class="fc" id="L234">        double a_lon = a_lon_deg * shrinkFactor;</span>
+
+<span class="fc" id="L236">        double b_lat = b_lat_deg;</span>
+<span class="fc" id="L237">        double b_lon = b_lon_deg * shrinkFactor;</span>
+
+<span class="fc" id="L239">        double r_lat = r_lat_deg;</span>
+<span class="fc" id="L240">        double r_lon = r_lon_deg * shrinkFactor;</span>
+
+<span class="fc" id="L242">        double ar_x = r_lon - a_lon;</span>
+<span class="fc" id="L243">        double ar_y = r_lat - a_lat;</span>
+<span class="fc" id="L244">        double ab_x = b_lon - a_lon;</span>
+<span class="fc" id="L245">        double ab_y = b_lat - a_lat;</span>
+<span class="fc" id="L246">        double ab_ar = ar_x * ab_x + ar_y * ab_y;</span>
+
+<span class="fc" id="L248">        double rb_x = b_lon - r_lon;</span>
+<span class="fc" id="L249">        double rb_y = b_lat - r_lat;</span>
+<span class="fc" id="L250">        double ab_rb = rb_x * ab_x + rb_y * ab_y;</span>
+
+        // calculate the exact degree alpha(ar, ab) and beta(rb,ab) if it is case 1 then both angles are &lt;= 90°
+        // double ab_ar_norm = Math.sqrt(ar_x * ar_x + ar_y * ar_y) * Math.sqrt(ab_x * ab_x + ab_y * ab_y);
+        // double ab_rb_norm = Math.sqrt(rb_x * rb_x + rb_y * rb_y) * Math.sqrt(ab_x * ab_x + ab_y * ab_y);
+        // return Math.acos(ab_ar / ab_ar_norm) &lt;= Math.PI / 2 &amp;&amp; Math.acos(ab_rb / ab_rb_norm) &lt;= Math.PI / 2;
+<span class="fc bfc" id="L256" title="All 4 branches covered.">        return ab_ar &gt; 0 &amp;&amp; ab_rb &gt; 0;</span>
+    }
+
+    @Override
+    public GHPoint projectCoordinate(double latInDeg, double lonInDeg, double distanceInMeter, double headingClockwiseFromNorth) {
+<span class="fc" id="L261">        double angularDistance = distanceInMeter / R;</span>
+
+<span class="fc" id="L263">        double latInRadians = Math.toRadians(latInDeg);</span>
+<span class="fc" id="L264">        double lonInRadians = Math.toRadians(lonInDeg);</span>
+<span class="fc" id="L265">        double headingInRadians = Math.toRadians(headingClockwiseFromNorth);</span>
+
+        // This formula is taken from: http://williams.best.vwh.net/avform.htm#LL (http://www.movable-type.co.uk/scripts/latlong.html -&gt; https://github.com/chrisveness/geodesy MIT)
+        // θ=heading,δ=distance,φ1=latInRadians
+        // lat2 = asin( sin φ1 ⋅ cos δ + cos φ1 ⋅ sin δ ⋅ cos θ )     
+        // lon2 = λ1 + atan2( sin θ ⋅ sin δ ⋅ cos φ1, cos δ − sin φ1 ⋅ sin φ2 )
+<span class="fc" id="L271">        double projectedLat = Math.asin(Math.sin(latInRadians) * Math.cos(angularDistance)</span>
+<span class="fc" id="L272">                + Math.cos(latInRadians) * Math.sin(angularDistance) * Math.cos(headingInRadians));</span>
+<span class="fc" id="L273">        double projectedLon = lonInRadians + Math.atan2(Math.sin(headingInRadians) * Math.sin(angularDistance) * Math.cos(latInRadians),</span>
+<span class="fc" id="L274">                Math.cos(angularDistance) - Math.sin(latInRadians) * Math.sin(projectedLat));</span>
+
+<span class="fc" id="L276">        projectedLon = (projectedLon + 3 * Math.PI) % (2 * Math.PI) - Math.PI; // normalise to -180..+180°</span>
+
+<span class="fc" id="L278">        projectedLat = Math.toDegrees(projectedLat);</span>
+<span class="fc" id="L279">        projectedLon = Math.toDegrees(projectedLon);</span>
+
+<span class="fc" id="L281">        return new GHPoint(projectedLat, projectedLon);</span>
+    }
+
+    @Override
+    public GHPoint intermediatePoint(double f, double lat1, double lon1, double lat2, double lon2) {
+<span class="fc" id="L286">        double lat1radians = Math.toRadians(lat1);</span>
+<span class="fc" id="L287">        double lon1radians = Math.toRadians(lon1);</span>
+<span class="fc" id="L288">        double lat2radians = Math.toRadians(lat2);</span>
+<span class="fc" id="L289">        double lon2radians = Math.toRadians(lon2);</span>
+
+        // This formula is taken from: (http://www.movable-type.co.uk/scripts/latlong.html -&gt; https://github.com/chrisveness/geodesy MIT)
+
+<span class="fc" id="L293">        double deltaLat = lat2radians - lat1radians;</span>
+<span class="fc" id="L294">        double deltaLon = lon2radians - lon1radians;</span>
+<span class="fc" id="L295">        double cosLat1 = cos(lat1radians);</span>
+<span class="fc" id="L296">        double cosLat2 = cos(lat2radians);</span>
+<span class="fc" id="L297">        double sinHalfDeltaLat = sin(deltaLat / 2);</span>
+<span class="fc" id="L298">        double sinHalfDeltaLon = sin(deltaLon / 2);</span>
+
+<span class="fc" id="L300">        double a = sinHalfDeltaLat * sinHalfDeltaLat + cosLat1 * cosLat2 * sinHalfDeltaLon * sinHalfDeltaLon;</span>
+<span class="fc" id="L301">        double angularDistance = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));</span>
+<span class="fc" id="L302">        double sinDistance = sin(angularDistance);</span>
+
+<span class="pc bpc" id="L304" title="1 of 2 branches missed.">        if (angularDistance == 0) return new GHPoint(lat1, lon1);</span>
+
+<span class="fc" id="L306">        double A = Math.sin((1 - f) * angularDistance) / sinDistance;</span>
+<span class="fc" id="L307">        double B = Math.sin(f * angularDistance) / sinDistance;</span>
+
+<span class="fc" id="L309">        double x = A * cosLat1 * cos(lon1radians) + B * cosLat2 * cos(lon2radians);</span>
+<span class="fc" id="L310">        double y = A * cosLat1 * sin(lon1radians) + B * cosLat2 * sin(lon2radians);</span>
+<span class="fc" id="L311">        double z = A * sin(lat1radians) + B * sin(lat2radians);</span>
+
+<span class="fc" id="L313">        double midLat = Math.toDegrees(Math.atan2(z, Math.sqrt(x * x + y * y)));</span>
+<span class="fc" id="L314">        double midLon = Math.toDegrees(Math.atan2(y, x));</span>
+
+<span class="fc" id="L316">        return new GHPoint(midLat, midLon);</span>
+    }
+
+    @Override
+    public double calcDistance(PointList pointList) {
+<span class="fc" id="L321">        return internCalcDistance(pointList, pointList.is3D());</span>
+    }
+
+    public static double calcDistance(PointList pointList, boolean is3d) {
+<span class="fc" id="L325">        return DistanceCalcEarth.DIST_EARTH.internCalcDistance(pointList, is3d);</span>
+    }
+
+    private double internCalcDistance(PointList pointList, boolean is3d) {
+<span class="fc" id="L329">        double prevLat = Double.NaN;</span>
+<span class="fc" id="L330">        double prevLon = Double.NaN;</span>
+<span class="fc" id="L331">        double prevEle = Double.NaN;</span>
+<span class="fc" id="L332">        double dist = 0;</span>
+<span class="fc bfc" id="L333" title="All 2 branches covered.">        for (int i = 0; i &lt; pointList.size(); i++) {</span>
+<span class="fc bfc" id="L334" title="All 2 branches covered.">            if (i &gt; 0) {</span>
+<span class="fc bfc" id="L335" title="All 2 branches covered.">                if (is3d)</span>
+<span class="fc" id="L336">                    dist += calcDist3D(prevLat, prevLon, prevEle, pointList.getLat(i), pointList.getLon(i), pointList.getEle(i));</span>
+                else
+<span class="fc" id="L338">                    dist += calcDist(prevLat, prevLon, pointList.getLat(i), pointList.getLon(i));</span>
+            }
+
+<span class="fc" id="L341">            prevLat = pointList.getLat(i);</span>
+<span class="fc" id="L342">            prevLon = pointList.getLon(i);</span>
+<span class="fc bfc" id="L343" title="All 2 branches covered.">            if (pointList.is3D())</span>
+<span class="fc" id="L344">                prevEle = pointList.getEle(i);</span>
+        }
+<span class="fc" id="L346">        return dist;</span>
+    }
+
+    @Override
+    public boolean isCrossBoundary(double lon1, double lon2) {
+<span class="fc bfc" id="L351" title="All 2 branches covered.">        return abs(lon1 - lon2) &gt; 300;</span>
+    }
+
+    protected boolean hasElevationDiff(double a, double b) {
+<span class="pc bpc" id="L355" title="2 of 6 branches missed.">        return a != b &amp;&amp; !Double.isNaN(a) &amp;&amp; !Double.isNaN(b);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L360">        return &quot;EXACT&quot;;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

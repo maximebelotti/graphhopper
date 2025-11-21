@@ -1,0 +1,303 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractBidirAlgo.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">GraphHopper Core</a> &gt; <a href="index.source.html" class="el_package">com.graphhopper.routing</a> &gt; <span class="el_source">AbstractBidirAlgo.java</span></div><h1>AbstractBidirAlgo.java</h1><pre class="source lang-java linenums">/*
+ *  Licensed to GraphHopper GmbH under one or more contributor
+ *  license agreements. See the NOTICE file distributed with this work for
+ *  additional information regarding copyright ownership.
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the &quot;License&quot;); you may not use this file except in
+ *  compliance with the License. You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+package com.graphhopper.routing;
+
+import com.carrotsearch.hppc.IntObjectMap;
+import com.graphhopper.coll.GHIntObjectHashMap;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.util.EdgeIterator;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.PriorityQueue;
+
+import static com.graphhopper.util.EdgeIterator.ANY_EDGE;
+
+<span class="fc" id="L31">public abstract class AbstractBidirAlgo implements EdgeToEdgeRoutingAlgorithm {</span>
+    protected final TraversalMode traversalMode;
+    protected int from;
+    protected int to;
+    protected int fromOutEdge;
+    protected int toInEdge;
+    protected IntObjectMap&lt;SPTEntry&gt; bestWeightMapFrom;
+    protected IntObjectMap&lt;SPTEntry&gt; bestWeightMapTo;
+    protected IntObjectMap&lt;SPTEntry&gt; bestWeightMapOther;
+    protected SPTEntry currFrom;
+    protected SPTEntry currTo;
+    protected SPTEntry bestFwdEntry;
+    protected SPTEntry bestBwdEntry;
+<span class="fc" id="L44">    protected double bestWeight = Double.MAX_VALUE;</span>
+<span class="fc" id="L45">    protected int maxVisitedNodes = Integer.MAX_VALUE;</span>
+<span class="fc" id="L46">    protected long timeoutMillis = Long.MAX_VALUE;</span>
+<span class="fc" id="L47">    private long finishTimeMillis = Long.MAX_VALUE;</span>
+    PriorityQueue&lt;SPTEntry&gt; pqOpenSetFrom;
+    PriorityQueue&lt;SPTEntry&gt; pqOpenSetTo;
+<span class="fc" id="L50">    protected boolean updateBestPath = true;</span>
+    protected boolean finishedFrom;
+    protected boolean finishedTo;
+    int visitedCountFrom;
+    int visitedCountTo;
+    private boolean alreadyRun;
+
+<span class="fc" id="L57">    public AbstractBidirAlgo(TraversalMode traversalMode) {</span>
+<span class="fc" id="L58">        this.traversalMode = traversalMode;</span>
+<span class="fc" id="L59">        fromOutEdge = ANY_EDGE;</span>
+<span class="fc" id="L60">        toInEdge = ANY_EDGE;</span>
+<span class="fc" id="L61">    }</span>
+
+    protected void initCollections(int size) {
+<span class="fc" id="L64">        pqOpenSetFrom = new PriorityQueue&lt;&gt;(size);</span>
+<span class="fc" id="L65">        bestWeightMapFrom = new GHIntObjectHashMap&lt;&gt;(size);</span>
+
+<span class="fc" id="L67">        pqOpenSetTo = new PriorityQueue&lt;&gt;(size);</span>
+<span class="fc" id="L68">        bestWeightMapTo = new GHIntObjectHashMap&lt;&gt;(size);</span>
+<span class="fc" id="L69">    }</span>
+
+    /**
+     * Creates the root shortest path tree entry for the forward or backward search.
+     */
+    protected abstract SPTEntry createStartEntry(int node, double weight, boolean reverse);
+
+    @Override
+    public List&lt;Path&gt; calcPaths(int from, int to) {
+<span class="fc" id="L78">        return Collections.singletonList(calcPath(from, to));</span>
+    }
+
+    @Override
+    public Path calcPath(int from, int to) {
+<span class="fc" id="L83">        return calcPath(from, to, ANY_EDGE, ANY_EDGE);</span>
+    }
+
+    @Override
+    public Path calcPath(int from, int to, int fromOutEdge, int toInEdge) {
+<span class="pc bpc" id="L88" title="1 of 6 branches missed.">        if ((fromOutEdge != ANY_EDGE || toInEdge != ANY_EDGE) &amp;&amp; !traversalMode.isEdgeBased()) {</span>
+<span class="nc" id="L89">            throw new IllegalArgumentException(&quot;Restricting the start/target edges is only possible for edge-based graph traversal&quot;);</span>
+        }
+<span class="fc" id="L91">        this.fromOutEdge = fromOutEdge;</span>
+<span class="fc" id="L92">        this.toInEdge = toInEdge;</span>
+<span class="fc" id="L93">        checkAlreadyRun();</span>
+<span class="fc" id="L94">        setupFinishTime();</span>
+<span class="fc" id="L95">        init(from, 0, to, 0);</span>
+<span class="fc" id="L96">        runAlgo();</span>
+<span class="fc" id="L97">        return extractPath();</span>
+    }
+
+    void init(int from, double fromWeight, int to, double toWeight) {
+<span class="fc" id="L101">        initFrom(from, fromWeight);</span>
+<span class="fc" id="L102">        initTo(to, toWeight);</span>
+<span class="fc" id="L103">        postInit(from, to);</span>
+<span class="fc" id="L104">    }</span>
+
+    protected void initFrom(int from, double weight) {
+<span class="fc" id="L107">        this.from = from;</span>
+<span class="fc" id="L108">        currFrom = createStartEntry(from, weight, false);</span>
+<span class="fc" id="L109">        pqOpenSetFrom.add(currFrom);</span>
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        if (!traversalMode.isEdgeBased()) {</span>
+<span class="fc" id="L111">            bestWeightMapFrom.put(from, currFrom);</span>
+        }
+<span class="fc" id="L113">    }</span>
+
+    protected void initTo(int to, double weight) {
+<span class="fc" id="L116">        this.to = to;</span>
+<span class="fc" id="L117">        currTo = createStartEntry(to, weight, true);</span>
+<span class="fc" id="L118">        pqOpenSetTo.add(currTo);</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        if (!traversalMode.isEdgeBased()) {</span>
+<span class="fc" id="L120">            bestWeightMapTo.put(to, currTo);</span>
+        }
+<span class="fc" id="L122">    }</span>
+
+    protected void postInit(int from, int to) {
+<span class="fc bfc" id="L125" title="All 2 branches covered.">        if (!traversalMode.isEdgeBased()) {</span>
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">            if (updateBestPath) {</span>
+<span class="fc" id="L127">                bestWeightMapOther = bestWeightMapFrom;</span>
+<span class="fc" id="L128">                updateBestPath(Double.POSITIVE_INFINITY, currFrom, EdgeIterator.NO_EDGE, to, true);</span>
+            }
+<span class="fc bfc" id="L130" title="All 6 branches covered.">        } else if (from == to &amp;&amp; fromOutEdge == ANY_EDGE &amp;&amp; toInEdge == ANY_EDGE) {</span>
+            // special handling if start and end are the same and no directions are restricted
+            // the resulting weight should be zero
+<span class="pc bpc" id="L133" title="2 of 4 branches missed.">            if (currFrom.weight != 0 || currTo.weight != 0) {</span>
+<span class="nc" id="L134">                throw new IllegalStateException(&quot;If from=to, the starting weight must be zero for from and to&quot;);</span>
+            }
+<span class="fc" id="L136">            bestFwdEntry = currFrom;</span>
+<span class="fc" id="L137">            bestBwdEntry = currTo;</span>
+<span class="fc" id="L138">            bestWeight = 0;</span>
+<span class="fc" id="L139">            finishedFrom = true;</span>
+<span class="fc" id="L140">            finishedTo = true;</span>
+<span class="fc" id="L141">            return;</span>
+        }
+<span class="fc" id="L143">        postInitFrom();</span>
+<span class="fc" id="L144">        postInitTo();</span>
+<span class="fc" id="L145">    }</span>
+
+    protected abstract void postInitFrom();
+
+    protected abstract void postInitTo();
+
+    protected void runAlgo() {
+<span class="fc bfc" id="L152" title="All 6 branches covered.">        while (!finished() &amp;&amp; !isMaxVisitedNodesExceeded() &amp;&amp; !isTimeoutExceeded()) {</span>
+<span class="fc bfc" id="L153" title="All 2 branches covered.">            if (!finishedFrom)</span>
+<span class="fc bfc" id="L154" title="All 2 branches covered.">                finishedFrom = !fillEdgesFrom();</span>
+
+<span class="fc bfc" id="L156" title="All 2 branches covered.">            if (!finishedTo)</span>
+<span class="fc bfc" id="L157" title="All 2 branches covered.">                finishedTo = !fillEdgesTo();</span>
+        }
+<span class="fc" id="L159">    }</span>
+
+    // http://www.cs.princeton.edu/courses/archive/spr06/cos423/Handouts/EPP%20shortest%20path%20algorithms.pdf
+    // a node from overlap may not be on the best path!
+    // =&gt; when scanning an arc (v, w) in the forward search and w is scanned in the reverseOrder
+    //    search, update extractPath = μ if df (v) + (v, w) + dr (w) &lt; μ
+    protected boolean finished() {
+<span class="fc bfc" id="L166" title="All 4 branches covered.">        if (finishedFrom || finishedTo)</span>
+<span class="fc" id="L167">            return true;</span>
+
+<span class="fc bfc" id="L169" title="All 2 branches covered.">        return currFrom.weight + currTo.weight &gt;= bestWeight;</span>
+    }
+
+    abstract boolean fillEdgesFrom();
+
+    abstract boolean fillEdgesTo();
+
+    protected void updateBestPath(double edgeWeight, SPTEntry entry, int origEdgeIdForCH, int traversalId, boolean reverse) {
+<span class="pc bpc" id="L177" title="1 of 2 branches missed.">        assert traversalMode.isEdgeBased() != Double.isInfinite(edgeWeight);</span>
+<span class="fc" id="L178">        SPTEntry entryOther = bestWeightMapOther.get(traversalId);</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">        if (entryOther == null)</span>
+<span class="fc" id="L180">            return;</span>
+
+        // update μ
+<span class="fc" id="L183">        double weight = entry.getWeightOfVisitedPath() + entryOther.getWeightOfVisitedPath();</span>
+<span class="fc bfc" id="L184" title="All 2 branches covered.">        if (traversalMode.isEdgeBased()) {</span>
+<span class="pc bpc" id="L185" title="1 of 2 branches missed.">            if (getIncomingEdge(entryOther) != getIncomingEdge(entry))</span>
+<span class="nc" id="L186">                throw new IllegalStateException(&quot;cannot happen for edge based execution of &quot; + getName());</span>
+
+            // prevents the path to contain the edge at the meeting point twice and subtracts the weight (excluding turn weight =&gt; no previous edge)
+<span class="fc" id="L189">            entry = entry.getParent();</span>
+<span class="fc" id="L190">            weight -= edgeWeight;</span>
+        }
+
+<span class="fc bfc" id="L193" title="All 2 branches covered.">        if (weight &lt; bestWeight) {</span>
+<span class="fc bfc" id="L194" title="All 2 branches covered.">            bestFwdEntry = reverse ? entryOther : entry;</span>
+<span class="fc bfc" id="L195" title="All 2 branches covered.">            bestBwdEntry = reverse ? entry : entryOther;</span>
+<span class="fc" id="L196">            bestWeight = weight;</span>
+        }
+<span class="fc" id="L198">    }</span>
+
+    protected abstract double getInEdgeWeight(SPTEntry entry);
+
+    protected int getIncomingEdge(SPTEntry entry) {
+<span class="fc" id="L203">        return entry.edge;</span>
+    }
+
+    abstract protected Path extractPath();
+
+    protected boolean fromEntryCanBeSkipped() {
+<span class="fc" id="L209">        return false;</span>
+    }
+
+    protected boolean fwdSearchCanBeStopped() {
+<span class="fc" id="L213">        return false;</span>
+    }
+
+    protected boolean toEntryCanBeSkipped() {
+<span class="fc" id="L217">        return false;</span>
+    }
+
+    protected boolean bwdSearchCanBeStopped() {
+<span class="fc" id="L221">        return false;</span>
+    }
+
+    protected double getCurrentFromWeight() {
+<span class="nc" id="L225">        return currFrom.weight;</span>
+    }
+
+    protected double getCurrentToWeight() {
+<span class="nc" id="L229">        return currTo.weight;</span>
+    }
+
+    IntObjectMap&lt;SPTEntry&gt; getBestFromMap() {
+<span class="nc" id="L233">        return bestWeightMapFrom;</span>
+    }
+
+    IntObjectMap&lt;SPTEntry&gt; getBestToMap() {
+<span class="nc" id="L237">        return bestWeightMapTo;</span>
+    }
+
+    void setBestOtherMap(IntObjectMap&lt;SPTEntry&gt; other) {
+<span class="nc" id="L241">        bestWeightMapOther = other;</span>
+<span class="nc" id="L242">    }</span>
+
+    protected void setUpdateBestPath(boolean b) {
+<span class="fc" id="L245">        updateBestPath = b;</span>
+<span class="fc" id="L246">    }</span>
+
+    @Override
+    public int getVisitedNodes() {
+<span class="fc" id="L250">        return visitedCountFrom + visitedCountTo;</span>
+    }
+
+    void setToDataStructures(AbstractBidirAlgo other) {
+<span class="nc" id="L254">        to = other.to;</span>
+<span class="nc" id="L255">        toInEdge = other.toInEdge;</span>
+<span class="nc" id="L256">        pqOpenSetTo = other.pqOpenSetTo;</span>
+<span class="nc" id="L257">        bestWeightMapTo = other.bestWeightMapTo;</span>
+<span class="nc" id="L258">        finishedTo = other.finishedTo;</span>
+<span class="nc" id="L259">        currTo = other.currTo;</span>
+<span class="nc" id="L260">        visitedCountTo = other.visitedCountTo;</span>
+        // inEdgeExplorer
+<span class="nc" id="L262">    }</span>
+
+    @Override
+    public void setMaxVisitedNodes(int numberOfNodes) {
+<span class="fc" id="L266">        this.maxVisitedNodes = numberOfNodes;</span>
+<span class="fc" id="L267">    }</span>
+
+    @Override
+    public void setTimeoutMillis(long timeoutMillis) {
+<span class="fc" id="L271">        this.timeoutMillis = timeoutMillis;</span>
+<span class="fc" id="L272">    }</span>
+
+    protected void checkAlreadyRun() {
+<span class="pc bpc" id="L275" title="1 of 2 branches missed.">        if (alreadyRun)</span>
+<span class="nc" id="L276">            throw new IllegalStateException(&quot;Create a new instance per call&quot;);</span>
+
+<span class="fc" id="L278">        alreadyRun = true;</span>
+<span class="fc" id="L279">    }</span>
+
+    protected void setupFinishTime() {
+        try {
+<span class="fc" id="L283">            this.finishTimeMillis = Math.addExact(System.currentTimeMillis(), timeoutMillis);</span>
+<span class="fc" id="L284">        } catch (ArithmeticException e) {</span>
+<span class="fc" id="L285">            this.finishTimeMillis = Long.MAX_VALUE;</span>
+<span class="fc" id="L286">        }</span>
+<span class="fc" id="L287">    }</span>
+
+    @Override
+    public String getName() {
+<span class="nc" id="L291">        return getClass().getSimpleName();</span>
+    }
+
+    protected boolean isMaxVisitedNodesExceeded() {
+<span class="fc bfc" id="L295" title="All 2 branches covered.">        return maxVisitedNodes &lt; getVisitedNodes();</span>
+    }
+
+    protected boolean isTimeoutExceeded() {
+<span class="pc bpc" id="L299" title="1 of 4 branches missed.">        return finishTimeMillis &lt; Long.MAX_VALUE &amp;&amp; System.currentTimeMillis() &gt; finishTimeMillis;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>
