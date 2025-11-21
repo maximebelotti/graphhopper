@@ -24,8 +24,6 @@ Si, au contraire, le score courant est supérieur à la baseline, cela signifie 
 Enfin, si le score courant est exactement égal à la baseline ou suffisamment proche selon l'epsilon, aucune mise à jour n'est effectuée. Le build réussit, car la qualité des tests s'est maintenue et le fichier de baseline reste inchangé.  
 Pour permettre la mise à jour automatique de la baseline quand elle doit l'être, nous avons configuré un bot GitHub Actions. Ce bot peut effectuer des opérations `git add`, `git commit` et `git push` directement depuis le workflow. Grâce à lui, la baseline est correctement maintenue dans le dépôt sans intervention manuelle.
 
-Finalement, on donne un lien vers le meme de Rickroll en appelant le script externe 'EmmanuelChicoine/rickroll-lower-score@main' avec la variable DECREASED (si oui ou non le score de mutation a baissé) définie à l'étape de la vérification des scores de mutation. rickroll-lower-score est appelé dans tous les scénarios, mais lui-même ne produit un output que si le score de mutation a baissé. Dans le cas contraire, rien est `echo`é.
-
 **Validation des modifications:**  
 Une fois le code ajoute et de dubugage fini, nous avons valide le comportement du workflow dans plusieurs scenarios.:
 - Premier lancement (absence de baseline)
@@ -33,8 +31,7 @@ Une fois le code ajoute et de dubugage fini, nous avons valide le comportement d
     - Résultat attendu (obtenu): Le workflow doit exécuter correctement PIT et calculer un score de mutation, puis en détectant l’absence du fichier de baseline doit créer automatiquement un nouveau fichier contenant le score courant. Dans ce scénario, le build ne devait pas échouer puisqu’il s’agissait de la toute première référence.
 - Régression du score de mutation
     - Démarche: Nous avons volontairement affaibli certains tests afin de provoquer une baisse réelle du score de mutation, puis poussé ces modifications.
-    - Résultat attendu (obtenu): Le workflow doit exécuter PIT, obtenir un score inférieur à la baseline existante, détecter cette différence comme significative (au-delà de l’epsilon) et faire échouer la CI en signalant clairement la régression. C'est également ici que, recevant l'information que le score de mutation a baissé à travers l'étape « Rick-roll si score baisse »,  rickroll-lower-score retourne le lien vers le gif de la chanson.
-- Amélioration du score de mutation
+    - Résultat attendu (obtenu): Le workflow doit exécuter PIT, obtenir un score inférieur à la baseline existante, détecter cette différence comme significative (au-delà de l’epsilon) et faire échouer la CI en signalant clairement la régression.
     - Démarche: Nous avons restaures les tests précédemment affaiblis, ce qui augmente le score de mutation, puis effectué un push pour observer la réaction du workflow.
     - Résultat attendu (obtenu): Le workflow doit reconnaître que le score courant est supérieur à la baseline, mettre automatiquement à jour cette baseline et terminer le build sans erreur.
 - Score identique ou variation négligeable
@@ -119,4 +116,5 @@ Les objets contenus dans la liste paths sont exactement ceux fournis par le `Pat
 Le compteur `visitedNodes` est égal à la somme des valeurs renvoyées par `PathCalculator.getVisitedNodes()` pour chaque segment.  
 `PathCalculator.calcPaths()` est appelé une fois par segment, avec les bons identifiants de nœuds (10 et 20, puis 20 et 30) ainsi qu’un objet EdgeRestrictions.  
 Si `curbsides` n’est pas vide et que sa taille diffère du nombre total de points, `calcPaths()` doit lancer une `IllegalArgumentException`.  
+
 Si `curbsides` n’est pas vide et que `headings` n’est pas vide, `calcPaths()` doit également lancer une `IllegalArgumentException`.
