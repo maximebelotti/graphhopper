@@ -69,7 +69,7 @@ public class PathTest {
     public void testFound() {
         BaseGraph g = new BaseGraph.Builder(carManager).create();
         Path p = new Path(g);
-        assertTrue(p.isFound());
+        assertFalse(p.isFound());
         assertEquals(0, p.getDistance(), 1e-7);
         assertEquals(0, p.calcNodes().size());
     }
