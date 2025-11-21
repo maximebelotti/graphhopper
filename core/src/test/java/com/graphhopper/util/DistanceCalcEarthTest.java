@@ -18,6 +18,7 @@
 package com.graphhopper.util;
 
 import com.graphhopper.util.shapes.GHPoint;
+import com.graphhopper.util.shapes.BBox;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
