@@ -7,16 +7,16 @@
 **Github:** https://github.com/maximebelotti/graphhopper
 
 ## GitHub Action
-Nous avons intégrés la vérifications automatique du score de mutation directement dans le fichier [`.github/workflows/build.yml`](.github/workflows/build.yml), car c'est le workflow central utilise lors de chaque push pour construire et tester le projet. Modifier ce fichier permet donc de faire de la vérification du score pitest (PIT) une partie intégrante du processus d'integration continue (CI), au même titre que les tests unitaires et la compilation.
+Nous avons intégré la vérifications automatique du score de mutation directement dans le fichier [`.github/workflows/build.yml`](.github/workflows/build.yml), car c'est le workflow central utilisé lors de chaque push pour construire et tester le projet. Modifier ce fichier permet donc de faire de la vérification du score pitest (PIT) une partie intégrante du processus d'intégration continue (CI), au même titre que les tests unitaires et la compilation.
 
-La première étape ajoute sert à exécuter les tests de mutations PIT. Elle commence par cibler le module `core` en changeant de dossier. C'est le cœur de graphHopper, c'est la que se trouve la dépendance PIT et tous les tests que nous avons ajoutes. Une fois dans le bon module, nous lançons l'exécution des tests de mutation avec Maven en mode batch: `mvn -B org.pitest:pitest-maven:mutationCoverage`.  
-A noter que nous avons du modifier le `pom.xml` du module `core` afin d'y restreindre les classes et les tests cibles. Nous avons choisi de cibler uniquement les classes concernees par nos deux projets, afin de nous concentrer sur nos changements tout en évitant une exécution excessive. En effet, lancer  PIT sur l'ensemble du module `core` peut être très long et provoquer quelques erreurs.
+La première étape ajoutée sert à exécuter les tests de mutations PIT. Elle commence par cibler le module `core` en changeant de dossier. C'est le cœur de graphHopper, c'est là que se trouvent la dépendance PIT et tous les tests que nous avons ajoutés. Une fois dans le bon module, nous lançons l'exécution des tests de mutation avec Maven en mode batch: `mvn -B org.pitest:pitest-maven:mutationCoverage`.  
+A noter que nous avons dû modifier le `pom.xml` du module `core` afin d'y restreindre les classes et les tests cibles. Nous avons choisi de cibler uniquement les classes concernées par nos deux projets, afin de nous concentrer sur nos changements tout en évitant une exécution excessive. En effet, lancer  PIT sur l'ensemble du module `core` peut être très long et provoquer quelques erreurs.
 
-Apres l'exécution de PIT, le workflow extrait le score de mutation extrait le score de mutation du fichier XML génère. Nous avons choisi d'utiliser le fichier XML plutôt que le rapport HTML, car il est plus facile à analyser automatiquement dans un script.
-Pour sécuriser cette étape, nous avons ajouté deux conditions préventives. La première vérifie que le fichier `mutations.xml` existe réellement et la seconde s'assure que le fichier contient au moins un mutant. Si l'une de ces conditions échoue, le workflow échoue immédiatement. Cela évite un faux positif dans le CI.  
-Lorsque le rapport est valide, nous comptons le nombre total de mutants ainsi que le nombre de mutant tues, ce qui permet de calculer le score de mutation (100 × mutants_tués / mutants_totaux), arrondi a deux décimales. Nous exportons ensuite ce score a l'étape suivante grâce a la variable de sortie GitHub Actions.
+Apres l'exécution de PIT, le workflow extrait le score de mutation du fichier XML généré. Nous avons choisi d'utiliser le fichier XML plutôt que le rapport HTML, car il est plus facile à analyser automatiquement dans un script.
+Pour sécuriser cette étape, nous avons ajouté deux conditions préventives. La première vérifie que le fichier `mutations.xml` existe réellement, et la seconde s'assure que le fichier contient au moins un mutant. Si l'une de ces conditions échoue, le workflow échoue immédiatement. Cela évite un faux positif dans le CI.  
+Lorsque le rapport est valide, nous comptons le nombre total de mutants ainsi que le nombre de mutant tués, ce qui permet de calculer le score de mutation (100 × mutants_tués / mutants_totaux), arrondi à deux décimales. Nous exportons ensuite ce score a l'étape suivante grâce a la variable de sortie GitHub Actions.
 
-Ensuite, on compare le score courant à une baseline stockée dans `.github/mutation-baseline.txt` et met à jour ce fichier si le score courant est supérieur à la baseline enregistrée. Cette étape gère plusieurs scénarios.  
+Ensuite, on compare le score courant à une baseline stockée dans `.github/mutation-baseline.txt` et on met à jour ce fichier si le score courant est supérieur à la baseline enregistrée. Cette étape gère plusieurs scénarios.  
 Dans le premier scénario, le fichier de baseline n'existe pas encore. Cela correspond à la toute première exécution du workflow ou à une réinitialisation volontaire. Dans ce cas, le score calculé devient automatiquement la nouvelle baseline. Le fichier est donc créé et le build réussit.
 Un second scénario survient lorsque le fichier existe mais qu'il est vide ou contient une valeur invalide. Le workflow déclenche immédiatement un `exit 1`. Cela permet de signaler une corruption ou une mauvaise manipulation du fichier de baseline.  
 Dans le troisième scénario, la baseline est valide. Le workflow compare alors le score courant au score enregistré. Si le score courant est significativement inférieur (en tenant compte d'un epsilon pour compenser les effets d'arrondi liés aux calculs en virgule flottante), alors le build échoue, car cela indique une baisse de la qualité des tests.  
@@ -126,6 +126,7 @@ Le compteur `visitedNodes` est égal à la somme des valeurs renvoyées par `Pat
 Si `curbsides` n’est pas vide et que sa taille diffère du nombre total de points, `calcPaths()` doit lancer une `IllegalArgumentException`.  
 
 Si `curbsides` n’est pas vide et que `headings` n’est pas vide, `calcPaths()` doit également lancer une `IllegalArgumentException`.
+
 
 
 
