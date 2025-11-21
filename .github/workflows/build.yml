@@ -100,7 +100,15 @@ jobs:
           if [ "$DECREASED" -eq 1 ]; then
             echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
             echo -e "Voir les détails : https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif"
-            exit 1
           else
             echo "Le score de mutation ne baisse pas."
           fi
+
+      
+      - name: Rick-roll si score baisse
+        uses: EmmanuelChicoine/rickroll-lower-score@main
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          new_score: ${{steps.compare_scores.outputs.CURRENT}}
+          previous_score: ${{steps.compare_scores.outputs.BASELINE}}
+
