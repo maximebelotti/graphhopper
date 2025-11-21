@@ -386,7 +386,7 @@ public class BBoxTest {
 
             if (intersection != null) {
                 // L’intersection doit se trouver à l’intérieur ou en chevauchement des deux BBox
-                assertAll("L’intersection calculée doit être cohérente et contenue dans les deux BBox",
+                assertAll("L'intersection calculée doit être cohérente et contenue dans les deux BBox",
                         () -> assertTrue(b1.contains(intersection.minLat, intersection.minLon)
                                 || b1.intersects(intersection)),
                         () -> assertTrue(b2.contains(intersection.minLat, intersection.minLon)
