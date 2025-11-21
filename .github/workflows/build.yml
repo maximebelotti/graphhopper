@@ -85,28 +85,57 @@ jobs:
 
           echo "Score de mutation actuel : $CURRENT"
 
+          EPSILON="0.000001"
+
           if [ ! -f "$BASELINE_FILE" ]; then
-            echo " Aucun score minimal trouvé. Le score actuel devient le score minimal."
+            echo "Aucun score minimal trouvé. Le score actuel devient le score minimal."
             mkdir -p "$(dirname "$BASELINE_FILE")"
             echo "$CURRENT" > "$BASELINE_FILE"
             echo "Score minimal initialisé à : $CURRENT"
 
-            # Exportation des scores à GitHub Outputs
-            echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
-            echo "baseline=$CURRENT" >> "$GITHUB_OUTPUT"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$BASELINE_FILE"
+            git commit -m "Initialisation automatique du score minimal de mutation (CI)" || true
+            git push || true
+
             exit 0
+          firead -r BASELINE < "$BASELINE_FILE"
+
+          if ! echo "$BASELINE" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+            echo "Le fichier $BASELINE_FILE existe mais ne contient pas un score valide."
+            echo "Contenu lu : '$BASELINE'"
+            echo "Merci de corriger le fichier ou de le supprimer pour réinitialiser la baseline."
+            exit 1
           fi
 
-          BASELINE=$(cat "$BASELINE_FILE")
-          echo "Score minimal enregistré : $BASELINE"
+          echo "Score minimal enregistré (brut) : '$BASELINE'"
 
-          EPSILON="0.000001"
-          DECREASED=$(echo "$CURRENT + $EPSILON < $BASELINE" | bc -l)
+          DECREASED=$(echo "$BASELINE - $CURRENT > $EPSILON" | bc -l)
+          INCREASED=$(echo "$CURRENT - $BASELINE > $EPSILON" | bc -l)
+          echo "decreased=$CURRENT" >> "$GITHUB_OUTPUT"
 
           if [ "$DECREASED" -eq 1 ]; then
             echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
+            echo -e "Voir les détails : https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif"
+            exit 1
+          fi
+
+          if [ "$INCREASED" -eq 1 ]; then
+            echo "Le score de mutation a augmenté : $CURRENT > $BASELINE"
+            echo "Mise à jour automatique de la baseline..."
+
+            echo "$CURRENT" > "$BASELINE_FILE"
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$BASELINE_FILE"
+            git commit -m "Mise à jour automatique du score minimal de mutation (CI)" || true
+            git push || true
+
+            echo "Nouvelle baseline enregistrée : $CURRENT"
           else
-            echo "Le score de mutation ne baisse pas."
+            echo "Le score de mutation ne baisse pas mais n'augmente pas de façon significative. Aucune mise à jour de baseline."
           fi
 
       
@@ -114,6 +143,5 @@ jobs:
         uses: EmmanuelChicoine/rickroll-lower-score@main
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          new_score: ${{steps.compare_scores.outputs.current}}
-          previous_score: ${{steps.compare_scores.outputs.baseline}}
+          decreased: ${{steps.compare_scores.outputs.decreased}}
 
