@@ -114,6 +114,7 @@ jobs:
 
           if [ "$DECREASED" -eq 1 ]; then
             echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
+            echo -e "Voir les détails : https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif"
             exit 1
           fi
 
@@ -133,9 +134,4 @@ jobs:
           else
             echo "Le score de mutation ne baisse pas mais n'augmente pas de façon significative. Aucune mise à jour de baseline."
           fi
-      
-      - name: Rickroll
-        if: failure()
-        continue-on-error: true
-        uses: TejasvOnly/random-rickroll@v1.0
         
