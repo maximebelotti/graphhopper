@@ -44,7 +44,6 @@ jobs:
         run: mvn -B -DskipTests install
 
       - name: Executer tests de mutation
-        if: matrix.java-version == '21'
         run:  |
           cd core
           mvn -B org.pitest:pitest-maven:mutationCoverage
@@ -100,7 +99,9 @@ jobs:
             git push || true
 
             exit 0
-          firead -r BASELINE < "$BASELINE_FILE"
+          fi
+          
+          read -r BASELINE < "$BASELINE_FILE"
 
           if ! echo "$BASELINE" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
             echo "Le fichier $BASELINE_FILE existe mais ne contient pas un score valide."
