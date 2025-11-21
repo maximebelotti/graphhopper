@@ -43,7 +43,7 @@ jobs:
         run: mvn -B -DskipTests install
 
       - name: Executer tests de mutation
-        run: |
+        run:  |
           cd core
           mvn -B org.pitest:pitest-maven:mutationCoverage
 
@@ -65,7 +65,7 @@ jobs:
             exit 1
           fi
 
-          KILLED=$(grep -E 'detected=.true.' "$REPORT_XML" | wc -l || true)
+          KILLED=$(grep -c 'detected=.true.' "$REPORT_XML" || true)
           SCORE=$(echo "scale=2; 100 * $KILLED / $TOTAL" | bc -l)
 
           echo "Mutants totaux       : $TOTAL"
@@ -74,7 +74,8 @@ jobs:
 
           echo "score=$SCORE" >> "$GITHUB_OUTPUT"
 
-      - name: Comparer et mettre à jour automatiquement la baseline
+      - name: Comparer la mutation avec le score minimal
+        id: compare_scores
         run: |
           BASELINE_FILE=".github/mutation-baseline.txt"
           CURRENT="${{ steps.mutation_score.outputs.score }}"
@@ -97,10 +98,10 @@ jobs:
 
             exit 0
           fi
-
+          
           read -r BASELINE < "$BASELINE_FILE"
 
-          if ! echo "$BASELINE" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+          if ! echo "$BASELINE" | grep -Eq '^[0-9]*\.?[0-9]+$'; then
             echo "Le fichier $BASELINE_FILE existe mais ne contient pas un score valide."
             echo "Contenu lu : '$BASELINE'"
             echo "Merci de corriger le fichier ou de le supprimer pour réinitialiser la baseline."
@@ -111,6 +112,7 @@ jobs:
 
           DECREASED=$(echo "$BASELINE - $CURRENT > $EPSILON" | bc -l)
           INCREASED=$(echo "$CURRENT - $BASELINE > $EPSILON" | bc -l)
+          echo "decreased=$DECREASED" >> "$GITHUB_OUTPUT"
 
           if [ "$DECREASED" -eq 1 ]; then
             echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
@@ -134,4 +136,11 @@ jobs:
           else
             echo "Le score de mutation ne baisse pas mais n'augmente pas de façon significative. Aucune mise à jour de baseline."
           fi
-        
+
+      
+      - name: Rick-roll si score baisse
+        uses: EmmanuelChicoine/rickroll-lower-score@main
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          decreased: ${{steps.compare_scores.outputs.decreased}}
+
