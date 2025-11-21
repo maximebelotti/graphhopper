@@ -29,17 +29,21 @@ Une fois le code ajoute et de dubugage fini, nous avons valide le comportement d
 - Premier lancement (absence de baseline)
     - Démarche: Nous avons supprimé manuellement le fichier `.github/mutation-baseline.txt`, puis déclenché un nouveau push pour observer le comportement du workflow en situation d’initialisation.
     - Résultat attendu (obtenu): Le workflow doit exécuter correctement PIT et calculer un score de mutation, puis en détectant l’absence du fichier de baseline doit créer automatiquement un nouveau fichier contenant le score courant. Dans ce scénario, le build ne devait pas échouer puisqu’il s’agissait de la toute première référence.
+<img width="599" height="353" alt="image" src="https://github.com/user-attachments/assets/12fb8835-2311-4860-90d5-436bb50eae94" />
 - Régression du score de mutation
     - Démarche: Nous avons volontairement affaibli certains tests afin de provoquer une baisse réelle du score de mutation, puis poussé ces modifications.
     - Résultat attendu (obtenu): Le workflow doit exécuter PIT, obtenir un score inférieur à la baseline existante, détecter cette différence comme significative (au-delà de l’epsilon) et faire échouer la CI en signalant clairement la régression.
+<img width="386" height="147" alt="image" src="https://github.com/user-attachments/assets/236a5066-7486-4340-9dc5-5696846ac790" />
     - Démarche: Nous avons restaures les tests précédemment affaiblis, ce qui augmente le score de mutation, puis effectué un push pour observer la réaction du workflow.
     - Résultat attendu (obtenu): Le workflow doit reconnaître que le score courant est supérieur à la baseline, mettre automatiquement à jour cette baseline et terminer le build sans erreur.
 - Score identique ou variation négligeable
     - Démarche: Nous avons effectué des modifications sans impact sur la suite de tests, de manière à ce que le score PIT reste identique ou légèrement différent.
     - Résultat attendu (obtenu): Le workflow doit considérer que le score est inchangé tant que la différence reste inférieure à l’epsilon, ne pas mettre à jour la baseline et terminer le build normalement.
+<img width="767" height="129" alt="image" src="https://github.com/user-attachments/assets/511086d3-9606-4216-98ba-db5cfd808916" />
 - Baseline corrompue ou non numérique
     - Démarche: Nous éditons manuellement le fichier `.github/mutation-baseline.txt` pour y inscrire une valeur invalide (par exemple `Je suis le plus beau, le plus fort, le plus inteligent!`), puis nous poussons un commit sans toucher aux tests.
     - Résultat attendu (obtenu): Le script doit lire le contenu du fichier, détecter qu’il ne correspond pas à un nombre valide via la regex, afficher un message indiquant que le fichier existe mais ne contient pas un score valide, montrer le contenu lu, inviter à corriger ou supprimer le fichier, puis échouer la CI.
+<img width="607" height="173" alt="image" src="https://github.com/user-attachments/assets/af5cf142-7d36-41ee-98b4-80a5f6c16a60" />
 
 Nous n’avons pas réalisé de tests pratiques pour les scénarios où le fichier `mutations.xml` est vide ou totalement manquant, car ces situations ne sont pas censées se produire et ne relèvent plus du comportement fonctionnel attendu de notre pipeline, mais plutôt d’un dysfonctionnement interne de PIT .
     
@@ -118,3 +122,4 @@ Le compteur `visitedNodes` est égal à la somme des valeurs renvoyées par `Pat
 Si `curbsides` n’est pas vide et que sa taille diffère du nombre total de points, `calcPaths()` doit lancer une `IllegalArgumentException`.  
 
 Si `curbsides` n’est pas vide et que `headings` n’est pas vide, `calcPaths()` doit également lancer une `IllegalArgumentException`.
+
