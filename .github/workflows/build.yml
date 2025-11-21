@@ -137,7 +137,7 @@ jobs:
       
       - name: Rickroll
         if: steps.junit_tests.outcome == 'failure'
-        uses: maximebelotti/random-rickroll@v1 
+        uses: maximebelotti/random-rickroll@v2
         with:
           percentage: 100   
           enabled: "true"
