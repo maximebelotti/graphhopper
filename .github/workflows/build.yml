@@ -113,7 +113,7 @@ jobs:
 
           DECREASED=$(echo "$BASELINE - $CURRENT > $EPSILON" | bc -l)
           INCREASED=$(echo "$CURRENT - $BASELINE > $EPSILON" | bc -l)
-          echo "decreased=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "decreased=$DECREASED" >> "$GITHUB_OUTPUT"
 
           if [ "$DECREASED" -eq 1 ]; then
             echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
