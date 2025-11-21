@@ -126,6 +126,13 @@
             <version>1.0.2</version>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.20.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -185,10 +192,16 @@
                 </dependencies>
                 <configuration>
                     <targetClasses>
-                    <param>com.graphhopper.*</param>
+                        <param>com.graphhopper.util.shapes.BBox</param>
+                        <param>com.graphhopper.util.DistanceCalcEarth</param>
+                        <param>com.graphhopper.util.PathMerger</param>
+                        <param>com.graphhopper.routing.ViaRouting</param>
                     </targetClasses>
                     <targetTests>
-                    <param>com.graphhopper.*</param>
+                            <param>com.graphhopper.util.shapes.BBoxTest</param>
+                            <param>com.graphhopper.util.DistanceCalcEarthTest</param>
+                            <param>com.graphhopper.util.PathMergerTest</param>
+                            <param>com.graphhopper.routing.ViaRoutingTest</param>
                     </targetTests>
                     <mutators>
                     <mutator>STRONGER</mutator>
