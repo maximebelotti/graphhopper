@@ -88,6 +88,10 @@ jobs:
             mkdir -p "$(dirname "$BASELINE_FILE")"
             echo "$CURRENT" > "$BASELINE_FILE"
             echo "Score minimal initialisé à : $CURRENT"
+
+            # Exportation des scores à GitHub Outputs
+            echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+            echo "baseline=$CURRENT" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -99,7 +103,6 @@ jobs:
 
           if [ "$DECREASED" -eq 1 ]; then
             echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
-            echo -e "Voir les détails : https://user-images.githubusercontent.com/37572049/90699500-0cc3ec00-e2a1-11ea-8d13-989526e86b0e.gif"
           else
             echo "Le score de mutation ne baisse pas."
           fi
