@@ -9,6 +9,8 @@ jobs:
         java-version: [ 24, 25-ea ]
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-java@v4
         with:
           java-version: ${{ matrix.java-version }}
@@ -37,5 +39,103 @@ jobs:
       - name: Build ${{ matrix.java-version }}
         run: mvn -B clean test
 
-      
+      - name: Build tout les modules
+        run: mvn -B -DskipTests install
 
+      - name: Executer tests de mutation
+        run: |
+          cd core
+          mvn -B org.pitest:pitest-maven:mutationCoverage
+
+      - name: Extraire le score de mutation
+        id: mutation_score
+        run: |
+          cd core
+          REPORT_XML="target/pit-reports/mutations.xml"
+
+          if [ ! -f "$REPORT_XML" ]; then
+            echo "Aucun fichier mutations.xml trouvé (rapport PIT manquant)."
+            exit 1
+          fi
+
+          TOTAL=$(grep -o "<mutation[^s][^>]*>" "$REPORT_XML" | wc -l || true)
+
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "Aucun mutant trouvé dans mutations.xml, impossible de calculer le score."
+            exit 1
+          fi
+
+          KILLED=$(grep -E 'detected=.true.' "$REPORT_XML" | wc -l || true)
+          SCORE=$(echo "scale=2; 100 * $KILLED / $TOTAL" | bc -l)
+
+          echo "Mutants totaux       : $TOTAL"
+          echo "Mutants détectés     : $KILLED"
+          echo "Score de mutation (%) : $SCORE"
+
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+
+      - name: Comparer et mettre à jour automatiquement la baseline
+        run: |
+          BASELINE_FILE=".github/mutation-baseline.txt"
+          CURRENT="${{ steps.mutation_score.outputs.score }}"
+
+          echo "Score de mutation actuel : $CURRENT"
+
+          EPSILON="0.000001"
+
+          if [ ! -f "$BASELINE_FILE" ]; then
+            echo "Aucun score minimal trouvé. Le score actuel devient le score minimal."
+            mkdir -p "$(dirname "$BASELINE_FILE")"
+            echo "$CURRENT" > "$BASELINE_FILE"
+            echo "Score minimal initialisé à : $CURRENT"
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$BASELINE_FILE"
+            git commit -m "Initialisation automatique du score minimal de mutation (CI)" || true
+            git push || true
+
+            exit 0
+          fi
+
+          read -r BASELINE < "$BASELINE_FILE"
+
+          if ! echo "$BASELINE" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+            echo "Le fichier $BASELINE_FILE existe mais ne contient pas un score valide."
+            echo "Contenu lu : '$BASELINE'"
+            echo "Merci de corriger le fichier ou de le supprimer pour réinitialiser la baseline."
+            exit 1
+          fi
+
+          echo "Score minimal enregistré : '$BASELINE'"
+
+          DECREASED=$(echo "$BASELINE - $CURRENT > $EPSILON" | bc -l)
+          INCREASED=$(echo "$CURRENT - $BASELINE > $EPSILON" | bc -l)
+
+          if [ "$DECREASED" -eq 1 ]; then
+            echo "Le score de mutation a baissé : $CURRENT < $BASELINE"
+            exit 1
+          fi
+
+          if [ "$INCREASED" -eq 1 ]; then
+            echo "Le score de mutation a augmenté : $CURRENT > $BASELINE"
+            echo "Mise à jour automatique de la baseline..."
+
+            echo "$CURRENT" > "$BASELINE_FILE"
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$BASELINE_FILE"
+            git commit -m "Mise à jour automatique du score minimal de mutation (CI)" || true
+            git push || true
+
+            echo "Nouvelle baseline enregistrée : $CURRENT"
+          else
+            echo "Le score de mutation ne baisse pas mais n'augmente pas de façon significative. Aucune mise à jour de baseline."
+          fi
+      
+      - name: Rickroll
+        if: failure()
+        continue-on-error: true
+        uses: TejasvOnly/random-rickroll@v1.0
+        
